@@ -381,7 +381,21 @@ add_simulator(microvax3900
     PKG_FAMILY vax_family
     TEST vax-diag)
 
+## vax is an alias for microvax3900
 add_executable(vax ALIAS microvax3900)
+
+### FIXME!
+# ## Mirror the vax-target microvax3900 alias in the install tree.
+# install(
+#     CODE "
+#         execute_process(
+#             COMMAND ${CMAKE_COMMAND} -E create_symlink 
+#                 \"$<TARGET_FILE_NAME:microvax3900>\" 
+#                 \"vax${CMAKE_EXECUTABLE_SUFFIX}\"
+#             WORKING_DIRECTORY \"$<TARGET_FILE_DIR:microvax3900>\"
+#             COMMENT \"Creating vax.exe alias for microvax3900.exe\"
+#             VERBATIM"
+#     COMPONENT vax_family)
 
 add_test(
     NAME zimh-vax-sysdev-bool
