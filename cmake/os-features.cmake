@@ -3,21 +3,74 @@
 ## Author: B. Scott Michel
 ## "scooter me fecit"
 
+include_guard(GLOBAL)
+
 include(CheckSymbolExists)
 include(CheckCSourceRuns)
+include(CheckSourceCompiles)
 include(CMakePushCheckState)
 
-include(pthreads-dep)
+# =============================================================================
+# The os_features library
+#
+# This library includes O/S-specific compiler definitions and compatibility
+# shim sources (e.g., strlcpy, strlcat).
+#
+# Note: OBJECT libraries have to be defined with at least one source file,
+# so we add one dummy source file and incrementally add more as needed.
+# =============================================================================
+set(DUMMY_SRC "${CMAKE_CURRENT_BINARY_DIR}/osfeatures_dummy.c")
+file(WRITE ${DUMMY_SRC} "/* Dummy source for os_features object library */\n")
+add_library(os_features STATIC ${DUMMY_SRC})
+target_include_directories(os_features PRIVATE
+            "${SIMH_COMPAT_ROOT}"
+            "${SIMH_INCLUDE_ROOT}"
+)
+
+## Linux: Make sure _GNU_SOURCE is defined.
+if (CMAKE_HOST_SYSTEM MATCHES "Linux")
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+    target_compile_definitions(os_features PUBLIC _GNU_SOURCE)
+endif()
+
+# =============================================================================
+# The threading interface library: thread_lib
+# =============================================================================
+add_library(thread_lib INTERFACE)
+
+# Windows / vcpkg Path: Check for our modernized pthreads4w target
+if(NOT TARGET PTW::PTW AND WIN32)
+    find_package(PTW)
+endif()
+
+# AIO_FLAGS: Used in add_simulator.cmake to enable asynchronous I/O support primarily
+# in Ethernet devices. It's only useful if the platform threading libraries are
+# detected and building the AIO version of the core libraries.
+set(AIO_FLAGS)
+
+if(TARGET PTW::PTW)
+    # Forward all header paths, multi-config libs, and definitions to thread_lib
+    target_link_libraries(thread_lib INTERFACE PTW::PTW)
+    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
+    message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
+else()
+    # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
+    # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
+    find_package(Threads REQUIRED)
+    
+    target_link_libraries(thread_lib INTERFACE Threads::Threads)
+    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
+    message(STATUS "pthreads-dep: Using system native Threads::Threads")
+endif()
+
 include(uuid-dep)
 
 set(NEED_LIBRT FALSE)
 
-add_library(os_features INTERFACE)
-
 ## Editline support?
 find_package(EDITLINE)
 if (TARGET Editline::Editline)
-    target_link_libraries(os_features INTERFACE Editline::Editline)
+    target_link_libraries(os_features PUBLIC Editline::Editline)
 endif ()
 
 if (WITH_ASYNC)
@@ -31,12 +84,17 @@ if (WITH_ASYNC)
         get_property(zz_thread_lopts TARGET thread_lib PROPERTY INTERFACE_LINK_OPTIONS)
         get_property(zz_thread_libs  TARGET thread_lib PROPERTY INTERFACE_LINK_LIBRARIES)
 
-        list(APPEND CMAKE_REQUIRE_DEFINITIONS ${zz_thread_defs})
+        foreach(def IN LISTS zz_thread_defs)
+            if (NOT def MATCHES "^-D")
+                string(PREPEND def "-D")
+            endif()
+            list(APPEND CMAKE_REQUIRED_DEFINITIONS ${def})
+        endforeach()
         list(APPEND CMAKE_REQUIRED_INCLUDES ${zz_thread_incs})
         list(APPEND CMAKE_REQUIRED_LINK_OPTIONS ${zz_thread_lopts})
         list(APPEND CMAKE_REQUIRED_LIBRARIES ${zz_thread_libs})
 
-        check_symbol_exists(sem_timedwait semaphore.h have_sem_timedwait)
+        check_symbol_exists(sem_timedwait "semaphore.h;time.h" have_sem_timedwait)
 
         if (NOT have_sem_timedwait)
             ## Maybe it's in librt, like shm_open (and more likely, it's not.)
@@ -50,43 +108,13 @@ if (WITH_ASYNC)
         cmake_pop_check_state()
 
         if (have_sem_timedwait OR have_sem_timedwait_rt)
-            target_compile_definitions(os_features INTERFACE HAVE_SEMAPHORE)
+            target_compile_definitions(os_features PUBLIC HAVE_SEMAPHORE)
         endif ()
     endif (semaphore_h_found)
 endif (WITH_ASYNC)
 
-## Note: We could use this to enforce better type safety with file I/O.
-##
-## _LARGEFILE64_SOURCE and _FILE_OFFSET_BITS for Linux
-## check_type_size(off_t SIZE_OFF_T)
-## if (SIZE_OFF_T)
-##     target_compile_definitions(os_features INTERFACE SIZE_OFF_T=${SIZE_OFF_T})
-## endif ()
-##
-## check_type_size(off64_t SIZE_OFF64_T)
-## if (NOT SIZE_OFF64_T)
-##     set(xxx_CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS})
-##     list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE=1)
-##     check_type_size(off64_t SIZE_OFF64_T)
-##     set(xxx_CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS})
-##
-##     if (SIZE_OFF64_T)
-##         target_compile_definitions(os_features INTERFACE _FILE_OFFSET_BITS=64 _LARGEFILE64_SOURCE=1)
-##     endif ()
-## endif()
-##
-## if (SIZE_OFF64_T)
-##     target_compile_definitions(os_features INTERFACE SIZE_OFF64_T=${SIZE_OFF64_T})
-## endif ()
-
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
-    target_compile_definitions(os_features INTERFACE _GNU_SOURCE)
-endif ()
-
 cmake_push_check_state()
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
-    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
-endif ()
+
 check_symbol_exists(strlcpy string.h HAVE_STRLCPY)
 check_symbol_exists(strlcat string.h HAVE_STRLCAT)
 check_symbol_exists(strnlen string.h HAVE_STRNLEN)
@@ -98,7 +126,7 @@ check_symbol_exists(fmemopen stdio.h HAVE_FMEMOPEN)
 cmake_pop_check_state()
 
 if (HAVE_FMEMOPEN)
-    target_compile_definitions(os_features INTERFACE HAVE_FMEMOPEN)
+    target_compile_definitions(os_features PUBLIC HAVE_FMEMOPEN)
 endif ()
 
 configure_uuid_feature(os_features)
@@ -107,55 +135,51 @@ set(SIMH_COMPAT_SOURCES)
 
 if (NOT HAVE_STRLCPY)
     set(SIMH_NEED_STRLCPY TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strlcpy.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRLCPY)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strlcpy.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRLCPY)
 endif ()
 
 if (NOT HAVE_STRLCAT)
     set(SIMH_NEED_STRLCAT TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strlcat.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRLCAT)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strlcat.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRLCAT)
 endif ()
 
 if (NOT HAVE_STRNLEN)
     set(SIMH_NEED_STRNLEN TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strnlen.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRNLEN)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strnlen.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRNLEN)
 endif ()
 
 if (NOT HAVE_STRDUP)
     set(SIMH_NEED_STRDUP TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strdup.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRDUP)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strdup.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRDUP)
 endif ()
 
 if (NOT HAVE_STRNDUP)
     set(SIMH_NEED_STRNDUP TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strndup.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRNDUP)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strndup.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRNDUP)
 endif ()
 
 if (NOT HAVE_STRCASECMP)
     set(SIMH_NEED_STRCASECMP TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strcasecmp.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRCASECMP)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strcasecmp.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRCASECMP)
 endif ()
 
 if (NOT HAVE_STRNCASECMP)
     set(SIMH_NEED_STRNCASECMP TRUE)
-    list(APPEND SIMH_COMPAT_SOURCES ${SIMH_COMPAT_ROOT}/strncasecmp.c)
-    target_compile_definitions(os_features INTERFACE SIMH_NEED_STRNCASECMP)
+    target_sources(os_features PRIVATE ${SIMH_COMPAT_ROOT}/strncasecmp.c)
+    target_compile_definitions(os_features PUBLIC SIMH_NEED_STRNCASECMP)
 endif ()
 
 if (WIN32)
-    list(APPEND SIMH_COMPAT_SOURCES
+    target_sources(os_features PRIVATE
         ${SIMH_COMPAT_ROOT}/localtime_r.c
         ${SIMH_COMPAT_ROOT}/gmtime_r.c
         ${SIMH_COMPAT_ROOT}/setenv.c)
-endif ()
-
-if (SIMH_COMPAT_SOURCES)
-    list(REMOVE_DUPLICATES SIMH_COMPAT_SOURCES)
 endif ()
 
 ## <sys/ioctl.h>

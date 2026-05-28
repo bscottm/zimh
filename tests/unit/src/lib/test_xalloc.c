@@ -150,7 +150,7 @@ static void assert_abort_case(const char *name)
 #if defined(_WIN32)
     char *const args[] = {(char *)test_program_path, "--expect-abort",
                           (char *)name, NULL};
-    int status = _spawnv(_P_WAIT, test_program_path, args);
+    intptr_t status    = _spawnv(_P_WAIT, test_program_path, args);
 
     assert_int_not_equal(status, -1);
     assert_int_not_equal(status, 0);
@@ -193,6 +193,11 @@ int main(int argc, char **argv)
         cmocka_unit_test(test_xstrndup_respects_bound),
         cmocka_unit_test(test_xalloc_contract_violations_abort),
     };
+
+#if defined(_WIN32)
+    // Suppress the "Debug Error!" dialog and Watson crash dumps
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
 
     test_program_path = argv[0];
     if ((argc == 3) && (strcmp(argv[1], "--expect-abort") == 0))

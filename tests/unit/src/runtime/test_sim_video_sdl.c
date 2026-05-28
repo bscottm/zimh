@@ -581,7 +581,7 @@ static void test_gamepad_events_reach_registered_callbacks(void **state)
 #endif
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_key_name_formats_known_and_unknown_keys),

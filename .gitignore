@@ -1,6 +1,7 @@
 # Ignore common OS-generated files.
 Thumbs.db
 .DS_Store
+.dir-locals.el
 
 # Ignore generated build artifacts.
 *.obj
@@ -32,7 +33,11 @@ Thumbs.db
 /build/
 /build-*/
 /vcpkg_installed/
+
+# User customizations:
+.clangd
 CMakeUserPresets.json
 
-# Temporary files during work
+# Temporary work files
 tmp/
+compile_commands.json

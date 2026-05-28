@@ -19,10 +19,6 @@ int32_t crd_err;
 int32_t cur_cpu;
 int32_t cpu_msk = 1;
 int32_t in_ie;
-#ifdef SIM_ASYNCH_IO
-int32_t sim_asynch_latency = 4000;
-int32_t sim_asynch_inst_latency = 20;
-#endif
 jmp_buf save_env;
 DEVICE cpu_dev;
 UNIT cpu_unit;
@@ -122,6 +118,11 @@ int main(void)
         cmocka_unit_test(test_done_clear_without_pending_tick_is_not_ack),
         cmocka_unit_test(test_done_clear_with_pending_tick_acknowledges_tick),
     };
+
+#if defined(_WIN32)
+    // Suppress the "Debug Error!" dialog and Watson crash dumps
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
