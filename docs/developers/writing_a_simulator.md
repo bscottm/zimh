@@ -1,191 +1,139 @@
-# Writing a Simulator for the SIMH System
-
-Revised 1-Mar-2020 for SIMH V4.0
+# Writing a Simulator for ZIMH
 
 **Copyright Notice**
 
-The SIMH source code and documentation is made available under a
-X11-style open source license; the precise terms are available at:
+ZIMH source code and documentation are made available under
+open-source licenses. The precise terms are available in the
+repository license file:
 
-<https://github.com/open-simh/simh/blob/master/LICENSE.txt>
+[LICENSE.txt](../../LICENSE.txt)
 
 # Table of Contents
 
-1\. Overview [4](#overview)
-
-2\. Data Types [4](#data-types)
-
-3\. VM Organization [5](#vm-organization)
-
-3.1 CPU Organization [6](#cpu-organization)
-
-3.1.1 Time Base [6](#time-base)
-
-3.1.2 Step Function [7](#step-function)
-
-3.1.3 Memory Organization [7](#memory-organization)
-
-3.1.4 Interrupt Organization [8](#interrupt-organization)
-
-3.1.5 I/O Dispatching [9](#io-dispatching)
-
-3.1.6 Instruction Execution [9](#instruction-execution)
-
-3.2 Peripheral Device Organization [10](#peripheral-device-organization)
-
-3.2.1 Device Timing [11](#device-timing)
-
-3.2.2 Clock Calibration [12](#clock-calibration)
-
-3.2.3 Pre-Calibration [14](#pre-calibration)
-
-3.2.4 Idling [14](#idling)
-
-3.2.5 Data I/O [15](#data-io)
-
-Data Structures [17](#data-structures)
-
-3.3 DEVICE Structure [17](#device-structure)
-
-3.3.1 Awidth and Aincr [19](#awidth-and-aincr)
-
-3.3.2 Device Flags [19](#device-flags)
-
-3.3.3 Context [19](#context)
-
-3.3.4 Examine and Deposit Routines [20](#examine-and-deposit-routines)
-
-3.3.5 Reset Routine [20](#reset-routine)
-
-3.3.6 Boot Routine [20](#boot-routine)
-
-3.3.7 Attach and Detach Routines [20](#attach-and-detach-routines)
-
-3.3.8 Memory Size Change Routine [21](#memory-size-change-routine)
-
-3.3.9 Debug Controls [21](#debug-controls)
-
-3.3.10 Device Specific Help support [23](#device-specific-help-support)
-
-3.3.11 Help Routine [23](#help-routine)
-
-3.3.12 Attach Help Routine [23](#attach-help-routine)
-
-3.4 UNIT Structure [23](#unit-structure)
-
-3.4.1 Unit Flags [24](#unit-flags)
-
-3.4.2 Service Routine [25](#service-routine)
-
-3.5 REG Structure [25](#reg-structure)
-
-3.5.1 Register Flags [29](#register-flags)
-
-3.6 BITFIELD Structure [29](#bitfield-structure)
-
-3.7 MTAB Structure [30](#mtab-structure)
-
-3.7.1 Validation Routine [32](#validation-routine)
-
-3.7.2 Display Routine [32](#display-routine)
-
-3.7.3 Help Flags [32](#help-flags)
-
-3.7.4 Example arguments in the **mstring** [32](#example-arguments-in-the-mstring)
-
-3.7.5 Help field [33](#help-field)
-
-3.8 Other Data Structures [33](#other-data-structures)
-
-4\. VM Provided Routines [33](#vm-provided-routines)
-
-4.1 Instruction Execution [33](#instruction-execution-1)
-
-4.2 Binary Load and Dump [34](#binary-load-and-dump)
-
-4.3 Symbolic Examination and Deposit [34](#symbolic-examination-and-deposit)
-
-4.4 Optional Interfaces [35](#optional-interfaces)
-
-4.4.1 Once Only Initialization Routine [35](#once-only-initialization-routine)
-
-4.4.2 Address Input and Display [36](#address-input-and-display)
-
-4.4.3 Command Input and Post-Processing [36](#command-input-and-post-processing)
-
-4.4.4 Simulator Stop Message Formatting [36](#simulator-stop-message-formatting)
-
-4.4.5 VM-Specific Commands [37](#vm-specific-commands)
-
-4.4.6 VM-Support for stepping over subroutine calls [38](#vm-support-for-stepping-over-subroutine-calls)
-
-4.4.7 Displaying the simulator PC value in debug output [38](#displaying-the-simulator-pc-value-in-debug-output)
-
-5\. Other SCP Facilities [38](#other-scp-facilities)
-
-5.1 Terminal Input/Output Formatting Library [38](#terminal-inputoutput-formatting-library)
-
-5.2 Terminal Multiplexer Emulation Library [39](#terminal-multiplexer-emulation-library)
-
-5.3 Magnetic Tape Emulation Library [44](#magnetic-tape-emulation-library)
-
-5.4 Disk Emulation Library [48](#disk-emulation-library)
-
-5.5 Breakpoint Support [50](#breakpoint-support)
-
-5.5.1 Breakpoint Basics [51](#breakpoint-basics)
-
-5.5.2 Testing For Breakpoints [52](#testing-for-breakpoints)
-
-5.5.3 The Replay Problem [53](#the-replay-problem)
-
-5.5.4 Breakpoint Classes [53](#breakpoint-classes)
+- [Overview](#overview)
+- [Data Types](#data-types)
+- [VM Organization](#vm-organization)
+  - [CPU Organization](#cpu-organization)
+    - [Time Base](#time-base)
+    - [Step Function](#step-function)
+    - [Memory Organization](#memory-organization)
+    - [Interrupt Organization](#interrupt-organization)
+    - [I/O Dispatching](#io-dispatching)
+    - [Instruction Execution](#instruction-execution)
+  - [Peripheral Device Organization](#peripheral-device-organization)
+    - [Device Timing](#device-timing)
+    - [Clock Calibration](#clock-calibration)
+    - [Pre-Calibration](#pre-calibration)
+    - [Idling](#idling)
+    - [Data I/O](#data-io)
+      - [Reading and Writing Data](#reading-and-writing-data)
+      - [Console I/O](#console-io)
+      - [Simulators for computers without a console port](#simulators-for-computers-without-a-console-port)
+- [Data Structures](#data-structures)
+  - [DEVICE Structure](#device-structure)
+    - [Awidth and Aincr](#awidth-and-aincr)
+    - [Device Flags](#device-flags)
+    - [Testing Ethernet Devices](#testing-ethernet-devices)
+    - [Context](#context)
+    - [Examine and Deposit Routines](#examine-and-deposit-routines)
+    - [Reset Routine](#reset-routine)
+    - [Boot Routine](#boot-routine)
+    - [Attach and Detach Routines](#attach-and-detach-routines)
+    - [Memory Size Change Routine](#memory-size-change-routine)
+    - [Debug Controls](#debug-controls)
+    - [Device Specific Help support](#device-specific-help-support)
+    - [Help Routine](#help-routine)
+    - [Attach Help Routine](#attach-help-routine)
+  - [UNIT Structure](#unit-structure)
+    - [Unit Flags](#unit-flags)
+    - [Service Routine](#service-routine)
+  - [REG Structure](#reg-structure)
+    - [Register Flags](#register-flags)
+  - [`BITFIELD` Structure](#bitfield-structure)
+  - [`MTAB` Structure](#mtab-structure)
+    - [Validation Routine](#validation-routine)
+    - [Display Routine](#display-routine)
+    - [Help Flags](#help-flags)
+    - [Example arguments in the `mstring`](#example-arguments-in-the-mstring)
+    - [Help field](#help-field)
+  - [Other Data Structures](#other-data-structures)
+- [VM Provided Routines](#vm-provided-routines)
+  - [Instruction Execution](#instruction-execution-1)
+  - [Binary Load and Dump](#binary-load-and-dump)
+  - [Symbolic Examination and Deposit](#symbolic-examination-and-deposit)
+  - [Optional Interfaces](#optional-interfaces)
+    - [Once Only Initialization Routine](#once-only-initialization-routine)
+    - [Address Input and Display](#address-input-and-display)
+    - [Command Input and Post-Processing](#command-input-and-post-processing)
+    - [Simulator Stop Message Formatting](#simulator-stop-message-formatting)
+    - [VM-Specific Commands](#vm-specific-commands)
+    - [VM-Support for stepping over subroutine calls](#vm-support-for-stepping-over-subroutine-calls)
+    - [Displaying the simulator PC value in debug output](#displaying-the-simulator-pc-value-in-debug-output)
+- [Other SCP Facilities](#other-scp-facilities)
+  - [Terminal Input/Output Formatting Library](#terminal-inputoutput-formatting-library)
+  - [Terminal Multiplexer Emulation Library](#terminal-multiplexer-emulation-library)
+  - [Magnetic Tape Emulation Library](#magnetic-tape-emulation-library)
+  - [Disk Emulation Library](#disk-emulation-library)
+  - [Breakpoint Support](#breakpoint-support)
+    - [Breakpoint Basics](#breakpoint-basics)
+    - [Testing For Breakpoints](#testing-for-breakpoints)
+    - [The Replay Problem](#the-replay-problem)
+    - [Breakpoint Classes](#breakpoint-classes)
 
 # Overview
 
-SIMH (history simulators) is a set of portable programs, written in C,
-which simulate various historically interesting computers. This
-document describes how to design, write, and check out a new simulator
-for SIMH. It is not an introduction to either the philosophy or
-external operation of SIMH, and the reader should be familiar with
-both of those topics before proceeding. Nor is it a guide to the
-internal design or operation of SIMH, except insofar as those areas
-interact with simulator design. Instead, this manual presents and
-explains the form, meaning, and operation of the interfaces between
-simulators and the SIMH simulator control package. It also offers some
-suggestions for utilizing the services SIMH offers and explains the
-constraints that all simulators operating within SIMH will experience.
+ZIMH is a portable system, written in C, for simulating historically
+interesting computers on modern hosts. This guide describes how to
+design, write, bring up, test, and maintain a simulator that fits into
+the ZIMH framework.
 
-Some terminology: Each simulator consists of a standard *simulator
-control package* (SCP and related libraries), which provides a control
-framework and utility routines for a simulator; and a unique *virtual
-machine* (VM), which implements the simulated processor and selected
-peripherals. A VM consists of multiple *devices*, such as the CPU,
-paper tape reader, disk controller, etc. Each controller consists of a
-named state space (called *registers*) and one or more *units*. Each
-unit consists of a numbered state space (called a *data set*). The
-*host computer* is the system on which SIMH runs; the *target
-computer* is the system being simulated.
+This is not an introduction to the user-visible simulator command
+interface, nor is it a complete guide to every internal subsystem.
+Instead, it explains the interfaces between simulator-specific code and
+the common simulator control package, describes the services available
+to simulator implementations, and points out constraints that simulator
+code must respect.
 
-SIMH is unabashedly based on the MIMIC simulation system, designed in
-the late 1960’s by Len Fehskens, Mike McCarthy, and Bob Supnik. This
-document is based on MIMIC’s published interface specification, “How
-to Write a Virtual Machine for the MIMIC Simulation System”, by Len
-Fehskens and Bob Supnik.
+Some terminology: each simulator consists of the common *simulator
+control package* (SCP and related libraries), which provides the command
+framework and shared utility routines, and a *virtual machine* (VM),
+which implements the simulated processor and selected peripherals. A VM
+consists of multiple *devices*, such as the CPU, paper tape reader, or
+disk controller. A device has named state, represented as *registers*,
+and one or more *units*. A unit has numbered state, historically called
+a *data set*. The *host computer* is the system on which ZIMH runs; the
+*target computer* is the system being simulated.
+
+ZIMH inherited this architecture from SIMH, which in turn was based on
+the MIMIC simulation system designed in the late 1960s by Len Fehskens,
+Mike McCarthy, and Bob Supnik. This document also traces back to
+MIMIC’s published interface specification, "How to Write a Virtual
+Machine for the MIMIC Simulation System", by Len Fehskens and Bob
+Supnik.
 
 # Data Types
 
-SIMH is written in C. The host system must support at least 32-bit
-data types, and 64-bit data types for the PDP-10 and other large-word
-target systems. SIMH defines a small set of simulator interface types:
+ZIMH is written in C and assumes a compiler supporting C17 or later.
+Supported hosts provide the standard fixed-width integer types, and the
+common simulator interfaces use a small set of project-defined types:
 
-| SIMH data type        | Interpretation                               |
-|-----------------------|----------------------------------------------|
-| `t_addr`              | simulated address, `uint32_t` or `uint64_t`  |
-| `t_value`             | simulated value, `uint32_t` or `uint64_t`    |
-| `t_svalue`            | simulated signed value, `int32_t` or `int64_t` |
-| `t_mtrlnt`            | mag tape record length, `uint32_t`           |
-| `t_stat`              | status code, `int`                           |
+| ZIMH data type | Interpretation |
+|----------------|----------------|
+| `t_addr`       | simulated address, `uint32_t` or `uint64_t` |
+| `t_value`      | simulated value, `uint32_t` or `uint64_t` |
+| `t_svalue`     | signed simulated value, `int32_t` or `int64_t` |
+| `t_mtrlnt`     | magnetic tape record length, `uint32_t` |
+| `t_stat`       | status code, `int` |
+
+The widths of `t_value` and `t_svalue` are selected by `USE_INT64`.
+The width of `t_addr` is 64 bits only when both `USE_INT64` and
+`USE_ADDR64` are defined; otherwise it is 32 bits. Simulators for
+large-word or large-address target systems, such as PDP-10 family
+simulators, use these wider configurations and require host support for
+64-bit integer types.
+
+Most of these types are declared by `"sim_defs.h"`. The magnetic tape
+record length type, `t_mtrlnt`, is declared by `"sim_tape.h"`.
 
 The code also uses the standard fixed-width integer types from
 `<stdint.h>`, such as `int32_t` and `uint32_t`, and the standard
@@ -205,14 +153,19 @@ types:
 Any source file that uses `uint_t` or `uchar_t` must include
 `"sim_types.h"` directly.
 
-Machine words, registers, addresses, and similar simulated hardware
-values should be represented with unsigned types. C does not define
-signed integer overflow, and shifting signed values can produce
-surprising or non-portable results. Legacy uses of signed integers for
-machine words are being phased out of existing simulators; new
-simulators should use unsigned types consistently for these values.
+Machine words, registers, addresses, bit fields, and similar simulated
+hardware values should normally use unsigned types. C does not define
+signed integer overflow, and shifts of signed values can produce
+surprising, non-portable, or undefined behavior. Legacy uses of signed
+integers for machine words are being phased out of existing simulators;
+new simulator code should use unsigned types consistently for these
+values.
 
-In addition, SIMH defines structures for each of its major data elements:
+For common mask, field extraction, field insertion, and aligned
+byte/word operations, use the shared helpers in `"uint_bits.h"` rather
+than adding local one-off shift and mask code.
+
+In addition, ZIMH defines structures for each of its major data elements:
 
 | Name     | Description                   |
 |----------|-------------------------------|
@@ -251,67 +204,78 @@ few:
 
 | Interface                | Function                                                |
 |--------------------------|---------------------------------------------------------|
-| `char sim_name[]`        | simulator name string                                   |
+| `char sim_name[64]`      | simulator name string                                   |
 | `REG *sim_PC`            | pointer to simulated program counter                    |
-| `int32_t sim_emax`         | maximum number of words in an instruction or data item  |
+| `int32_t sim_emax`       | maximum number of words in an instruction or data item  |
 | `DEVICE *sim_devices[]`  | table of pointers to simulated devices, `NULL` terminated |
 | `const char *sim_stop_messages[SCPE_BASE]` | table of pointers to error messages |
-| `t_stat sim_load(…)`   | binary loader subroutine                                |
+| `t_stat sim_load(...)`   | binary loader subroutine                                |
 | `t_stat sim_instr(void)` | instruction execution subroutine                        |
-| `t_stat parse_sym(…)`  | symbolic instruction/data parse subroutine              |
-| `t_stat fprint_sym(…)` | symbolic instruction/data print subroutine              |
+| `t_stat parse_sym(...)`  | symbolic instruction/data parse subroutine              |
+| `t_stat fprint_sym(...)` | symbolic instruction/data print subroutine              |
 
-In addition, there are several optional interfaces, which can be used for special situations, such as GUI implementations:
+In addition, there are several optional interfaces for special cases
+such as custom command input, GUI or front-panel integration,
+VM-specific address formatting, stop-message formatting, and
+step-over support:
 
 | Interface                        | Function                           |
 |----------------------------------|------------------------------------|
-| `t_addr (*sim_vm_parse_addr)(…)` | pointer to address parsing routine |
-| `void (*sim_vm_fprint_addr)(…) ` | pointer to address output routine  |
-| `void (*sim_vm_sprint_addr)(…) ` | pointer to address format routine  |
-| `char (*sim_vm_read)(…)`         | pointer to command input routine   |
-| `void (*sim_vm_post)(…)` | pointer to command post-processing routine |
-| `bool (*sim_vm_fprint_stopped)(…)` | pointer to stop message format routine |
-| `t_value (*sim_vm_pc_value)(…)` | pointer to routine returning the VM PC value |
-| `bool (*sim_vm_is_subroutine_call)(…)` | pointer to routine that determines if the current<br>instruction is a subroutine call|
-| `const char *sim_vm_release` | pointer to string specifying the simulator specific<br>release version |
+| `t_addr (*sim_vm_parse_addr)(...)` | pointer to address parsing routine |
+| `void (*sim_vm_fprint_addr)(...)` | pointer to address output routine |
+| `void (*sim_vm_sprint_addr)(...)` | pointer to address format routine |
+| `char *(*sim_vm_read)(...)` | pointer to command input routine |
+| `void (*sim_vm_post)(...)` | pointer to command post-processing routine |
+| `bool (*sim_vm_fprint_stopped)(...)` | pointer to stop message format routine |
+| `t_value (*sim_vm_pc_value)(void)` | pointer to routine returning the VM PC value |
+| `bool (*sim_vm_is_subroutine_call)(...)` | pointer to subroutine-call detection routine |
+| `void (*sim_vm_reg_update)(...)` | pointer to register-update notification routine |
+| `const char **sim_clock_precalibrate_commands` | optional clock precalibration commands |
+| `int32_t sim_vm_initial_ips` | base simulated instruction-rate estimate |
+| `const char *sim_vm_interval_units` | name for event-interval units |
+| `const char *sim_vm_step_unit` | name for a single step unit |
+| `const char *sim_vm_release` | simulator-specific release string |
+| `const char *sim_vm_release_message` | simulator-specific release message |
 | `CTAB *sim_vm_cmd` | pointer to simulator-specific command table |
 
 There is no required organization for VM code. The following
-convention has been used so far. Let `name` be the name of the real
-system (i1401 for the IBM 1401; i1620 for the IBM 1620; pdp1 for the
-PDP-1; pdp18b for the other 18-bit PDP’s; pdp8 for the PDP-8; pdp11
-for the PDP-11; nova for Nova; hp2100 for the HP 21XX; h316 for the
-Honeywell 315/516; gri for the GRI-909; pdp10 for the PDP-10; vax for
-the VAX; sds for the SDS-940):
-
-Then, substituting in an appropriate *name* for `name`:
+convention is common in existing simulators. Let `name` be the short
+name or family prefix for the target system, such as `pdp8`, `pdp11`,
+`pdp10`, `vax`, `hp2100`, or `sds`. Then, substituting an appropriate
+prefix for `name`, common files include:
 
 | File            | Contents                                                 |
 |-----------------|----------------------------------------------------------|
-| `name.h`        | Definitions for the particular simulator                 |
-| `name_sys.c`    | All the SCP interfaces except the instruction simulator  |
+| `name.h` or `name_defs.h` | Definitions for the particular simulator        |
+| `name_sys.c`    | Most SCP interfaces except instruction execution         |
 | `name_cpu.c`    | The instruction simulator and CPU data structures        |
-| `name_stddev.c` | The peripherals which were standard with the real system |
+| `name_stddev.c` | The peripherals that were standard with the real system  |
 | `name_lp.c`     | Line printer                                             |
-| `name_mt.c`     | Mag tape controller and drives, etc.                     |
+| `name_mt.c`     | Magnetic tape controller and drives, etc.                |
 
-The SIMH standard definitions are in `sim_defs.h`. Most definitions
-required by a VM can be obtained simply by including that file. A few
-require additional header files; those are called out below. The base
-components of SIMH are:
+These files normally live under a subdirectory of `simulators/`. Large
+or closely related simulator families often split the code differently,
+so use the existing family layout as the guide when adding to an
+existing simulator.
 
-| Source Module   | Header File     | Module                                  |
-|-----------------|-----------------|-----------------------------------------|
-| `scp.c`         | `scp.h`         | control package                         |
-| `sim_console.c` | `sim_console.h` | terminal I/O library                    |
-| `sim_fio.c`     | `sim_fio.h`     | file I/O library                        |
-| `sim_timer.c`   | `sim_timer.h`   | timer library                           |
-| `sim_sock.c`    | `sim_sock.h`    | socket I/O library                      |
-| `sim_ether.c`   | `sim_ether.h`   | Ethernet I/O library                    |
-| `sim_serial.c`  | `sim_serial.h`  | Serial Port I/O library                 |
-| `sim_tmxr.c`    | `sim_tmxr.h`    | terminal multiplexer simulation library |
-| `sim_disk.c`    | `sim_disk.h`    | disk simulation library                 |
-| `sim_tape.c`    | `sim_tape.h`    | magtape simulation library              |
+The common simulator definitions are in `"sim_defs.h"`, implemented in
+`src/core/sim_defs.h`. Most definitions required by a VM can be
+obtained by including that file. A few runtime facilities require their
+own headers; those are called out below. The base components of ZIMH
+include:
+
+| Source module | Header file | Module |
+|---------------|-------------|--------|
+| `src/core/scp.c` | `src/core/scp.h` | control package |
+| `src/runtime/sim_console.c` | `src/runtime/sim_console.h` | terminal I/O library |
+| `src/runtime/sim_fio.c` | `src/runtime/sim_fio.h` | file I/O library |
+| `src/runtime/sim_timer.c` | `src/runtime/sim_timer.h` | timer library |
+| `src/runtime/sim_sock.c` | `src/runtime/sim_sock.h` | socket I/O library |
+| `src/runtime/sim_ether.c` | `src/runtime/sim_ether.h` | Ethernet I/O library |
+| `src/runtime/sim_serial.c` | `src/runtime/sim_serial.h` | serial port I/O library |
+| `src/runtime/sim_tmxr.c` | `src/runtime/sim_tmxr.h` | terminal multiplexer simulation library |
+| `src/runtime/sim_disk.c` | `src/runtime/sim_disk.h` | disk simulation library |
+| `src/runtime/sim_tape.c` | `src/runtime/sim_tape.h` | magnetic tape simulation library |
 
 ## CPU Organization
 
@@ -331,28 +295,32 @@ design; memory and I/O organization should be tackled first.
 
 In order to simulate asynchronous events, such as I/O completion, the
 VM must define and keep a time base. This can be accurate (for
-example, nanoseconds of execution) or arbitrary (for example, number
-of instructions executed), but it must be used consistently throughout
-the VM. Many existing VMs count time in instructions, some count time
-in cycles that may align with cycles in the original hardware that may
-reflect different instructions and/or combinations of memory
-references.
+example, cycles or nanoseconds of simulated execution) or arbitrary
+(for example, number of instructions executed), but it must be used
+consistently throughout the VM. Many existing VMs count time in
+instructions, some count time in cycles that may align with cycles in
+the original hardware that may reflect different instructions and/or
+combinations of memory references.
 
-The CPU is responsible for counting down the event counter
-`sim_interval` and calling the asynchronous event controller
-`sim_process_event`. SCP does the record keeping for timing.
+The CPU instruction loop is responsible for counting down the event
+counter `sim_interval` and calling the asynchronous event controller
+`sim_process_event()` when the counter reaches zero or below. SCP
+maintains the event queue and sets `sim_interval` to the next pending
+event; the CPU supplies the execution-time accounting that drives it.
 
 SCP will display pending events or other activities and report the
-number these event times reflect using the string
-`sim_vm_interval_units`. The `sim_vm_interval_units` defaults to
-“instructions”, but the simulator may change this to “cycles” if the
-simulator tracks machine state updates internally based on cycles.
+number these event times reflect using the time-unit label in
+`sim_vm_interval_units`. The `sim_vm_interval_units` default is
+"instructions", but the simulator may change this to "cycles" if the
+simulator tracks machine state updates internally based on cycles. A
+simulator may also set `sim_vm_step_unit` when the user-facing unit for
+`STEP` should differ.
 
-A simulator’s time base needs to be specifically considered when
-writing simulated devices. The correct choice that a `DEVICE` may use
-depends on not only the sim_interval decrement strategy, but also the
-nature of how long the `DEVICE` being simulated completed various
-activities actually being simulated.
+A simulator's time base needs to be specifically considered when
+writing simulated devices. The correct delay that a `DEVICE` may use
+depends on not only the `sim_interval` decrement strategy, but also the
+nature of how long the `DEVICE` activity actually took on the hardware
+being simulated.
 
 Usually, `DEVICE`s simulate some physical interaction that the CPU
 made with mechanical components (tape drives, card readers, disk
@@ -366,64 +334,70 @@ between:
 1. The amount of `sim_interval` decrements that relates to how long
    the activities on that particular `DEVICE` actually took.
 
-2.  The absolute minimum that software (operating systems,
-    applications, or diagnostics) running within the simulator were
-    capable of receiving a completion notification for the particular
-    `DEVICE` activity.
+2.  The absolute minimum delay that software (operating systems,
+    applications, or diagnostics) running within the simulator can
+    tolerate while still behaving as it did on real hardware.
 
 The absolute minimum case would often reflect that the software in
-question (device driver, or other) may setup some sort of I/O to the
-device, but not actually be prepared to realize the operation’s
+question (device driver, or other) may set up some sort of I/O to the
+device, but not actually be prepared to realize the operation's
 completion one instruction after whatever the CPU did to initiate the
-operation (for instance the interrupt handler for device’s I/O
+operation (for instance the interrupt handler for a device's I/O
 completion).
 
 It probably would have been smarter if the original software author
 established the interrupt handler before initiating the I/O activity,
-but real hardware never responded in one instruction time, so that
-software always worked on hardware. Since the goal of the simulation
-is to have the simulator work with existing software, the `DEVICE`
-simulation should reflect this goal. This minimum value is usually
-observed during `DEVICE` simulator development and thus adjusted by
-the failure of such software.
+but real hardware did not respond in one instruction time, so that
+software worked on the original machine. Since the goal of the
+simulation is to run existing software, the `DEVICE` simulation should
+reflect this timing expectation. This minimum value is usually observed
+during `DEVICE` simulator development and thus adjusted by the failure
+of such software.
 
 ### Step Function
 
 SCP implements a stepping function using the `STEP` command. `STEP` counts
-down a specified number of time units (as described in section 3.1.1)
-and then stops simulation. The VM can override the `STEP` command’s
-counts by calling routine `sim_cancel_step`:
+down a specified number of VM time-base units (as described in
+[Time Base](#time-base)) and then stops simulation. The VM can override
+the `STEP` command’s countdown by calling routine `sim_cancel_step()`:
 
-- `t_stat sim_cancel_step(void)` – cancel `STEP` count down.
+- `t_stat sim_cancel_step(void)` – cancel the SCP-managed `STEP`
+  countdown.
 
 The VM can then inspect variable `sim_step` to see if a `STEP` command
 is in progress. If `sim_step` is non-zero, it represents the number of
 steps to execute. The VM can count down `sim_step` using its own
 counting method, such as cycles, instructions, or memory
 references. If the VM counts steps in units other than instructions,
-it can set the `sim_vm_step_unit` string pointer to reflect this.
+it can set the `sim_vm_step_unit` string pointer to reflect this in
+user-facing output.
 
 ### Memory Organization
 
-The criterion for memory layout is very simple: use the SIMH data type
-that is as large as (or if necessary, larger than), the word length of
-the real machine. Note that the criterion is word length, not
-addressability: the PDP-11 has byte addressable memory, but it is a
-16-bit machine, and its memory is defined as `uint16_t M[]`. It may seem
-tempting to define memory as a union of `int8_t` and `int16_t` data types, but
+The criterion for memory layout is very simple: use a host C integer
+type that is at least as large as the word length of the real machine.
+Note that the criterion is word length, not addressability: the
+PDP-11 has byte addressable memory, but it is a 16-bit machine, and
+its memory is defined as `uint16_t M[]`. It may seem tempting to
+define memory as a union of `int8_t` and `int16_t` data types, but
 this would make the resulting VM endian-dependent. Instead, the VM
 should be based on the underlying word size of the real machine, and
-byte manipulation should be done explicitly. Examples:
+byte manipulation should be done explicitly.
 
-| Simulator        | Memory Size | Memory Declaration |
-|------------------|-------------|--------------------|
-| IBM 1620         | 5-bit       | `uint8_t`            |
-| IBM 1401         | 7-bit       | `uint8_t`            |
-| PDP-8            | 12-bit      | `uint16_t`           |
-| PDP-11, Nova     | 16-bit      | `uint16_t`           |
-| PDP-1            | 18-bit      | `uint32_t`           |
-| VAX              | 32-bit      | `uint32_t`           |
-| PDP-10, IBM 7094 | 36-bit      | `uint64_t`         |
+New or substantially revised simulators should prefer unsigned
+fixed-width integer types for memory words. Some inherited simulators
+still use signed memory storage; those should not be treated as models
+for new code. Examples of the preferred storage type:
+
+| Simulator        | Word Size   | Storage Type |
+|------------------|-------------|--------------|
+| IBM 1620         | 5-bit       | `uint8_t`    |
+| IBM 1401         | 7-bit       | `uint8_t`    |
+| PDP-8            | 12-bit      | `uint16_t`   |
+| PDP-11, Nova     | 16-bit      | `uint16_t`   |
+| PDP-1            | 18-bit      | `uint32_t`   |
+| VAX              | 32-bit      | `uint32_t`   |
+| PDP-10, IBM 7094 | 36-bit      | `uint64_t`   |
 
 ### Interrupt Organization
 
@@ -433,31 +407,31 @@ structure is too abstract, interrupt driven software may not run. On
 the other hand, if it follows the hardware too literally, it may
 significantly reduce simulation speed.
 
-One rule I can offer is to minimize the fetch-phase cost of
-interrupts, even if this complicates the (much less frequent)
+One rule I can offer is to minimize the cost of interrupt checks during
+instruction fetch, even if this complicates the (much less frequent)
 evaluation of the interrupt system following an I/O operation or
 asynchronous event. Another is not to over-generalize; even if the
 real hardware could support 64 or 256 interrupting devices, the
-simulators will be running much smaller configurations. I’ll start
-with a simple interrupt structure and then offer suggestions for
-generalization.
+simulators will be running much smaller configurations. The exact
+representation should follow the target hardware, but the following
+patterns are common starting points.
 
 In the simplest structure, interrupt requests correspond to device
-flags and are kept in an interrupt request variable, with one flag per
-bit. The fetch-phase evaluation of interrupts consists of two steps:
-are interrupts enabled, and is there an interrupt outstanding? If all
-the interrupt requests are kept as single-bit flags in a variable, the
-fetch-phase test is very fast:
+flags and are kept in an unsigned interrupt request variable, with one
+flag per bit. The evaluation of interrupts during instruction fetch
+consists of two steps: are interrupts enabled, and is there an interrupt
+outstanding? If all the interrupt requests are kept as single-bit
+flags in a variable, the instruction fetch test is very fast:
 
 ```c
-if (int_enable && int_requests) { /*…process interrupt…*/ }
+if (int_enable && int_requests) { /* process interrupt */ }
 ```
 
 Indeed, the interrupt enable flag can be made the highest bit in the
 interrupt request variable, and the two tests combined:
 
 ```c
-if (int_requests > INT_ENABLE) { /*…process interrupt…*/ }
+if (int_requests > INT_ENABLE) { /* process interrupt */ }
 ```
 
 Setting or clearing device flags directly sets or clears the
@@ -471,11 +445,11 @@ appropriate interrupt request flag:
 At a slightly higher complexity, interrupt requests do not correspond
 directly to device flags but are based on masking the device flags
 with an enable (or disable) mask. There are now two parallel
-variables: device flags and interrupt enable mask. The fetch-phase
+variables: device flags and interrupt enable mask. The instruction fetch
 test is now:
 
 ```c
-if (int_enable && (dev_flags & int_enables)) { /*…process interrupt…*/ }
+if (int_enable && (dev_flags & int_enables)) { /* process interrupt */ }
 ```
 
 As a next step, the VM may keep a summary interrupt request variable,
@@ -487,20 +461,19 @@ enable/disable:
 /*disable:*/ int_requests = device_flags & ~int_disables;
 ```
 
-This simplifies the fetch phase test slightly.
+This simplifies the instruction fetch test slightly.
 
 At yet higher complexity, the interrupt system may be too complex or
-too large to evaluate during the fetch-phase. In this case, an
-interrupt pending flag is created, and it is evaluated by subroutine
-call whenever a change could occur (start of execution, I/O
-instruction issued, device time out occurs). This makes fetch-phase
-evaluation simple and isolates interrupt evaluation to a common
-subroutine.
+too large to evaluate during instruction fetch. In this case, an
+interrupt pending flag is created, and it is evaluated by routine call
+whenever a change could occur (start of execution, I/O instruction
+issued, device times out). This makes instruction fetch evaluation
+simple and isolates interrupt evaluation to a common routine.
 
 If required for interrupt processing, the highest priority
 interrupting device can be determined by scanning the interrupt
 request variable from high priority to low until a set bit is
-found. The bit position can then be back-mapped through a table to
+found. The bit position can then be mapped back through a table to
 determine the address or interrupt vector of the interrupting device.
 
 ### I/O Dispatching
@@ -531,8 +504,8 @@ peripheral simulator.
 ### Instruction Execution
 
 Instruction execution is the responsibility of VM subroutine
-`sim_instr`. It is called from SCP as a result of a RUN, GO,
-CONT, or BOOT command. It begins executing instructions at the
+`sim_instr()`. It is called from SCP as a result of a `RUN`, `GO`,
+`CONT`, or `BOOT` command. It begins executing instructions at the
 current PC (`sim_PC` points to its register description block) and
 continues until halted by an error or an external event.
 
@@ -558,13 +531,16 @@ Within this loop, the usual order of events is:
 
 - If the event timer `sim_interval` has reached zero, process any
   timed events. This is done by SCP subroutine
-  `sim_process_event`. Because this is the polling mechanism for
-  user-generated processor halts (^E), errors must be recognized
-  immediately:
+  `sim_process_event()`. Because this routine can return a simulator
+  stop condition, including one requested from the user interface,
+  errors must be recognized immediately:
 
 ```c
 if (sim_interval <= 0) {
-    if (reason = sim_process_event ()) break; }
+    if ((reason = sim_process_event()) != SCPE_OK) {
+        break;
+    }
+}
 ```
 
 - Check for outstanding interrupts and process if required.
@@ -574,8 +550,8 @@ if (sim_interval <= 0) {
 
 - Check for an instruction breakpoint. SCP has a comprehensive
   breakpoint facility. It allows a VM to define many different kinds
-  of breakpoints. The VM checks for execution (type E) breakpoints
-  during instruction fetch.
+  of breakpoints. Execution breakpoints are commonly tested during
+  instruction fetch.
 
 - Fetch the next instruction, increment the PC, optionally decode the
   address, and dispatch (via a switch statement) for execution.
@@ -619,14 +595,15 @@ multi-unit device, all units are the same, and the device performs
 similar operations on all of them, depending on which one has been
 selected by the program being simulated.
 
-(Note: SIMH, like MIMIC, restricts registers to devices. Replicated
-registers, for example, disk drive current state, are handled via
-register arrays.)
+(Note: ZIMH inherited from SIMH and MIMIC the restriction that
+registers belong to devices. Replicated registers, for example, disk
+drive current state, are handled via register arrays.)
 
-For each structural level, SIMH defines, and the VM must supply, a
+For each structural level, ZIMH defines, and the VM must supply, a
 corresponding data structure. `DEVICE` structures correspond to
 devices, `REG` structures to registers, and `UNIT` structures to
-units. These structures are described in detail in section 4.
+units. These structures are described in detail in
+[Data Structures](#data-structures).
 
 The primary functions of a peripheral are:
 
@@ -674,10 +651,17 @@ For an externally timed device, there is no portable mechanism by
 which a VM can be notified of an external event (for example, a key
 stroke). Accordingly, all current VMs poll for keyboard input, thus
 converting the externally timed keyboard to a pseudo-internally timed
-device. A more general restriction is that SIMH is
-single-threaded. Threaded operations must be done by polling using the
-unit timing mechanism, either with real units or fake units created
-expressly for polling.
+device.
+
+The important point is that external host events are not delivered
+directly into the simulated CPU as asynchronous callbacks. A device
+model normally schedules a `UNIT` service routine to run later, or
+schedules a polling service routine that periodically checks for host
+input. That service routine then updates the simulated device state,
+sets completion flags, and requests interrupts as appropriate.
+Runtime support code may use helper threads internally, but the VM
+should still expose those results to the simulated machine through
+the normal polling or `UNIT` service path.
 
 SCP provides the supporting routines for device timing. SCP maintains
 a list of units (called active units) that are in the process of
@@ -687,13 +671,13 @@ checking for timed-out units and executing a VM-specified action when
 a time-out occurs.
 
 Device timing is done with the `UNIT` structure, described in
-section 4. To set up a timed operation, the peripheral calculates a
-waiting period for a unit and places that unit on the active
-queue. The CPU counts down the waiting period. When the waiting period
-has expired, `sim_process_event` removes the unit from the active
-queue and calls a device subroutine. A device may also cancel an
-outstanding timed operation and query the state of the queue. The
-timing subroutines are:
+[UNIT Structure](#unit-structure). To set up a timed operation, the
+peripheral calculates a waiting period for a unit and places that unit
+on the active queue. The CPU counts down the waiting period. When the
+waiting period has expired, `sim_process_event()` removes the unit
+from the active queue and calls a device subroutine. A device may also
+cancel an outstanding timed operation and query the state of the
+queue. The timing subroutines are:
 
 - `t_stat sim_activate(UNIT *uptr, int32_t wait)`. This routine places
   the specified unit on the active queue with the specified waiting
@@ -707,31 +691,39 @@ timing subroutines are:
   an error. If the unit is already active, the specified waiting
   period overrides the currently pending waiting period.
 
+- `t_stat sim_activate_notbefore(UNIT *uptr, int32_t rtime)`. This
+  routine places the specified unit on the active queue so that it
+  runs no earlier than the specified simulator time, normally computed
+  from `sim_grtime()`. If the unit is already active, the specified
+  time overrides the currently pending waiting period.
+
 - `t_stat sim_activate_after(UNIT *uptr, uint32_t usec_delay)`. This
   routine places the specified unit on the active queue with the
   specified delay based on the simulator’s calibrated clock. The
-  specified delay must be greater than 0 usecs. If the unit is already
-  active, the active queue is not changed, and no error occurs.
+  specified delay must be greater than 0 microseconds. If the unit is
+  already active, the active queue is not changed, and no error
+  occurs.
 
 - `t_stat sim_activate_after_d(UNIT *uptr, double usec_delay)`. This
   routine places the specified unit on the active queue with the
   specified delay based on the simulator’s calibrated clock. The
-  specified delay must be greater than 0 usecs. If the unit is already
-  active, the active queue is not changed, and no error occurs.
+  specified delay must be greater than 0 microseconds. If the unit is
+  already active, the active queue is not changed, and no error
+  occurs.
 
 - `t_stat sim_activate_after_abs(UNIT *uptr, uint32_t usec_delay)`. This
   routine places the specified unit on the active queue with the
   specified delay based on the simulator’s calibrated clock. The
-  specified delay must be greater than 0 usecs. If the unit is already
-  active, the specified delay overrides the currently pending waiting
-  period.
+  specified delay must be greater than 0 microseconds. If the unit is
+  already active, the specified delay overrides the currently pending
+  waiting period.
 
 - `t_stat sim_activate_after_abs_d(UNIT *uptr, double usec_delay)`.
   This routine places the specified unit on the active queue with the
   specified delay based on the simulator’s calibrated clock. The
-  specified delay must be greater than 0 usecs. If the unit is already
-  active, the specified delay overrides the currently pending waiting
-  period.
+  specified delay must be greater than 0 microseconds. If the unit is
+  already active, the specified delay overrides the currently pending
+  waiting period.
 
 - `t_stat sim_cancel(UNIT *uptr)`. This routine removes the specified
   unit from the active queue. If the unit is not on the queue, no
@@ -756,7 +748,7 @@ timing subroutines are:
 - `int32_t sim_qcount(void)`. This routine returns the number of entries
   on the clock queue.
 
-- `t_stat sim_process_event(void)`. This routine removes all timed out
+- `t_stat sim_process_event(void)`. This routine removes timed-out
   units from the active queue and calls the appropriate device
   subroutine to service the time-out.
 
@@ -764,7 +756,8 @@ timing subroutines are:
   first unit on the event queue that is scheduled to
   happen. `sim_inst` counts down this value (usually by 1 for each
   instruction executed). If there are no timed events outstanding, SCP
-  counts down a “null interval” of 10,000 time units.
+  counts down a “null interval” defined by `NOQUEUE_WAIT` (currently
+  defined as 1,000,000 time units).
 
 ### Clock Calibration
 
@@ -773,23 +766,33 @@ approximate. Devices, such as real-time clocks, which track wall time
 will be inaccurate. SCP provides routines to synchronize multiple
 simulated clocks (to a maximum of 8) to wall time.
 
+A simulated clock is identified by a timer number. A clock normally
+has a `UNIT` whose service routine performs the work for each tick,
+such as setting a clock flag or requesting an interrupt. The simulator
+also supplies the expected tick rate, in ticks per second. Calibration
+uses host wall time to adjust the simulator-time delay returned for
+future ticks, so the simulated clock stays close to real time instead
+of drifting with host execution speed.
+
 - `int32_t sim_rtcn_init_unit_ticks(UNIT *uptr, int32_t clock_interval,
   int32_t clk, int32_t ticksper)`. This routine initializes the clock
   calibration mechanism for simulated clock `clk` and `uptr`
   identifies which unit’s service routine performs clock tick
-  activities. The argument `clock_interval` is returned as the
-  result. The ticksper argument specifies the clock ticks per second.
+  activities. The `clock_interval` argument is the initial
+  simulator-time delay to use before calibration has enough information
+  to adjust it, and is returned as the result. The `ticksper` argument
+  specifies the expected clock ticks per second.
 
-- `int32_t sim_rtcn_init_unit(UNIT *uptr, int32_t clock_interval, int32_t
-  clk, int32_t ticksper)`. This routine initializes the clock
-  calibration mechanism for simulated clock `clk` and `uptr`
-  identifies which unit’s service routine performs clock tick
-  activities. The argument `clock_interval` is returned as the result.
+- `int32_t sim_rtcn_init_unit(UNIT *uptr, int32_t clock_interval,
+  int32_t clk)`. This routine initializes the clock calibration
+  mechanism for simulated clock `clk` and `uptr` identifies which
+  unit’s service routine performs clock tick activities. The
+  `clock_interval` argument is returned as the result.
 
-- `int32_t sim_rtcn_calb(int32_t tickspersecond, int32_t clk)`. This routine
-  calibrates simulated clock `clk`. The argument is the number of
-  clock ticks expected per second. The return value is the calibrated
-  interval for the next tick.
+- `int32_t sim_rtcn_calb(uint32_t tickspersecond, int32_t clk)`. This
+  routine calibrates simulated clock `clk`. The argument is the number
+  of clock ticks expected per second. The return value is the
+  calibrated interval for the next tick.
 
 - `int32_t sim_rtcn_calb_tick(int32_t clk)`. This routine calibrates
   simulated clock `clk`. The return value is the calibrated interval
@@ -802,12 +805,14 @@ resolution or minimum sleep times. In order to provide accurate time
 services, a simulator should notify the timing services that the
 simulated system has digested a previously generated clock tick.
 
-- `t_stat sim_rtcn_tick_ack(int32_t delay, int32_t clk)`. This routine
+- `t_stat sim_rtcn_tick_ack(uint32_t time, int32_t clk)`. This routine
   informs the timing subsystem that the most recent clock tick for the
   simulated clock has been digested by the simulated system and the
-  timing subsystem can potentially schedule a catchup ticks if
-  necessary. If a catchup clock tick is necessary, the `delay` value
-  indicates how soon the tick can be generated.
+  timing subsystem can potentially schedule a catch-up tick if
+  necessary. A catch-up tick is an extra tick generated to keep the
+  simulated clock from falling behind wall time. If a catch-up clock
+  tick is necessary, the `time` value tells the timing subsystem how
+  soon that extra tick can be generated.
 
 The VM must call `sim_rtcn_init_unit_ticks` for each simulated clock
 in two places: in the reset routine of the `DEVICE` which implements a
@@ -820,9 +825,11 @@ actual interval delay when the real-time clock is serviced:
 /* clock start */
 
 if (!sim_is_active(&clk_unit))
-    sim_activate(&clk_unit, sim_rtcn_init_unit_ticks (&clk_unit, clk_delay, clkno, clk_ticks_per_second));
+    sim_activate(&clk_unit,
+        sim_rtcn_init_unit_ticks(&clk_unit, clk_delay, clkno,
+            clk_ticks_per_second));
 
-/* etc. *
+/* etc. */
 
 /* clock service */
 
@@ -834,36 +841,35 @@ sim_activate_after(&clk_unit, 1000000/clk_ticks_per_second);
 sim_rtcn_tick_ack(20, clkno);
 ```
 
-The real-time clock is usually simulated clock 0; other clocks are
-used for polling asynchronous multiplexers or intervals timers.
+Many simulators use timer 0 for the primary real-time clock, but this
+is a convention rather than a requirement. Additional timer numbers are
+used for polling, interval timers, or other clocks.
 
 The underlying timer services will automatically run a calibrated
 clock whenever the simulator doesn’t have one registered and running
 or when the registered timer is running too fast for accurate clock
-calibration.. This will allow the `sim_activate_after` API to provide
+calibration. This will allow the `sim_activate_after` API to provide
 proper wall clock relative timing delays.
 
 Some simulated systems use programmatic interval timers to implement
-clock ticks. If a simulated system or simulated operating system uses
-a constant interval to provide the system clock ticks, then clock
-device is a candidate to be a calibrated timer. If the simulated
-operating system dynamically changes the programmatic interval more
-than once, then such a device is not a calibrated timer, but it
-certainly should use `sim_activate_after` and `sim_activate_time` to
-implement the programmatic interval delays.
+clock ticks. If the simulated operating system uses a constant interval
+for those ticks, the clock device can be a calibrated timer. If the
+simulated operating system repeatedly changes the interval, the device
+is not a good calibrated-timer source. It should instead use
+`sim_activate_after` and `sim_activate_time` to schedule and report the
+programmatic interval delays.
 
 ### Pre-Calibration
 
-Some simulator situations expect that instruction execution rates be
-immediately close to the rate that the host system is capable of
-executing instructions at and for wall clock delays to be immediately
-precise. The simulator framework provides a means of pre-calibrating
-the instruction execution rate. A sequence of three to four
-instructions that run in a tight loop can be used at simulator startup
-time to compute the execution rate.
+Some simulator situations need wall clock delays to be reasonably close
+before normal clock calibration has had time to converge. The simulator
+framework can pre-calibrate the instruction execution rate by running a
+short instruction loop at simulator startup.
 
-The following line in and around the CPU device reset routine will
-serve to facilitate the precalibration:
+Pre-calibration needs a short instruction loop that can run before the
+simulated operating system is booted. The following example, set in the
+CPU device reset routine, uses a small VAX instruction loop; each
+simulator needs equivalent commands for its own instruction set.
 
 ```c
 static const char *vax_clock_precalibrate_commands[] = {
@@ -888,12 +894,13 @@ Once pre-calibration has been done, some wall clock delays on some
 actual instruction execution. To accommodate for this the simulator
 may provide an initial expectation of how fast it can execute the
 pre-calibration instruction loop. This estimate can be specified by
-the simulator in the CPU device reset routine. An appropriate value
-for the `sim_vm_initial_ips` is best determined by comparing the VAX
-simulator pre-calibrated result (displayed in the SHOW CLOCK command)
-to your simulator’s pre-calibrated value. If your value is
-approximately N times the VAX’s value, then `sim_vm_initial_ips`
-should be set to N times `SIM_INITIAL_IPS`.
+the simulator in the CPU device reset routine. The VAX simulator is a
+good reference for how to create this estimate. An appropriate value for
+`sim_vm_initial_ips` is best determined by comparing the VAX
+pre-calibrated result, displayed by the `SHOW CLOCK` command, to your
+simulator’s pre-calibrated value. If your value is approximately N
+times the VAX’s value, then `sim_vm_initial_ips` should be set to N
+times `SIM_INITIAL_IPS`.
 
 ### Idling
 
@@ -901,24 +908,23 @@ Idling is a way of pausing simulation when no real work is happening,
 without losing clock calibration. The VM must detect when it is idle;
 it can then inform the host of this situation by calling `sim_idle`:
 
-- `bool sim_idle(int32_t clk, int tick_decrement)` – attempt to idle
+- `bool sim_idle(uint32_t tmr, int sin_cyc)` – attempt to idle
   the VM until the next scheduled I/O event, using simulated clock
-  `clk` as the time base, and decrement `sim_interval` by an
-  appropriate number of cycles. If a calibrated timer is not
-  available, or the time until the next event is less than 1ms,
-  decrement `sim_interval` by `tick_decrement`; otherwise, leave
+  `tmr` as the time base, and decrement `sim_interval` by an
+  appropriate number of cycles. If idling is disabled, a calibrated
+  timer is not available, or host timing conditions do not permit a
+  useful sleep, decrement `sim_interval` by `sin_cyc`; otherwise, leave
   `sim_interval` unchanged.
 
 `sim_idle` returns `true` if the VM actually idled, `false` if it did not.
 
 In order for idling to be well behaved on the host system, simulated
-devices which poll for input (console and terminal multiplexors are
-examples), the polling that these devices perform should be done at
-the same time as when the simulator will unavoidably be executing
-instructions. The most common time this happens is when clock tick
-interrupts are generated. As such, these devices should schedule their
-polling activities to be aligned with the clock ticks which are
-happening anyway or some multiple of the clock tick value.
+devices which poll for input, such as consoles and terminal
+multiplexors, should do that polling when the simulator will already
+be executing instructions. The most common time this happens is when
+clock tick interrupts are generated. As such, these devices should
+schedule their polling activities to align with those clock ticks, or
+with some multiple of the clock tick interval.
 
 - `t_stat sim_clock_coschedule(UNIT *uptr, int32_t interval)` – This
   routine places the specified unit on the active queue behind the
@@ -934,21 +940,21 @@ happening anyway or some multiple of the clock tick value.
   cause an error. If the unit is already active, the specified waiting
   period overrides the currently pending waiting period.
 
-- `t_stat sim_clock_coschedule_tmr(UNIT *uptr, int32_t tmr, int32_t ticks)` –
-  This routine places the specified unit on the active queue
-  behind the specified timer with the specified number of clock ticks
-  between invocations. A tick count of 0 is legal; negative ticks
-  cause an error. If the unit is already active, the active queue is
-  not changed, and no error occurs. Events scheduled for 0 or 1 tick
+- `t_stat sim_clock_coschedule_tmr(UNIT *uptr, int32_t tmr,
+  int32_t ticks)` – This routine places the specified unit on the
+  active queue behind the specified timer with the specified number of
+  clock ticks between invocations. A tick count of 0 is legal; negative
+  ticks cause an error. If the unit is already active, the active queue
+  is not changed, and no error occurs. Events scheduled for 0 or 1 tick
   will fire on the next clock tick.
 
-- `t_stat sim_clock_coschedule_tmr_abs(UNIT *uptr, int32_t tmr, int32_t ticks)` –
-  This routine places the specified unit on the active queue behind
-  the specified timer with the specified number of clock ticks between
-  invocations. A tick count of 0 is legal; negative ticks cause an
-  error. If the unit is already active, the specified waiting period
-  overrides the currently pending waiting period. Events scheduled for
-  0 or 1 tick will fire on the next clock tick.
+- `t_stat sim_clock_coschedule_tmr_abs(UNIT *uptr, int32_t tmr,
+  int32_t ticks)` – This routine places the specified unit on the active
+  queue behind the specified timer with the specified number of clock
+  ticks between invocations. A tick count of 0 is legal; negative ticks
+  cause an error. If the unit is already active, the specified waiting
+  period overrides the currently pending waiting period. Events
+  scheduled for 0 or 1 tick will fire on the next clock tick.
 
 Because idling and throttling are mutually exclusive, the VM must
 inform SCP when idling is turned on or off:
@@ -965,12 +971,13 @@ inform SCP when idling is turned on or off:
 ### Data I/O
 
 For most devices, timing is half the battle (for clocks it is the
-entire war); the other half is I/O. Some devices are simulated on real
-hardware (for example, Ethernet controllers). Most I/O devices are
-simulated as files on the host file system in little-endian
+entire war); the other half is I/O. A few simulated devices, notably
+Ethernet controllers, exchange data with host networking interfaces or
+network backends rather than with an attached host file. Most other I/O
+devices are simulated as files on the host file system in little-endian
 format. SCP provides facilities for associating files with units
-(ATTACH command) and for reading and writing data from and to devices
-in a endian- and size-independent way.
+(`ATTACH` command) and for reading and writing device data in a way
+that is independent of host byte order and host C type sizes.
 
 For most devices, the VM designer does not have to be concerned about
 the formatting of simulated device files. I/O occurs in 1, 2, 4, or 8
@@ -984,10 +991,12 @@ corrects for byte ordering. Specific issues:
   0 of cylinder 0 to the last sector on the disk. This allows easy
   transcription of real disks to files usable by the simulator.
 
-- Magtapes, by convention, use a record based format. Each record
-  consists of a leading 32-bit record length, the record data (padded
-  with a byte of 0 if the record length is odd), and a trailing 32-bit
-  record length. File marks are recorded as one record length of 0.
+- Magtapes, by convention, use record based formats. The classic SIMH
+  tape format stores each record as a leading 32-bit record length, the
+  record data (padded with a byte of 0 if the record length is odd),
+  and a trailing 32-bit record length. File marks are recorded as a
+  single 32-bit record-length marker of 0. ZIMH can also support
+  additional tape formats.
 
 - Cards have 12 bits of data per column, but the data is most
   conveniently viewed as (ASCII) characters. Column binary can be
@@ -1005,10 +1014,10 @@ devices are fixed capacity.
 
 #### Reading and Writing Data
 
-The ATTACH command creates an association between a host file and an
-I/O unit. For non-buffered devices, ATTACH stores the file pointer for
+The `ATTACH` command creates an association between a host file and an
+I/O unit. For non-buffered devices, `ATTACH` stores the file pointer for
 the host file in the `fileref` field of the `UNIT` structure. For
-buffered devices, ATTACH reads the entire host file into a buffer
+buffered devices, `ATTACH` reads the entire host file into a buffer
 pointed to by the `filebuf` field of the `UNIT` structure. If unit flag
 `UNIT_MUSTBUF` is set, the buffer is allocated dynamically; otherwise,
 it must be statically allocated.
@@ -1023,19 +1032,18 @@ from the allocated buffer. The device code must maintain the number
 structure. For both the non-buffered and buffered cases, the device
 must perform all address calculations and positioning operations.
 
-SIMH provides capabilities to access files \>2GB (the `int32_t` position
-limit). If a VM is compiled with flags `USE_INT64` and `USE_ADDR64`
-defined, then `t_addr` is defined as `uint64_t` rather than
-`uint32_t`. Routine `sim_fseek` allows simulated devices to perform random
-access in large files:
+ZIMH provides capabilities to access files larger than 2GB. If a VM is
+compiled with flags `USE_INT64` and `USE_ADDR64` defined, then `t_addr`
+is defined as `uint64_t` rather than `uint32_t`. Routine `sim_fseeko`
+uses `t_offset` for host file offsets, and routine `sim_fseek` allows
+simulated devices to perform random access using a `t_addr` position:
 
 - `int sim_fseek(FILE *handle, t_addr position, int where)` -
-  sim_fseek is identical to standard C `fseek`, with two exceptions:
-  `where = SEEK_END` is not supported, and the position argument can be
-  64b wide.
+  `sim_fseek` is identical to standard C `fseek`, except that the
+  position argument can be a 64 bit integer.
 
-The DETACH command breaks the association between a host file and an
-I/O unit. For buffered devices, DETACH writes the allocated buffer
+The `DETACH` command breaks the association between a host file and an
+I/O unit. For buffered devices, `DETACH` writes the allocated buffer
 back to the host file.
 
 #### Console I/O
@@ -1057,14 +1065,14 @@ SCP provides three routines for console I/O.
   specified ASCII character to the console. If the console is attached
   to a Telnet connection, and the connection is lost, the routine
   returns `SCPE_LOST`; if the connection is backlogged, the routine
-  returns `SCPE_STALL` and the output should retried at a later time.
+  returns `SCPE_STALL` and the output should be retried at a later time.
 
 #### Simulators for computers without a console port
 
-If a computer being simulated doesn’t have a console port SCP will
-call `sim_poll_kbd` periodically to detect when a user types ^E (Control
-E) in the session running the simulator and they will be returned to
-the `sim>` prompt.
+If a computer being simulated doesn’t have a console port, SCP will
+call `sim_poll_kbd()` periodically to detect when a user types ^E
+(Control-E) in the session running the simulator. This returns the user
+to the simulator command interface, the `sim>` prompt.
 
 # Data Structures
 
@@ -2174,7 +2182,7 @@ If the VM responds to the `LOAD` (or `DUMP`) command, the load routine
 sequence is:
 
 - `t_stat sim_load(FILE *fptr, const char *buf, const char *fnam,
-  int flag)` - If `flag == 0`, load data from binary file `fptr`. If
+  int flag)` – If `flag == 0`, load data from binary file `fptr`. If
   `flag == 1`, dump data to binary file `fptr`. For either command,
   `buf` contains any VM-specific arguments, and `fnam` contains the
   file name.
