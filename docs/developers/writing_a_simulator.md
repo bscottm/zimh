@@ -1076,18 +1076,18 @@ to the simulator command interface, the `sim>` prompt.
 
 # Data Structures
 
-The devices, units, and registers that make up a VM are formally
-described through a set of data structures which interface the VM to
-the control portions of SCP. The devices themselves are pointed to by
-the device list array `sim_devices[]`. Within a device, both units
-and registers are allocated contiguously as arrays of structures. In
-addition, many devices allow the user to set or clear options via a
-modifications table.
+Each VM describes its simulated devices to SCP with `DEVICE`, `UNIT`,
+and `REG` structures. The top-level list is the `sim_devices[]` array.
+Each `DEVICE` entry then points to the units, registers, command
+modifiers, and callback routines that SCP uses to control and inspect
+that device. Within a device, both units and registers are allocated
+contiguously as arrays of structures. In addition, many devices allow
+the user to set or clear options via a modifications table.
 
 Note that a device must always have at least one unit, even if that
 unit is not needed for simulation purposes. A device that does not
-need registers need not provide a register table, instead the
-registers field is set to `NULL`.
+need registers does not provide a register table; instead, the
+`registers` field is set to `NULL`.
 
 Device registers serve two purposes:
 
@@ -1101,22 +1101,28 @@ Device registers serve two purposes:
    simulator) will be able to proceed without any information being
    missing.
 
-A device unit serves two fundamental purposes in a simulator:
+A device `UNIT` is the object SCP can schedule on the event queue.
+When device code calls one of the `sim_activate` APIs, it schedules a
+particular `UNIT`; when the delay expires, SCP calls that `UNIT`'s
+service routine. This is how devices arrange for work to happen later
+in simulated time.
 
-1. It acts as an entity which can generate events which are handled in
-   the simulated instruction stream (via one of the `sim_activate` APIs)
-2. It provides a place which holds an open file pointer for simulated
-   devices which have content bound to file contents (via `ATTACH`
-   commands).
+A `UNIT` is also where SCP keeps per-unit attachment state. For a disk
+drive, tape drive, paper tape reader, or similar device, the `UNIT`
+holds the host file name, open file pointer, buffering state, current
+file position, and related state used by `ATTACH`, `DETACH`, `SAVE`,
+and `RESTORE`.
 
-For example: A `UNIT` can be mapped to real units in a simulated device
-(i.e. disk drives), or it might serve merely to perform timing related
-activities, or both of these might be present. The `pdp11_rq`
-simulation has a combination of both of these. There are four units
-which map one to one directly to simulated disk drives, and there are
-two additional units. One is used to time various things and one is
-used to provide instruction delays while walking through the MSCP
-initialization and command processing sequence.
+For example, a `UNIT` can correspond to a simulated physical unit, such
+as a disk drive, or it can exist only to perform timing-related work.
+
+Some devices use both patterns. The `pdp11_rq` simulator emulates an
+MSCP disk controller. Four `UNIT`s correspond directly to simulated
+disk drives; they hold the per-drive state and attachment state. Two
+additional `UNIT`s do not represent drives. Instead, they schedule
+internal controller work: one times device activity, and one provides
+instruction delays while the controller walks through MSCP
+initialization and command processing.
 
 ## DEVICE Structure
 
@@ -1124,32 +1130,44 @@ Devices are defined by the `DEVICE` structure (`typedef DEVICE`):
 
 ```c
 struct DEVICE {
-    const char    *name;              /* name */
-    struct UNIT   *units;             /* units */
-    struct REG    *registers;         /* registers */
-    struct MTAB   *modifiers;         /* modifiers */
-    int32_t         numunits;           /* #units */
-    uint32_t        aradix;             /* address radix */
-    uint32_t        awidth;             /* address width */
-    uint32_t        aincr;              /* addr increment */
-    uint32_t        dradix;             /* data radix */
-    uint32_t        dwidth;             /* data width */
-    t_stat        (*examine)();       /* examine routine */
-    t_stat        (*deposit)();       /* deposit routine */
-    t_stat        (*reset)();         /* reset routine */
-    t_stat        (*boot)();          /* boot routine */
-    t_stat        (*attach)();        /* attach routine */
-    t_stat        (*detach)();        /* detach routine */
-    void          *ctxt;              /* context */
-    uint32_t        flags;              /* flags */
-    uint32_t        dctrl;              /* debug control flags */
-    struct DEBTAB *debflags;          /* debug flag names */
-    t_stat        (*msize)();         /* memory size change */
-    char          *lname;             /* logical name */
-    t_stat        (*help)();          /* help routine */
-    t_stat        (*attach_help)();   /* attach help routine */
-    void          *help_ctxt;         /* help context */
-    const char    *(*description)();  /* device description */
+    const char *name;                    /* name */
+    UNIT *units;                         /* units */
+    REG *registers;                      /* registers */
+    MTAB *modifiers;                     /* modifiers */
+    uint32_t numunits;                   /* #units */
+    uint32_t aradix;                     /* address radix */
+    uint32_t awidth;                     /* address width */
+    uint32_t aincr;                      /* addr increment */
+    uint32_t dradix;                     /* data radix */
+    uint32_t dwidth;                     /* data width */
+    t_stat (*examine)(t_value *v, t_addr a, UNIT *up, int32_t sw);
+                                          /* examine routine */
+    t_stat (*deposit)(t_value v, t_addr a, UNIT *up, int32_t sw);
+                                          /* deposit routine */
+    t_stat (*reset)(DEVICE *dp);         /* reset routine */
+    t_stat (*boot)(int32_t u, DEVICE *dp);
+                                          /* boot routine */
+    t_stat (*attach)(UNIT *up, const char *cp);
+                                          /* attach routine */
+    t_stat (*detach)(UNIT *up);          /* detach routine */
+    void *ctxt;                          /* context */
+    uint32_t flags;                      /* flags */
+    uint32_t dctrl;                      /* debug control flags */
+    DEBTAB *debflags;                    /* debug flag names */
+    t_stat (*msize)(UNIT *up, int32_t v, const char *cp, void *dp);
+                                          /* memory size change */
+    char *lname;                         /* logical name */
+    t_stat (*help)(FILE *st, DEVICE *dptr, UNIT *uptr,
+                   int32_t flag, const char *cptr);
+                                          /* help routine */
+    t_stat (*attach_help)(FILE *st, DEVICE *dptr, UNIT *uptr,
+                          int32_t flag, const char *cptr);
+                                          /* attach help routine */
+    void *help_ctx;                      /* help context */
+    const char *(*description)(DEVICE *dptr);
+                                          /* device description */
+    BRKTYPTAB *brk_types;                /* breakpoint types */
+    void *type_ctx;                      /* device type/library context */
 };
 ```
 
@@ -1192,15 +1210,17 @@ The fields are the following:
 - `help` address of help routine, or `NULL` if none is required.
 - `attach_help` address of attach help routine, or `NULL` if none is
   required.
-- `help_ctx` address of device specific context which might be useful
+- `help_ctx` address of device-specific context that may be useful
   while displaying help for the current device, or `NULL` if none is
   required.
 - `description` address of device description function, or `NULL` if
-  not implemented. The function returns a string which displays the a
-  description of the device being simulated. This is part of the
-  output of the "SHOW FEATURES" command. It also is available (when
-  provided) for dynamic insertion in the information produced by the
-  `DEVICE` help routine.
+  not implemented. The function returns the short device description
+  shown by the `SHOW FEATURES` command. When provided, the help system
+  can also insert this text into the help output for the `DEVICE`.
+- `brk_types` pointer to the device breakpoint type table, or `NULL`
+  if the device does not define breakpoint types.
+- `type_ctx` address of device-type or library-specific context, or
+  `NULL` if none is required.
 
 ### Awidth and Aincr
 
@@ -1211,7 +1231,7 @@ many addressing units comprise the fundamental “word”. For example, on
 the PDP-11, `aincr` is 2 (2 bytes per word).
 
 If `aincr` is greater than 1, SCP assumes that data is naturally
-aligned on addresses that are multiples of `aincr`. VM’s that support
+aligned on addresses that are multiples of `aincr`. VMs that support
 arbitrary byte alignment of data (like the VAX) can follow one of two
 strategies:
 
@@ -1229,7 +1249,7 @@ routines.
 
 ### Device Flags
 
-The `flags` field contains indicators of current device status. SIMH
+The `flags` field contains indicators of current device status. ZIMH
 defines several flags:
 
 | flag name      | meaning if set                                             |
@@ -1252,6 +1272,7 @@ flags field:
 | `DEV_DISK`    | device uses sim_disk library attach  |
 | `DEV_TAPE`    | device uses sim_tape library attach  |
 | `DEV_MUX`     | device uses sim_tmxr library attach  |
+| `DEV_CARD`    | device uses sim_card library attach  |
 | `DEV_ETHER`   | device uses sim_ether library attach |
 | `DEV_DISPLAY` | device uses sim_video library attach |
 
@@ -1277,7 +1298,7 @@ all-multicast mode, and multicast hash filtering.
 ### Context
 
 The field contains a pointer to a VM-specific device context table, if
-required. SIMH never accesses this field. The context field allows
+required. SCP does not interpret this field. The context field allows
 VM-specific code to walk VM-specific data structures from the
 `sim_devices` root pointer.
 
@@ -1289,15 +1310,15 @@ which maintain their data sets as private state (for example, the CPU)
 must supply special examine and deposit routines. The calling
 sequences are:
 
-- `t_stat examine_routine(t_val *eval_array, t_addr addr, UNIT
+- `t_stat examine_routine(t_value *eval_array, t_addr addr, UNIT
   *uptr, int32_t switches)` – Copy `sim_emax` consecutive addresses for
-  unit `uptr`, starting at `addr`, into `eval_array`. The `switch`
-  variable has bit\<n\> set if the n’th letter was specified as a
+  unit `uptr`, starting at `addr`, into `eval_array`. The `switches`
+  variable has `bit<n>` set if the nth letter was specified as a
   switch to the examine command.
 
-- `t_stat deposit_routine(t_val value, t_addr addr, UNIT *uptr,
-  int32_t switches)` – Store the specified `value` in the specified
-  `addr` for unit `uptr`. The `switch` variable is the same as for the
+- `t_stat deposit_routine(t_value value, t_addr addr, UNIT *uptr,
+  int32_t switches)` – Store the specified `value` at the specified
+  `addr` for unit `uptr`. The `switches` variable is the same as for the
   examine routine.
 
 ### Reset Routine
@@ -1312,10 +1333,9 @@ A typical reset routine clears all device flags and cancels any
 outstanding timing operations. Switch `-p` (available via global
 variable `sim_switches`) specifies a reset to power-up state.
 
-The reset routine is a reasonable place to perform one time
-initialization activities specific to the device keeping a static
-variable indicating that the one time initialization has been
-performed.
+The reset routine is a reasonable place to perform one-time
+initialization activities specific to the device. A static variable can
+record that the one-time initialization has been performed.
 
 ### Boot Routine
 
@@ -1387,7 +1407,7 @@ the `capac` field in the unit structure. For some devices (like the
 VAX CPU), instantiating the maximum memory size would impose a
 significant resource burden if less memory was actually needed. These
 devices must provide a routine, the memory size change routine, for
-RESTORE to use if memory size must be changed:
+`RESTORE` to use if memory size must be changed:
 
 - `t_stat change_mem_size(UNIT *uptr, int32_t val, const char *cptr,
   void *desc)` – Change the capacity (memory size) of unit `uptr` to
@@ -1398,11 +1418,11 @@ RESTORE to use if memory size must be changed:
 ### Debug Controls
 
 Devices can support debug printouts. Debug printouts are controlled by
-the SET {NO}DEBUG command, which specifies where debug output should
-be printed; and by the SET \<device\> {NO}DEBUG command, which enables
+the `SET {NO}DEBUG` command, which specifies where debug output should
+be printed, and by the `SET <device> {NO}DEBUG` command, which enables
 or disables individual debug printouts.
 
-If a device supports debug printouts, device flag DEV_DEBUG must be
+If a device supports debug printouts, device flag `DEV_DEBUG` must be
 set. Field `dctrl` is used for the debug control flags. If a device
 supports only a single debug on/off flag, then the `debflags` field
 should be set to `NULL`. If a device supports multiple debug on/off
@@ -1413,8 +1433,8 @@ DEBTAB structure specifies a single debug flag:
 
 ```c
 struct DEBTAB {
-    const char name; /* flag name */
-    uint32_t mask; /* control bit */
+    const char *name; /* flag name */
+    uint32_t mask;    /* control bit */
     const char *desc; /* description */
 };
 ```
@@ -1431,21 +1451,19 @@ The array is terminated with a `NULL` entry.
 
 The use and definition of debug mask values is up to the particular
 simulator device. Some simulator support libraries define their own
-debug mask values that can be used to display various details about
-the internal activities of the respective library. Libraries defined
-debug masks a defined starting at the high bits in 32 bit the mask
-word, so device specific masks should start their mask definitions
-with the low bits to avoid unexpected debug output if the definitions
-collide.
+debug mask values that can be used to display internal library
+activity. Library debug masks are defined starting at the high bits of
+the 32 bit mask word, so device-specific masks should start at the low
+bits to avoid unexpected debug output if definitions collide.
 
-Simulator code can produce debug output by calling sim_debug which is
-declared (in header file `scp.h`):
+Simulator code can produce debug output by calling `sim_debug`, which
+is declared in header file `scp.h`:
 
 `void sim_debug(uint32_t dbits, DEVICE *dptr, const char *fmt, ...)`
 
-The dbits is a flag which matches a mask in a sim_debtab structure,
-and the the dptr is the `DEVICE` which has the corresponding dctl
-field.
+The `dbits` argument is a flag that matches a mask in the device's
+`DEBTAB` table, and `dptr` is the `DEVICE` whose `dctrl` field controls
+whether that debug output is enabled.
 
 Additionally support exists for displaying bit and bitfield
 values. Bit field values are defined using the `BITFIELD` structure and
@@ -1457,7 +1475,15 @@ the `BIT` macros to declare the bits and bitfields.
 | `BITNC`                  | Don't care Bit definition                  |
 | `BITF(nm, sz)`           | Bit Field definition                       |
 | `BITNCF(sz)`             | Don't care Bit Field definition            |
-| `BITF_*(nm, sz)`         | Bit Field definition with chosen display   |
+| `BITF_SIGNED(nm, sz)`    | Bit Field definition displayed as a signed decimal value |
+| `BITF_UNSIGNED(nm, sz)`  | Bit Field definition displayed as an unsigned decimal value |
+| `BITF_HEX2(nm, sz)`      | Bit Field definition displayed as two hexadecimal digits |
+| `BITF_HEX2P(nm, sz)`     | Bit Field definition displayed as `0x` plus two hexadecimal digits |
+| `BITF_HEX4P(nm, sz)`     | Bit Field definition displayed as `0x` plus four hexadecimal digits |
+| `BITF_QHEX2(nm, sz)`     | Bit Field definition displayed as quoted two-digit hexadecimal |
+| `BITF_QOCTAL(nm, sz)`    | Bit Field definition displayed as quoted octal |
+| `BITF_QUNSIGNED(nm, sz)` | Bit Field definition displayed as quoted unsigned decimal |
+| `BITF_QHEXP(nm, sz)`     | Bit Field definition displayed as quoted `0x` hexadecimal |
 | `BITFNAM(nm, sz, names)` | Bit Field definition with value-\>name map |
 | `ENDBITS`                |                                            |
 
@@ -1499,10 +1525,10 @@ void sim_debug_bits(uint32_t dbits, DEVICE *dptr, BITFIELD *bitdefs,
 
 A device declaration may specify a device type or class in the flags
 field by providing one of `DEV_DISK`, `DEV_TAPE`, `DEV_MUX`,
-`DEV_ETHER` or `DEV_DISPLAY` values when initializing the flags. The
-device type allows the SCP `HELP` command routine to provide some
-default help information for devices which don’t otherwise specify a
-device specific help routine or a attach_help routine.
+`DEV_CARD`, `DEV_ETHER` or `DEV_DISPLAY` values when initializing the
+flags. The device type allows the SCP `HELP` command routine to provide
+some default help information for devices which don’t otherwise specify
+a device-specific help routine or an `attach_help` routine.
 
 ### Help Routine
 
@@ -1527,35 +1553,62 @@ about the attach command for this device.
 
 ## UNIT Structure
 
-Units are allocated as contiguous array. Each unit is defined with a `UNIT` structure (`typedef UNIT`):
+Units are allocated as a contiguous array. Each unit is defined with a
+`UNIT` structure (`typedef UNIT`):
 
 ```c
 struct UNIT {
-    struct UNIT *next; /* next active */
-    t_stat (*action)(); /* action routine */
-    char *filename; /* open file name */
-    FILE *fileref; /* file reference */
-    void *filebuf; /* memory buffer */
-    uint32_t hwmark; /* high water mark */
-    int32_t time; /* time out */
-    uint32_t flags; /* flags */
-    uint32_t dynflags; /* dynamic flags */
-    t_addr capac; /* capacity */
-    t_addr pos; /* file position */
-    void (*io_flush)(); /* i/o flush routine */
-    uint32_t iostarttime; /* i/o start time */
-    int32_t buf; /* buffer */
-    int32_t wait; /* wait */
-    int32_t u3; /* device specific */
-    int32_t u4; /* device specific */
-    int32_t u5; /* device specific */
-    int32_t u6; /* device specific */
-    void *up7; /* device specific */
-    void *up8; /* device specific */
+    UNIT *next;                         /* next active */
+    t_stat (*action)(UNIT *up);         /* action routine */
+    char *filename;                     /* open file name */
+    FILE *fileref;                      /* file reference */
+    void *filebuf;                      /* memory buffer */
+    void *filebuf2;                     /* copy of initial memory buffer */
+    uint32_t hwmark;                    /* high water mark */
+    int32_t time;                       /* time out */
+    uint32_t flags;                     /* flags */
+    uint32_t dynflags;                  /* dynamic flags */
+    t_addr capac;                       /* capacity */
+    t_addr pos;                         /* file position */
+    void (*io_flush)(UNIT *up);         /* I/O flush routine */
+    uint32_t iostarttime;               /* I/O start time */
+    int32_t buf;                        /* buffer */
+    int32_t wait;                       /* wait */
+    int32_t u3;                         /* device specific */
+    int32_t u4;                         /* device specific */
+    int32_t u5;                         /* device specific */
+    int32_t u6;                         /* device specific */
+    void *up7;                          /* device specific */
+    void *up8;                          /* device specific */
+    uint16_t us9;                       /* device specific */
+    uint16_t us10;                      /* device specific */
+    uint32_t disk_type;                 /* disk specific info */
+    void *tmxr;                         /* TMXR linkage */
+    size_t recsize;                     /* tape specific info */
+    t_addr tape_eom;                    /* tape specific info */
+    bool (*cancel)(UNIT *);
+    double usecs_remaining;             /* time balance for long delays */
+    char *uname;                        /* unit name */
+    DEVICE *dptr;                       /* DEVICE linkage (backpointer) */
+    uint32_t dctrl;                     /* debug control */
+#ifdef SIM_ASYNCH_IO
+    void (*a_check_completion)(UNIT *);
+    bool (*a_is_active)(UNIT *);
+    UNIT *a_next;                       /* next async active */
+    int32_t a_event_time;
+    ACTIVATE_API a_activate_call;
+    bool a_polling_now;                 /* polling active flag */
+    int32_t a_poll_waiter_count;        /* count of polling waiters */
+    double a_due_time;                  /* due time for timer event */
+    double a_due_gtime;                 /* due time in instructions */
+    double a_usec_delay;                /* time delay for timer event */
+#endif
 };
 ```
 
-The simulator accessible fields are the following:
+The commonly used simulator-accessible fields are the following. The
+full structure also contains runtime, library-specific, and conditional
+asynchronous I/O support fields.
 
 | name          | description                                                 |
 |---------------|-------------------------------------------------------------|
@@ -1563,6 +1616,7 @@ The simulator accessible fields are the following:
 | `action`      | address of unit time-out service routine.                                      |
 | `filename`    | pointer to name of attached file, `NULL` if none.                              |
 | `fileref`     | pointer to FILE structure of attached file, `NULL` if none.                    |
+| `filebuf2`    | copy of initial memory buffer, `NULL` if none.                                 |
 | `hwmark`      | buffered devices only; highest modified address, + 1.                          |
 | `time`        | increment until time-out beyond previous unit in active queue.                 |
 | `flags`       | unit flags.                                                                    |
@@ -1579,6 +1633,12 @@ The simulator accessible fields are the following:
 | `u6`          | user-defined.                                                                  |
 | `up7`         | user-defined void pointer (useful for a unit specific context).                |
 | `up8`         | user-defined void pointer (useful for a unit specific context).                |
+| `us9`         | user-defined 16-bit value.                                                     |
+| `us10`        | user-defined 16-bit value.                                                     |
+| `cancel`      | cancellation routine, `NULL` if none.                                          |
+| `uname`       | unit name, or `NULL` if none.                                                  |
+| `dptr`        | backpointer to the containing `DEVICE`.                                        |
+| `dctrl`       | unit debug control flags.                                                      |
 
 `buf`, `wait`, `u3`, `u4`, `u5`, `u6`, and parts of `flags` are all
 saved and restored by the `SAVE` and `RESTORE` commands and thus can be
@@ -1594,19 +1654,21 @@ is invoked by:
 UDATA(action_routine, flags, capacity)
 ```
 
-Fields after `buf` can be filled in manually, e.g,
+Fields after those initialized by `UDATA` can be filled in manually,
+e.g.,
 
 ```c
 UNIT lpt_unit =
     { UDATA (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE, 0), 500 };
 ```
 
-defines the line printer as a sequential unit with a wait time of 500.
+This defines the line printer as a sequential unit with a wait time of
+500.
 
 ### Unit Flags
 
-The `flags` field contains indicators of current unit status. SIMH
-defines 13 flags:
+The `flags` field contains indicators of current unit status. ZIMH
+defines these flags:
 
 | flag name      | meaning if set                                          |
 |----------------|---------------------------------------------------------|
@@ -1623,18 +1685,20 @@ defines 13 flags:
 | `UNIT_DISABLE` | the unit responds to ENABLE and DISABLE.                |
 | `UNIT_DIS`     | the unit is currently disabled.                         |
 | `UNIT_IDLE`    | the unit is idle eligible.                              |
+| `UNIT_WLK`     | the unit is hardware write locked.                      |
+| `UNIT_WPRT`    | write-protect mask combining `UNIT_WLK` and `UNIT_RO`.  |
 
-A unit is “active” when it is in the SIMH event queue. Units are made
+A unit is “active” when it is in the ZIMH event queue. Units are made
 active by a call to `sim_activate` or a similar routine. A request to
-idle SIMH is not performed unless the unit at the head of the event
+idle ZIMH is not performed unless the unit at the head of the event
 queue (the unit with the shortest remaining time) has the `UNIT_IDLE`
-flag set. In VMs that want to support idling, devices that poll for
-data (such as console and mux terminals) and clocks should use a
-multiple of the clock period as their poll interval, they should use
-clock co-scheduling to properly align their servicing with clock
-ticks, and all these units should be marked with `UNIT_IDLE`. Other
-devices (like disk) usually have shorter service times, and would not
-typically be marked with `UNIT_IDLE`.
+flag set. In VMs that support idling, devices that poll for data (such
+as console and mux terminals) and clocks should use a multiple of the
+clock period as their poll interval. They should use clock
+co-scheduling to align their service routines with clock ticks, and all
+these units should be marked with `UNIT_IDLE`. Other devices (like
+disk) usually have shorter service times and would not typically be
+marked with `UNIT_IDLE`.
 
 Units for sequential devices (`UNIT_SEQ`) must update the unit
 structure `pos` member to reflect the position in the attached
@@ -1670,17 +1734,21 @@ REG`):
 
 ```c
 struct REG {
-    const char *name;        /* name */
-    void *loc;               /* location */
-    uint32_t radix;            /* radix */
-    uint32_t width;            /* width */
-    uint32_t offset;           /* starting bit */
-    uint32_t depth;            /* save depth */
-    const char *desc;        /* description */
-    struct bitfield *fields; /* bit fields */
-    uint32_t flags;            /* flags */
-    uint32_t qptr;             /* current queue pointer */
-    size_t str_size;         /* structure size */
+    const char *name;      /* name */
+    void *loc;             /* location */
+    uint32_t radix;        /* radix */
+    uint32_t width;        /* width */
+    uint32_t offset;       /* starting bit */
+    uint32_t depth;        /* save depth */
+    const char *desc;      /* description */
+    BITFIELD *fields;      /* bit fields */
+    uint32_t qptr;         /* circular queue pointer */
+    size_t stride;         /* structure/object size for indexing */
+    size_t obj_size;       /* sizeof(*loc) */
+    size_t size;           /* sizeof(**loc), or sizeof(*loc) if depth == 1 */
+    const char *macro;     /* initializer macro name */
+    uint32_t flags;        /* flags */
+    t_value maxval;        /* maximum value */
 };
 ```
 
@@ -1696,9 +1764,13 @@ The fields are the following:
 | `depth`    | size of data array (normally 1).                              |
 | `desc`     | register description.                                         |
 | `fields`   | bit fields and formatting information.                        |
-| `qptr`     | for a circular queue, the entry number for the first entry    |
-| `str_size` | structure size.                                               |
+| `qptr`     | for a circular queue, the entry number for the first entry.   |
+| `stride`   | spacing between array or structure elements.                  |
+| `obj_size` | size of the object referenced by `loc`.                       |
+| `size`     | size of one stored element.                                   |
+| `macro`    | initializer macro name.                                       |
 | `flags`    | flags and formatting information.                             |
+| `maxval`   | maximum representable value for the register.                 |
 
 The `depth` field is used with “arrayed registers”. Arrayed registers
 are used to represent structures with multiple data values, such as
@@ -1711,10 +1783,10 @@ enumerate the device registers and describe them. The `fields` field
 (if present) is used to display details of a register’s content
 according to the respective field descriptions.
 
-A register that is 32b or less keeps its data in a 32b scalar variable
-(`signed` or `unsigned`). A register that is 33b or more keeps its data in
-a 64b scalar variable (`signed` or `unsigned`). There are several
-exceptions to this rule:
+A register that is 32 bits or less keeps its data in a 32 bit scalar
+variable (`signed` or `unsigned`). A register that is 33 bits or more
+keeps its data in a 64 bit scalar variable (`signed` or `unsigned`).
+There are several exceptions to this rule:
 
 - An arrayed register keeps its data in a C-array whose SIMH data type
   is as large as (or if necessary, larger than), the width of a
@@ -1726,7 +1798,7 @@ exceptions to this rule:
   arrayed register, rather than a normal scalar register. This is
   useful for aliasing registers into memory or into structures.
 
-Macros `ORDATA`, `DRDATA`, `HRDATA`, and `BINDATA` define
+Macros `ORDATA`, `DRDATA`, `HRDATA`, and `BINRDATA` define
 right-justified octal, decimal, hexadecimal, and binary registers,
 respectively. They are invoked by:
 
@@ -1735,7 +1807,7 @@ respectively. They are invoked by:
 Macro `FLDATA` defines a one-bit binary flag at an arbitrary offset in
 a 32-bit word. It is invoked by:
 
-- `FLDATA`(name, location, bit_position)`
+- `FLDATA(name, location, bit_position)`
 
 Macro `GRDATA` defines a register with arbitrary location and
 radix. It is invoked by:
@@ -1761,19 +1833,20 @@ REG lpt_reg = {
 ```
 
 Macro `URDATA` defines an arrayed register whose data is part of the
-`UNIT` structure. This macro must be used with great care. If the
-fields are set up wrong, or the data is actually kept somewhere else,
-storing through this register declaration can trample over memory. The
-macro is invoked by:
+`UNIT` structure. `URDATA` is obsolescent and retained for backward
+compatibility. New code should normally use `STRDATA`, the more general
+structure-field register macro, instead. This macro must be used with
+great care. If the fields are set up wrong, or the data is actually
+kept somewhere else, storing through this register declaration can
+trample over memory. The macro is invoked by:
 
 - `URDATA(name, location, radix, width, offset, depth, flags)`
 
-The location should be an offset in the `UNIT` structure for
-unit 0. The width should be 32 for an `int32_t` or `uint32_t` field, and
+The location should name the field in the `UNIT` structure for unit 0.
+The width should be 32 for an `int32_t` or `uint32_t` field, and
 `T_ADDR_W` for a `t_addr` field. The flags can be any of the normal
-register flags; `REG_UNIT` will be OR’d in automatically. For example,
-the following declares an arrayed register of all the `UNIT` position
-fields in a device with 4 units:
+register flags. For example, the following declares an arrayed register
+of all the `UNIT` position fields in a device with 4 units:
 
 ```c
 { URDATA (POS, dev_unit[0].pos, 8, T_ADDR_W, 0, 4, 0) }
@@ -1790,54 +1863,48 @@ trample over memory. The macro is invoked by:
 The location should be the address in the structure for the first
 element (0) of the structure array. The width should be 32 for an
 `int32_t` or `uint32_t` field, and `T_ADDR_W` for a `t_addr` field. The
-flags can be any of the normal register flags; `REG_STRUCT` will be OR’d
-in automatically. For example, the following declares an arrayed
-register of all the `UNIT` position fields in a device with 4 units:
+`size` argument is the size, in bytes, of one element of the structure
+array. The flags can be any of the normal register flags. For example,
+the following declares an arrayed register of all the `UNIT` position
+fields in a device with 4 units:
 
 ```c
 { STRDATA (POS, dev_unit[0].pos, 8, T_ADDR_W, 0, 4, sizeof(dev_unit[0]), 0) }
 ```
 
-Each of the `ORDATA`, `DRDATA`, `FLDATA`, `GRDATA`, `BRDATA`,
-`VBRDATA`, `URDATA`, and `STRDATA` macros have corresponding `D` and
-`DF` macros (`ORDATAD`, `DRDATAD`, `FLDATAD`, `GRDATAD`, `BRDATAD`,
-`VBRDATAD`, `URDATAD` ,`STRDATAD`, `ORDATADF`, `DRDATADF`, `FLDATADF`,
-`GRDATADF`, `BRDATADF`, `VBRDATADF`, `URDATADF` and `STRDATADF`) which
-can be used to provide initialization values to the `desc` fields in
-the `REG` structure.
+The register macro families from `ORDATA` through `STRDATA` (except
+`SAVEDATA`) also provide `D` and `DF` forms. The `D` form adds a `desc`
+argument for the register description. The `DF` form adds both a `desc`
+argument and a `fields` argument naming a `BITFIELD` array. For example,
+`HRDATA`, `HRDATAD`, and `HRDATADF` are the three forms for a
+hexadecimal scalar register.
 
-Macro `SAVEDATA` defines an object which will be store and restored
-from a saved simulator image without any consideration for the format
-it contains. `SAVEDATA` REGisters cannot be examined or deposited
-to. This macro must be used with great care. The data being saved and
-restored is may not be meaningfully correct if the save environment
-has a different host architecture than the restoring one. The macro is
-invoked by:
+Macro `SAVEDATA` declares a `REG` entry for an object that must be
+copied into a `SAVE` image and restored later, but should not be
+visible through `EXAMINE` or `DEPOSIT`. SCP treats the object as an
+opaque host-memory blob. Use this macro with care: because the saved
+bytes are the host representation of the object, the data may not be
+meaningful when restored on a host with different byte order, type
+sizes, or structure layout. The macro is invoked by:
 
 - `SAVEDATA(name, location)`
 
 The location can be anywhere, but should name an object (scalar,
 array, structure, etc.) that will be saved and restored in its
-entirety. For example, the following declares an arrayed register of
-all the `UNIT` position fields in a device with 4 units:
+entirety. For example, the following declares an opaque saved object:
 
 ```c
-{ BLOBDATA (SETUP, xs_dev.setup) }
+{ SAVEDATA(SETUP, xs_dev.setup) }
 ```
 
-A generic register population macro exists called
-`REGDATA`. Simulators using this macro will be protected against
-future changes to the `REG` structure. If new fields are added to this
-structure a new initialization macro will be provided, but all uses of
-the prior macro will continue to work correctly.
-
-All `REG` variables should be initialized with one of the register
-initialization macros. Using these macros protects these declarations
-from any changes that may occur to the `REG` structure in the future
-since if any changes are made to the `REG` structure the macros will
-be changed to reflect the necessary changes.
+A generic register population macro exists called `REGDATA`:
 
 - `REGDATA(name, location, radix, width, offset, depth, desc, fields, flags, qptr, size)`
+
+Prefer the named register initialization macros whenever they fit, and
+use `REGDATA` only when the more specific macros do not describe the
+register. Initializing `REG` entries through these macros protects
+simulator declarations from future changes to the `REG` structure.
 
 ### Register Flags
 
@@ -1848,18 +1915,18 @@ examination and deposit.
 |---------------|----------------------------------------------------------------|
 | `PV_RZRO`     | print register right justified with leading zeroes.            |
 | `PV_RSPC`     | print register right justified with leading spaces.            |
-| `PV_RCOMMA`   | print register right justified space fill comma’s every 3.     |
+| `PV_RCOMMA`   | print register right justified, space filled, with commas every three digits. |
+| `PV_RCOMMASIGN` | print signed register right justified, space filled, with commas every three digits. |
 | `PV_LEFT`     | print register left justified.                                 |
+| `PV_LEFTSIGN` | print signed register left justified.                          |
 | `REG_RO`      | register is read only.                                         |
 | `REG_HIDDEN`  | register is hidden (will not appear in `EXAMINE STATE`).       |
 | `REG_HRO`     | register is read only and hidden.                              |
 | `REG_NZ`      | new register values must be non-zero.                          |
-| `REG_UNIT`    | register resides in the `UNIT` structure.                      |
-| `REG_STRUCT`  | register resides in an arbitrary structure.                    |
 | `REG_CIRC`    | register is a circular queue.                                  |
 | `REG_VMIO`    | register is displayed and parsed using VM data routines.       |
 | `REG_VMAD`    | register is displayed and parsed using VM address routines.    |
-| `REG_FIT`     | register container uses arrayed rather than scalar size rules. |
+| `REG_FIT`     | obsolete; defined as zero and has no flag-bit effect.          |
 | `REG_DEPOSIT` | register updates invoke VM register update routine.            |
 
 The `PV` flags are mutually exclusive. `PV_RZRO` is the default if no
@@ -1885,16 +1952,17 @@ reference the user-defined flags specified in the register definition
 to identify the register or determine any consequences related to
 updating that register.
 
-If `REG_UNIT` is clear, the register data is located at the address
-specified by the `loc` pointer. If `REG_UNIT` is set, the register
-name is used to refer to a field in a `UNIT` structure, and `loc`
-points to that field in the `UNIT` struct for unit 0. The examine and
-deposit commands will adjust that address by the unit number times the
-size of the `UNIT` struct to determine the actual data address.
+For scalar registers, `loc` points directly at the object being
+displayed or deposited. For arrayed registers, `depth` gives the number
+of elements and `stride` gives the byte spacing between successive
+elements. The register macros populate these fields for ordinary
+arrays, `UNIT` arrays, and arbitrary structure arrays, so simulator code
+should normally rely on the macros rather than filling in these fields
+by hand.
 
 ## `BITFIELD` Structure
 
-Bitfields are allocated as contiguous array, with a `NULL` bitfield at
+Bitfields are allocated as a contiguous array, with a `NULL` bitfield at
 the end. Each bitfield is defined with a `BITFIELD` structure
 (`typedef BITFIELD`):
 
@@ -1915,7 +1983,7 @@ The fields are the following:
 | `name` | field name, string of alphanumeric characters. |
 | `offset` | starting bit (normally populated automatically). |
 | `width` | width in bits of data, 1 to 32 inclusive. |
-| `valuenames` | pointer to a string array which maps field values |
+| `valuenames` | pointer to a string array that maps field values to names |
 | `format` | value display style selected by the `BITF_*` macros |
 
 Macros `BIT` and `BITF` define single bit and multi-bit fields,
@@ -1972,8 +2040,8 @@ contents. It is invoked by:
 ## `MTAB` Structure
 
 Device-specific `SHOW` and `SET` commands are processed using the
-modifications array, which is allocated as contiguous array, with a
-`NULL` at the end. Each possible modification is defined with a `MTAB`
+modifications array, which is allocated as a contiguous array, with a
+`NULL` at the end. Each possible modification is defined with an `MTAB`
 structure (`typedef MTAB`), which has the following fields:
 
 ```c
@@ -1982,8 +2050,8 @@ struct MTAB {
     uint32_t match; /* match */
     const char *pstring; /* print string */
     const char *mstring; /* match string */
-    t_stat (*valid)(); /* validation routine */
-    t_stat (*disp)(); /* display routine */
+    t_stat (*valid)(UNIT *up, int32_t v, const char *cp, void *dp);
+    t_stat (*disp)(FILE *st, UNIT *up, int32_t v, const void *dp);
     void *desc; /* location descriptor */
     const char *help; /* help string */
 };
@@ -2007,8 +2075,8 @@ For `SET`, a regular `MTAB` entry is interpreted as follows:
 1.  Test to see if the `mstring` entry exists.
 2.  Test to see if the `SET` parameter matches the `mstring`.
 3.  Call the validation routine, if any.
-4.  Apply the `mask` value to the `UNIT` flags word and then or in the
-    `match` value.
+4.  Apply the `mask` value to the `UNIT` flags word and then bitwise-OR
+    in the `match` value.
 
 For `SHOW`, a regular `MTAB` entry is interpreted as follows:
 
@@ -2028,7 +2096,7 @@ Extended `MTAB` entries have a different interpretation:
 | `mstring` | pointer to character string to be matched (`SET`), or `NULL` |
 | `valid` | address of validation routine (`SET`), or `NULL` |
 | `disp` | address of display routine (`SHOW`), or `NULL` |
-| `desc` | pointer to data address (**valid** clear) or<br>a validation-specific structure (**valid** set) |
+| `desc` | pointer to data or context used by the validation or display routine; for simple extended entries without a validation routine, it may point to an `int32_t` that receives `match` |
 
 For `SET`, an extended `MTAB` entry is interpreted as follows:
 
@@ -2049,7 +2117,7 @@ For `SHOW`, an extended `MTAB` entry is interpreted as follows:
 3.  If a display routine exists, call it, otherwise,
 4.  Print the `pstring`.
 
-`SHOW [dev\|unit] \<modifier\>{=\<value\>}` is a special case. Only
+`SHOW [dev|unit] <modifier>{=<value>}` is a special case. Only
 two kinds of modifiers can be displayed individually: an extended
 `MTAB` entry that takes a value; and any `MTAB` entry with both a
 display routine and a `pstring`. Recall that if a display routine
@@ -2078,11 +2146,11 @@ modification or initiate additional dialogs needed by the
 modifier. Its calling sequence is:
 
 - `t_stat validation_routine(UNIT *uptr, int32_t value, const char
-  *cptr, void *desc)` – test that `uptr`.`flags` can be set to
-  `value`. `cptr` points to the value portion of the parameter string
-  (any characters after the = sign); if `cptr` is `NULL`, no value was
-  given. `desc` points to the `REG` or int32_t used to store the
-  parameter.
+  *cptr, void *desc)` – validate or apply a `SET` modifier. `uptr`
+  points to the affected unit, or is `NULL` for a device-level setting.
+  `value` is the `match` field from the `MTAB` entry. `cptr` points to
+  any characters after `=`, or is `NULL` if no value was supplied.
+  `desc` is the `MTAB` entry’s descriptor pointer.
 
 ### Display Routine
 
@@ -2091,7 +2159,7 @@ device- or unit-specific state. Its calling sequence is:
 
 - `t_stat display_routine(FILE *st, UNIT *uptr, int32_t value, const
   void *desc)` – output device- or unit-specific state for `uptr` to
-  stream `st`. If the modifier is regular `MTAB` entry, or an extended
+  stream `st`. If the modifier is a regular `MTAB` entry, or an extended
   entry without `MTAB_SHP` set, `desc` points to the structure in the
   `MTAB` entry. If the modifier is an extended `MTAB` entry with
   `MTAB_SHP` set, `desc` points to the optional value string or is
@@ -2134,11 +2202,11 @@ when constructing `HELP` dev `SET` output.
 
 ### Help field
 
-The `MTAB` entry’s help field is used when constructing HELP dev SHOW
-or HELP dev SHOW output. It serves to describe the purpose or effect
-of the particular SET dev or SHOW dev command. The help field is
-ignored when constructing HELP dev SET output for `MTAB` entries which
-have an equal sign in the mstring field.
+The `MTAB` entry’s `help` field is used when constructing `HELP dev SET`
+or `HELP dev SHOW` output. It describes the purpose or effect of the
+particular `SET dev` or `SHOW dev` command. The `help` field is ignored
+when constructing `HELP dev SET` output for `MTAB` entries whose
+`mstring` field contains an equal sign.
 
 ## Other Data Structures
 
@@ -2156,15 +2224,14 @@ the first device in the array.
 counter. By convention, the PC is always the first register in the
 CPU’s register array.
 
-`char *sim_stop_messages[SCPE_BASE]` is an array of pointers to
-character strings, corresponding to error status returns greater than
-zero. If `sim_instr` returns status code n \> 0 but less than
-`SCPE_BASE`, then `sim_stop_message[n]` is printed by SCP. This array
-must have valid character pointers for all values `< SCPE_BASE` which
-`sim_instr` returns. Declaring the array with dimension `SCPE_BASE` will
-properly allow the array to be filled in as needed with appropriate
-message text for any messages that are needed while also providing
-`NULL` pointers for the remaining possibilities.
+`const char *sim_stop_messages[SCPE_BASE]` is an array of pointers to
+status-message strings. If `sim_instr` returns status code `n`, where
+`n > 0` and `n < SCPE_BASE`, then `sim_stop_messages[n]` is printed by
+SCP. This array must have valid character pointers for all values
+`< SCPE_BASE` which `sim_instr` returns. Declaring the array with
+dimension `SCPE_BASE` will properly allow the array to be filled in as
+needed with appropriate message text for any messages that are needed
+while also providing `NULL` pointers for the remaining possibilities.
 
 # VM Provided Routines
 
@@ -2241,9 +2308,9 @@ assumed to represent `aincr` addressing units, starting at `addr`:
 
 Because `val` is typically filled in and stored by calls on the
 device’s examine and deposit routines, respectively, the examine and
-deposit routines and `fprint_sym` and `fparse_sym` must agree on the
+deposit routines and `fprint_sym` and `parse_sym` must agree on the
 expected width of items in `val`, and on the alignment of
-`addr`. Further, if `fparse_sym` wants to modify a storage unit
+`addr`. Further, if `parse_sym` wants to modify a storage unit
 narrower than `awidth`, it must insert the new data into the
 appropriate entry in `val` without destroying surrounding fields. The
 number of words in the `val` array is given by global variable
@@ -2322,7 +2389,8 @@ effects (like clearing all memory).
 
 SCP defines a pointer:
 
-`t_addr *(sim_vm_parse_addr)(DEVICE *, const char *, const char **)`
+`t_addr (*sim_vm_parse_addr)(DEVICE *dptr, const char *cptr,
+                             const char **tptr)`
 
 This is initialized to `NULL`. If it is filled in by the VM, SCP will
 use the specified routine to parse addresses in place of its standard
@@ -2338,27 +2406,27 @@ for the `sim_vm_parse_addr` routine is:
 
 SCP defines a pointer:
 
-`void *(sim_vm_fprint_addr)(FILE *, DEVICE *, t_addr)`
+`void (*sim_vm_fprint_addr)(FILE *st, DEVICE *dptr, t_addr addr)`
 
  This is initialized to `NULL`. If it is filled in by the VM, SCP will
  use the specified routine to print addresses in place of its standard
  numerical output routine. The calling sequence for the
  `sim_vm_fprint_addr` routine is:
 
-- `t_addr sim_vm_fprint_addr(FILE *stream, DEVICE *dptr, t_addr addr)`
-  – output address `addr` to `stream` in the format required by the
-  device pointed to by `dptr`.
+- `void sim_vm_fprint_addr(FILE *stream, DEVICE *dptr, t_addr addr)` –
+  output address `addr` to `stream` in the format required by the device
+  pointed to by `dptr`.
 
 SCP defines a pointer:
 
-`void *(sim_vm_sprint_addr)(FILE *, DEVICE *, t_addr)`
+`void (*sim_vm_sprint_addr)(char *buf, DEVICE *dptr, t_addr addr)`
 
 This is initialized to `NULL`. If it is filled in by the VM, SCP will
 use the specified routine to print addresses in place of its standard
 numerical output routine. The calling sequence for the
 `sim_vm_sprint_addr` routine is:
 
-- `t_addr sim_vm_sprint_addr(char *buf, DEVICE *dptr, t_addr addr)` –
+- `void sim_vm_sprint_addr(char *buf, DEVICE *dptr, t_addr addr)` –
   output address `addr` to `buf` in the format required by the device
   pointed to by `dptr`.
 
@@ -2366,16 +2434,16 @@ numerical output routine. The calling sequence for the
 
 SCP defines a pointer:
 
-`char *(sim_vm_read)(char *, int32_t *, FILE *)`
+`char *(*sim_vm_read)(char *ptr, int32_t size, FILE *stream)`
 
 This is initialized to `NULL`. If it is filled in by the VM, SCP will
 use the specified routine to obtain command input in place of its
-standard routine, read_line. The calling sequence for the
+standard routine, `read_line`. The calling sequence for the
 `sim_vm_read` routine is:
 
-- `char sim_vm_input(char *buf, int32_t *max, FILE *stream)` – read the
+- `char *sim_vm_input(char *buf, int32_t size, FILE *stream)` – read the
   next command line from `stream` and store it in `buf`, up to a
-  maximum of `max` characters
+  maximum of `size` characters.
 
 The routine is expected to strip off leading whitespace characters and
 to return `NULL` on end of file.
@@ -2442,14 +2510,16 @@ the standard command table. It may be used to override or otherwise
 arbitrarily extend the functionality of a normal SCP command.
 
 A command table is allocated as a contiguous array. Each entry is
-defined with a `sim_ctab` structure (`typedef CTAB`):
+defined with a `CTAB` structure:
 
 ```c
-struct sim_ctab {
-    const char   *name;         /* name */
-    t_stat       (*action)();   /* action routine */
-    int32_t        arg;           /* argument */
-    const char   *help;         /* help string */
+struct CTAB {
+    const char *name;
+    t_stat (*action)(int32_t flag, const char *cptr);
+    int32_t arg;
+    const char *help;
+    const char *help_base;
+    void (*message)(const char *unechoed_cmdline, t_stat stat);
 };
 ```
 
@@ -2479,11 +2549,10 @@ different ways to redefine the `BOOT` command.
 ### VM-Support for stepping over subroutine calls
 
 SCP can provide the ability to step over subroutine calls with the
-`NEXT` command. In order for the `NEXT` command to work, the simulator
-must provide a VM specific routine which will identify whether the
-next instruction to be executed is a subroutine call and, if so to
-identify where to dynamically insert breakpoint(s) to stop instruction
-execution when the subroutine returns.
+`NEXT` command. For the `NEXT` command to work, the simulator must
+provide a VM-specific routine that identifies whether the next
+instruction is a subroutine call and, if so, where SCP should insert
+temporary breakpoints so execution stops when the subroutine returns.
 
 SCP defines a pointer:
 
@@ -2509,9 +2578,9 @@ instruction execution (i.e. only upon exit of `sim_instr()`). For the
 routine which returns the value of the current PC and set the
 `sim_vm_pc_value` routine pointer to that routine.
 
-SCP defines a pointer `t_value *(sim_vm_pc_value)(void)`. This is
+SCP defines a pointer `t_value (*sim_vm_pc_value)(void)`. This is
 initialized to `NULL`. If filled in by the VM, SCP will call the
-specified routine to determine active PC value when generating debug
+specified routine to determine the active PC value when generating debug
 output containing the execution PC (if debug is enabled with the `-P`
 flag).
 
@@ -2519,18 +2588,18 @@ flag).
 
 ## Terminal Input/Output Formatting Library
 
-SIMH provides routines to convert ASCII input characters to the format
-expected VM, and to convert VM-supplied ASCII characters to C-standard
-format. The routines are:
+ZIMH provides routines to convert ASCII input characters to the format
+expected by a VM, and to convert VM-supplied ASCII characters to
+C-standard format. The routines are:
 
 - `int32_t sim_tt_inpcvt(int32_t c, uint32_t mode)` – convert input
   character `c` according to the `mode` specification and return the
-  converted result (-1 if the character is not valid in the specified
+  converted result (`-1` if the character is not valid in the specified
   mode).
 
 - `int32_t sim_tt_outcvt(int32_t c, uint32_t mode)` – convert output
   character `c` according to the `mode` specification and return the
-  converted result (-1 if the character is not valid in the specified
+  converted result (`-1` if the character is not valid in the specified
   mode).
 
 The supported modes are:
@@ -2540,7 +2609,7 @@ The supported modes are:
 | `TTUF_MODE_8B` | 8b mode; no conversion |
 | `TTUF_MODE_7B` | 7b mode; the high-order bit is masked off |
 | `TTUF_MODE_7P` | 7b printable mode; the high-order bit is masked off.<br>In addition, on output, if the character is not printable,<br> `-1` is returned. |
-| `TTUF_MODE_UC` | 7b upper case mode; the high-order bit is masked off.<br>In addition, lower case is converted to upper case.<br>If the character is not printable, -1 is returned. |
+| `TTUF_MODE_UC` | 7b upper case mode; the high-order bit is masked off.<br>In addition, lower case is converted to upper case.<br>If the character is not printable, `-1` is returned. |
 
 On input, `TTUF_MODE_UC` has an additional modifier, `TTUF_MODE_KSR`,
 which forces the high order bit to be set rather than cleared.
@@ -2575,202 +2644,223 @@ time the simulator’s `cpu_reset` routine is called.
 
 ## Terminal Multiplexer Emulation Library
 
-SIMH supports the use of multiple terminals. All terminals except the
+ZIMH supports the use of multiple terminals. All terminals except the
 console are accessed via Telnet or serial ports on the host
 machine.
 
-SIMH provides three supporting libraries for implementing multiple
+ZIMH provides three supporting libraries for implementing multiple
 terminals: `sim_tmxr.c` (and its header file, `sim_tmxr.h`), which
 provide OS-independent support routines for terminal multiplexers;
 `sim_serial.c` (and its header file `sim_serial.h`), which provide
 OS-dependent serial I/O routines; and `sim_sock.c` (and its header
-file, `sim_sock.h`), which provide OS-dependent socket
-routines. `sim_sock.c` and `sim_serial.c` are implemented under
-Windows, VMS, UNIX, and MacOS.
+file, `sim_sock.h`), which provide OS-dependent socket routines.
+`sim_sock.c` and `sim_serial.c` provide the host-specific socket and
+serial-port pieces for supported POSIX and Windows hosts.
+Terminal simulators should not call those host-specific routines
+directly. They should go through the `TMXR` interfaces, leaving socket
+and serial-port details inside the terminal multiplexer library.
 
 Two basic data structures define the multiple terminals. Individual
-lines are defined by an array of `tmln` structures (`typedef TMLN`):
+lines are described by `TMLN` entries. The structure is defined in
+`sim_tmxr.h`; simulator code normally treats most of it as library
+state. Device code commonly initializes or inspects fields such as the
+connection state, line buffers, logging fields, per-line serial
+configuration, and per-line polling units, but should prefer the
+`tmxr_*` helper routines where they exist.
 
-```c
-struct tmln {
-    int conn; /* line connected flag */
-    SOCKET sock; /* connection socket */
-    char *ipad; /* IP address */
-    SOCKET master; /* line specific master socket */
-    char *port; /* line specific listening port */
-    int32_t sessions; /* count of tcp connections received */
-    uint32_t cnms; /* connect time ms */
-    int32_t tsta; /* Telnet state */
-    int32_t rcve; /* rcv enable */
-    int32_t xmte; /* xmt enable */
-    int32_t dstb; /* disable Tlnt bin */
-    int32_t notelnet; /* raw binary data (no telnet interpret) */
-    int32_t rxbpr; /* rcv buf remove */
-    int32_t rxbpi; /* rcv buf insert */
-    int32_t rxcnt; /* rcv count */
-    int32_t txbpr; /* xmt buf remove */
-    int32_t txbpi; /* xmt buf insert */
-    int32_t txcnt; /* xmt count */
-    int32_t txdrp; /* xmt drop count */
-    int32_t txbsz; /* xmt buffer size */
-    int32_t txbfd; /* xmt buffered flag */
-    bool modem_control; /* line modem control support */
-    bool port_speed_control; /* line programmatically sets port speed */
-    int32_t modembits; /* modem bits which are set */
-    FILE *txlog; /* xmt log file */
-    FILEREF *txlogref; /* xmt log file reference */
-    char *txlogname; /* xmt log file name */
-    char rxb[TMXR_MAXBUF]; /* rcv buffer */
-    char rbr[TMXR_MAXBUF]; /* rcv break */
-    char *txb; /* xmt buffer */
-    TMXR *mp; /* back pointer to mux */
-    char *serconfig; /* line config */
-    SERHANDLE serport; /* serial port handle */
-    bool ser_connect_pending; /* serial connection notice pending */
-    SOCKET connecting; /* Outgoing socket while connecting */
-    char *destination; /* Outgoing destination address:port */
-    UNIT *uptr; /* input polling unit -default to mp-\>uptr */
-    UNIT *o_uptr; /* output polling unit -default to lp-\>uptr */
-};
-```
+The most commonly relevant `TMLN` fields are the following:
 
-The fields are the following:
+| name | description |
+|------|-------------|
+| `conn` | connection flag (`0` = disconnected) |
+| `sock` | connection socket |
+| `ipad` | IP address of the remote end of the connection |
+| `master` | optional line-specific listening socket |
+| `port` | optional line-specific listening port |
+| `sessions` | count of TCP connections received |
+| `rcve` | receive enable flag (`0` = disabled) |
+| `xmte` | transmit flow-control flag (`0` = transmit disabled) |
+| `notelnet` | raw binary data mode, with no Telnet interpretation |
+| `rxb`, `rbr`, `txb` | receive, receive-break, and transmit buffers |
+| `txlog`, `txlogname` | transmit log file and log file name |
+| `serconfig`, `serport` | serial-line configuration and handle |
+| `uptr`, `o_uptr` | input and output polling units |
+| `dptr` | line-specific device |
 
-| name        | description                                        |
-|-------------|----------------------------------------------------|
-| `conn`      | connection flag (0 = disconnected)                 |
-| `sock`      | connection socket                                  |
-| `ipad`      | IP address of remote end of connection             |
-| `master`    | optional line specific listening socket            |
-| `port`      | optional line specific listening port              |
-| `sessions`  | count of tcp connections received                  |
-| `cnms`      | connect time                                       |
-| `tsta`      | Telnet state                                       |
-| `rcve`      | receive enable flag (0 = disabled)                 |
-| `xmte`      | transmit flow control flag (0 = transmit disabled) |
-| `dstb`      | Telnet bin mode disabled                           |
-| `rxbpr`     | receive buffer remove pointer                      |
-| `rxbpi`     | receive buffer insert pointer                      |
-| `rxcnt`     | receive count                                      |
-| `txbpr`     | transmit buffer remove pointer                     |
-| `txbpi`     | transmit buffer insert pointer                     |
-| `txcnt`     | transmit count                                     |
-| `txlog`     | pointer to log file descriptor                     |
-| `txlogname` | pointer to log file name                           |
-| `rxb`       | receive buffer                                     |
-| `rbr`       | receive buffer break flags                         |
-| `txb`       | transmit buffer                                    |
+The overall set of extra terminals is defined by a `TMXR` structure.
+As with `TMLN`, `sim_tmxr.h` is the authoritative definition and
+simulator code should normally use the library interfaces instead of
+manipulating internal state directly.
 
-The overall set of extra terminals is defined by the `tmxr` structure
-(`typedef TMXR`):
+The most commonly relevant `TMXR` fields are the following:
 
-```c
-struct tmxr {
-    int32_t lines; /* \# lines */
-    char *port; /* listening port */
-    SOCKET master; /* master socket */
-    TMLN *ldsc; /* pointer to line descriptors */
-    int32_t *lnorder; /* line connection order */
-    DEVICE *dptr; /* multiplexer device */
-    UNIT *uptr; /* polling unit (connection) */
-    char logfiletmpl[FILENAMEMAX]; /* template logfile name */
-    int23 buffered; /* Buffered line behavior and buffer size*/
-    int32_t sessions; /* count of tcp connections received */
-    uint32_t last_poll_time; /* time of last connection poll */
-    bool notelnet; /* default telnet capability for incoming connections */
-    bool modem_control; /* multiplexer supports modem control behaviors */
-    bool port_speed_control; /* multiplexer programmatically sets port speed */
-};
-```
-
-The fields are the following:
-
-| name        | description                                        |
-|-------------|----------------------------------------------------|
-| `lines` | number of lines (constant) |
-| `port` | master listening port (specified by ATTACH command) |
-| `master` | master listening socket (filled in by ATTACH command) |
+| name | description |
+|------|-------------|
+| `lines` | number of lines |
+| `port` | master listening port specified by the `ATTACH` command |
+| `master` | master listening socket filled in by `ATTACH` |
 | `ldsc` | array of line descriptors |
-| `lnorder` | array of line numbers in order of connection sequence,<br>or `NULL` if user-defined connection order is not required |
-| `dptr` | pointer to the multiplexer’s DEVICE structure,<br>or `NULL` if the device is to be derived from the UNIT passed to the attach call. |
-| `uptr` | the UNIT passed to the attach call. |
-| `logfiletmpl` | template logfile name used to create names for per-line log files. |
-| `buffered` | Buffered line behaviors enabled flag and the size of the line buffer. |
-| `sessions` | count of tcp connections received on the master socket. |
-| `last_poll_time` | time of last connection poll. |
-| `notelnet` | default telnet capability for tcp connections. |
-| `modem_control` | flag indicating that multiplexer supports full modem control behaviors. |
+| `lnorder` | optional line numbers in connection order |
+| `dptr` | multiplexer device, or `NULL` to derive it from the unit |
+| `uptr` | polling unit passed to the attach call |
+| `logfiletmpl` | template used to create per-line log file names |
+| `buffered` | buffered-line behavior and buffer-size flag |
+| `sessions` | count of TCP connections received on the master socket |
+| `poll_interval` | frequency of connection polls |
+| `notelnet` | default Telnet capability for incoming connections |
+| `nomessage` | suppress connection and disconnection messages |
+| `modem_control` | multiplexer supports full modem-control behavior |
+| `port_speed_control` | multiplexer programmatically sets port speed |
+| `packet`, `datagram` | line transport packet-orientation flags |
 
 The number of elements in the `ldsc` and `lnorder` arrays must equal
 the value of the `lines` field. Set `lnorder` to `NULL` if the
 connection order feature is not needed. If the first element of the
-`lnorder` array is -1, then the default ascending sequential
+`lnorder` array is `-1`, then the default ascending sequential
 connection order is used. Set `dptr` to `NULL` if the device should be
 derived from the unit passed to the `tmxr_attach` call.
 
-Library `sim_tmxr.c` provides the following routines to support Telnet
-and Serial port-based terminals:
+Most terminal multiplexer simulators have one or more `UNIT`s that
+represent polling activity rather than attached media. A typical device
+reset routine initializes line state, points each `TMLN` back at its
+owning `TMXR`, and arranges for the appropriate polling units to be
+scheduled. One polling path accepts new connections with
+`tmxr_poll_conn`. Another polls received host data with `tmxr_poll_rx`
+and then lets the device consume characters with `tmxr_getc_ln`, or
+packets with `tmxr_get_packet_ln`, according to the hardware being
+simulated. Output flows the other way: the device queues data with
+`tmxr_putc_ln` or `tmxr_put_packet_ln`, and periodic transmit polling
+with `tmxr_poll_tx` drains data to the host connection.
 
-- `int32_t tmxr_poll_conn(TMXR *mp)` – poll for a new connection to the
-  terminals described by `mp`. If there is a new connection, the
-  routine resets all the line descriptor state (including receive
-  enable) and returns the line number (index to line descriptor) for
-  the new connection. If there isn’t a new connection, the routine
-  returns -1.
+Attachment binds the `TMXR` to a host endpoint. For Telnet connections,
+the mux opens a listening socket and accepts host clients. For serial
+attachments, individual lines can be associated with host serial ports.
+`TMXR` handles the host-specific socket and serial details, while the
+simulated device remains responsible for translating between simulated
+hardware state and line input/output. If a device uses separate polling
+units for receive and transmit, `tmxr_set_line_unit` and
+`tmxr_set_line_output_unit` associate those units with each line.
 
-- `void tmxr_reset_ln(TMLN *lp)` – reset the line described by
-  `lp`. The connection is closed and all line descriptor state is
-  reset.
+The library also tracks per-line connection state, optional logging,
+line ordering, raw-versus-Telnet mode, modem-control pass-through,
+serial-line configuration, loopback, and half-duplex behavior. These
+facilities are mostly configured through helper routines or through
+`MTAB` entries that call the helper routines. The structures in
+`sim_tmxr.h` are the authoritative definitions; the list below covers
+the routines most often used by simulator code.
 
-- `int32_t tmxr_getc_ln(TMLN *lp)` – return the next available character
-  from the line described by `lp`. If a character is available, the
-  return value is: `(1 << TMXR_V_VALID) | character`. If a `BREAK`
-  occurred on the line, `SCPE_BREAK` will be ORed into the return
-  variable. If no character is available, the return value is 0.
+Setup, attachment, and line ownership routines include:
 
-- `void tmxr_poll_rx(TMXR *mp)` – poll for input available on the
-  terminals described by `mp`.
+- `t_stat tmxr_set_line_unit(TMXR *mp, int line, UNIT *uptr_poll)` –
+  declare which unit polls for input on a given line. This is only
+  needed if the input polling unit is different than the unit provided
+  when the multiplexer was attached.
 
-- `int32_t tmxr_rqln(TMLN *lp)` – return the number of characters in the
-  receive queue of the line described by `lp` which are ready to be
-  read now.
+- `t_stat tmxr_set_line_output_unit(TMXR *mp, int line,
+  UNIT *uptr_poll)` –
+  declare which unit polls for output on a given line. This is only
+  needed if the output polling unit is different than the unit provided
+  when the multiplexer was attached.
 
-- `t_stat tmxr_putc_ln(TMLN *lp, int32_t chr)` – output character `chr`
-  to the line described by `lp`. Possible errors are `SCPE_LOST`
-  (connection lost) and `SCPE_STALL` (connection backlogged). If
-  executed directly in instruction simulation code (as opposed to
-  during event processing) and line output rate limiting is in effect,
-  then inter-character delays will occur before this routine returns.
+- `t_stat tmxr_set_console_units(UNIT *rxuptr, UNIT *txuptr)` –
+  associate the simulator console receive and transmit paths with
+  polling units.
 
-- `void tmxr_poll_tx(TMXR *mp)` – poll for output complete on the
-  terminals described by `mp`.
+- `t_stat tmxr_open_master(TMXR *mp, const char *cptr)` – open the
+  master listening connection described by `cptr`.
 
-- `int32_t tmxr_tqln(TMLN *lp)` – return the number of characters in the
-  transmit queue of the line described by `lp`.
+- `t_stat tmxr_close_master(TMXR *mp)` – close the master listening
+  connection for `mp`.
 
-- `int32_t tmxr_txdone_ln(TMLN *lp)` – return the transmit complete
-  indicator for the the line described by `lp`. `0` – not done, `1` –
-  just now done, `-1` – previously done. When the `1` return value is
-  returned would be a good time to pass an interrupt or other status
-  information into the system being simulated.
+- `t_stat tmxr_attach(TMXR *mp, UNIT *uptr, const char *cptr)` – attach
+  the terminal multiplexer described by `mp` and unit `uptr` to the
+  host endpoint described by `cptr`.
 
-- `void tmxr_send_buffered_data(TMLN *lp)` – flush any buffered data
-  for the line described by `lp`.
-
-- `t_stat tmxr_attach(TMXR *mp, UNIT *uptr, const char *cptr)` –
-  attach the port contained in character string `cptr` to the
-  terminals described by `mp` and unit `uptr`.
-
-- `t_stat tmxr_open_master(TMXR *mp, const char *cptr)` – associate
-  the port contained in character string `cptr` to the terminals
-  described by `mp`. This routine is a subset of `tmxr_attach`.
+- `t_stat tmxr_attach_ex(TMXR *mp, UNIT *uptr, const char *cptr,
+  bool async)` – attach the terminal multiplexer described by `mp`,
+  explicitly selecting synchronous or asynchronous attachment behavior.
 
 - `t_stat tmxr_detach(TMXR *mp, UNIT *uptr)` – detach all connections
   for the terminals described by `mp` and unit `uptr`.
 
-- `t_stat tmxr_close_master(TMXR *mp)` – close the master port for the
-  terminals described by `mp`. This routine is a subset of
-  `tmxr_detach`.
+- `t_stat tmxr_reset_ln(TMLN *lp)` – reset the line described by `lp`.
+  The connection is closed and the line descriptor state is reset.
+
+- `t_stat tmxr_detach_ln(TMLN *lp)` – reset the line described by `lp`
+  and close any line-specific listener or outgoing destination.
+
+- `t_stat tmxr_close_ln(TMLN *lp)` – close the current connection for
+  the line described by `lp`.
+
+Connection polling routines include:
+
+- `int32_t tmxr_poll_conn(TMXR *mp)` – poll for a new connection to the
+  terminals described by `mp`. If there is a new connection, the routine
+  resets the line descriptor state, including receive enable, and
+  returns the line number. If there is no new connection, it returns
+  `-1`.
+
+- `void tmxr_poll_rx(TMXR *mp)` – poll for input available on the
+  terminals described by `mp`.
+
+- `void tmxr_poll_tx(TMXR *mp)` – poll for output completion on the
+  terminals described by `mp`.
+
+Receive routines include:
+
+- `int32_t tmxr_input_pending_ln(TMLN *lp)` – return whether input is
+  pending for the line described by `lp`.
+
+- `int32_t tmxr_getc_ln(TMLN *lp)` – return the next available character
+  from the line described by `lp`. If a character is available, the
+  return value is `(1 << TMXR_V_VALID) | character`. If a `BREAK`
+  occurred on the line, `SCPE_BREAK` will be ORed into the return
+  value. If no character is available, the return value is `0`.
+
+- `t_stat tmxr_get_packet_ln(TMLN *lp, const uint8_t **pbuf,
+  size_t *psize)` – return the next available packet for `lp`.
+
+- `t_stat tmxr_get_packet_ln_ex(TMLN *lp, const uint8_t **pbuf,
+  size_t *psize, uint8_t frame_byte)` – return the next available
+  packet for `lp`, using `frame_byte` as the frame separator.
+
+- `int32_t tmxr_rqln(const TMLN *lp)` – return the number of receive
+  queue characters for `lp` that are ready to be read.
+
+Transmit routines include:
+
+- `t_stat tmxr_putc_ln(TMLN *lp, int32_t chr)` – output character `chr`
+  to the line described by `lp`. Possible errors are `SCPE_LOST`
+  (connection lost) and `SCPE_STALL` (connection backlogged). If this is
+  called directly from instruction simulation code while line output
+  rate limiting is in effect, inter-character delays will occur before
+  this routine returns.
+
+- `t_stat tmxr_put_packet_ln(TMLN *lp, const uint8_t *buf, size_t size)`
+  – output one packet to the line described by `lp`.
+
+- `t_stat tmxr_put_packet_ln_ex(TMLN *lp, const uint8_t *buf,
+  size_t size, uint8_t frame_byte)` – output one packet to the line
+  described by `lp`, using `frame_byte` as the frame separator.
+
+- `int32_t tmxr_tqln(const TMLN *lp)` – return the number of characters
+  in the transmit queue of the line described by `lp`.
+
+- `int32_t tmxr_tpqln(const TMLN *lp)` – return the number of buffered
+  packet characters for `lp`.
+
+- `bool tmxr_tpbusyln(const TMLN *lp)` – return whether packet transmit
+  activity is busy for `lp`.
+
+- `int32_t tmxr_txdone_ln(TMLN *lp)` – return the transmit complete
+  indicator for the line described by `lp`: `0` means not done, `1`
+  means just now done, and `-1` means previously done. A `1` return is
+  a natural time to report simulated interrupt or status information.
+
+- `int32_t tmxr_send_buffered_data(TMLN *lp)` – flush buffered transmit
+  data for `lp` and return the number of bytes still buffered.
+
+Device stub routines include:
 
 - `t_stat tmxr_ex(t_value *vptr, t_addr addr, UNIT *uptr, int32_t sw)` –
   stub examine routine, needed because the extra terminals are marked
@@ -2778,162 +2868,185 @@ and Serial port-based terminals:
 
 - `t_stat tmxr_dep(t_value val, t_addr addr, UNIT *uptr, int32_t sw)` –
   stub deposit routine, needed because the extra terminals are marked
-  as detached; always returns an error.
+  as attached; always returns an error.
+
+Message and status routines include:
 
 - `void tmxr_msg(SOCKET sock, const char *msg)` – output character
-  string `msg` to socket sock.
+  string `msg` to the socket represented by `sock`.
 
 - `void tmxr_linemsg(TMLN *lp, const char *msg)` – output character
-  string `msg` to line `lp`.
+  string `msg` to the line described by `lp`.
 
-- `void tmxr_linemsgf(TMLN *lp, const const *fmt, ...)` – output
-  formatted `msg` to line `lp`.
+- `void tmxr_linemsgf(TMLN *lp, const char *fmt, ...)` – output a
+  formatted message to the line described by `lp`.
 
-- `void tmxr_fconns(FILE *st, TMLN *lp, int32_t ln)` – output connection
-  status to stream `st` for the line described by `lp`. If `ln >= 0`,
-  preface the output with the specified line number.
+- `void tmxr_fconns(FILE *st, const TMLN *lp, int32_t ln)` – output
+  connection status to stream `st` for the line described by `lp`. If
+  `ln >= 0`, preface the output with the specified line number.
 
-- `void tmxr_fstats(FILE *st, TMLN *lp, int32_t ln)` – output connection
-  statistics to stream *st* for the line described by `lp`. If `ln >= 0`,
-  preface the output with the specified line number.
+- `void tmxr_fstats(FILE *st, const TMLN *lp, int32_t ln)` – output
+  connection statistics to stream `st` for the line described by `lp`.
+  If `ln >= 0`, preface the output with the specified line number.
 
-- `t_stat tmxr_set_log(UNIT *uptr, int32_t val, char *cptr, void *mp)` –
-  enable logging of a line of the multipleser described by `mp` to the
-  filename pointed to by `cptr`. If `uptr` is `NULL`, then `val` indicates
-  the line number; otherwise, the unit number within the associated
-  device implies the line number. This function may be used as an `MTAB`
-  validation routine.
+Line control, logging, and display routines include:
 
-- `t_stat tmxr_set_nolog(UNIT *uptr, int32_t val, const char *cptr,
-  const void *mp)` – disable logging of a line of the multiplexer
-  described by `mp` to the filename pointed to by `cptr`. If `uptr` is
-  `NULL`, then `val` indicates the line number; otherwise, the unit
-  number within the associated device implies the line number. This
-  function may be used as an `MTAB` validation routine.
-
-- `t_stat tmxr_show_log(FILE *st, UNIT *uptr, int32_t val, const void
-  *mp)` – outputs the logging status of a line of the multiplexer
-  described by `mp` to stream `st`. If `uptr` is `NULL`, then `val`
-  indicates the line number; otherwise, the unit number within the
-  associated device implies the line number. This function may be used
-  as an `MTAB` display routine.
-
-- `t_stat tmxr_dscln(UNIT *uptr, int32_t val, const char *cptr, const void *mp)` –
-  parse the string pointed to by `cptr` for a decimal line number. If
-  the line number is valid, disconnect the specified line in the
-  terminal multiplexer described by `mp`. The calling sequence allows
-  `tmxr_dscln` to be used as an `MTAB` processing routine. A line
-  connected via a tcp session will be disconnected, a line connected
-  to a serial port will be closed if the sim_switches `-C` flag is
-  enabled when the routine is called, otherwise a serial port will
-  have DTR dropped for 500ms and raised again.
+- `t_stat tmxr_dscln(UNIT *uptr, int32_t val, const char *cptr,
+  void *desc)` – parse the string pointed to by `cptr` for a decimal
+  line number and disconnect the specified line in the terminal
+  multiplexer described by `desc`. This function may be used as an
+  `MTAB` validation routine.
 
 - `t_stat tmxr_set_lnorder(UNIT *uptr, int32_t val, const char *cptr,
-  const void *desc)` – set the line connection order array associated
-  with the `TMXR` structure pointed to by `desc`. The string pointed
-  to by `cptr` is parsed for a semicolon-delimited list of
-  ranges. Ranges are of the form:
+  void *desc)` – set the line connection order array associated with
+  the `TMXR` structure pointed to by `desc`. The string pointed to by
+  `cptr` is parsed for a semicolon-delimited list of ranges. Ranges are
+  of the form:
 
 | range          | interpretation                                      |
 |----------------|-----------------------------------------------------|
 | `line1-line2`  | ascending sequence from `line1` to `line2`          |
 | `line1/length` | ascending sequence from `line1` to `line1+length-1` |
-| ALL | ascending sequence of all lines defined by the multiplexer |
+| `ALL` | ascending sequence of all lines defined by the multiplexer |
 
-The line order array must provide an int32_t element for each line. The
-calling sequence allows `tmxr_set_lnorder` to be used as an `MTAB`
-processing routine.
+- `t_stat tmxr_set_log(UNIT *uptr, int32_t val, const char *cptr,
+  void *desc)` – enable logging of a line of the multiplexer described
+  by `desc` to the filename pointed to by `cptr`. If `uptr` is `NULL`,
+  then `val` indicates the line number; otherwise, the unit number
+  within the associated device implies the line number. This function
+  may be used as an `MTAB` validation routine.
 
-- `t_stat tmxr_show_lnorder(FILE *st, UNIT *uptr, int32_t val, void
-  *desc) – output the line connection order associated multiplexer
-  (TMXR *)` `desc` to stream `st`. The order is rendered as a
-  semicolon-delimited list of ranges. The calling sequence allows
-  `tmxr_show_lnorder` to be used as an `MTAB` processing routine.
+- `t_stat tmxr_set_nolog(UNIT *uptr, int32_t val, const char *cptr,
+  void *desc)` – disable logging of a line of the multiplexer described
+  by `desc`. If `uptr` is `NULL`, then `val` indicates the line number;
+  otherwise, the unit number within the associated device implies the
+  line number. This function may be used as an `MTAB` validation
+  routine.
 
-- `t_stat tmxr_show_summ(FILE *st, UNIT *uptr, int32_t val, const void
-  *desc)` – outputs the summary status of the multiplexer `(TMXR *)
-  desc` to stream `st`.
+- `t_stat tmxr_show_lnorder(FILE *st, UNIT *uptr, int32_t val,
+  const void *desc)` – output the line connection order for the
+  multiplexer `(TMXR *) desc` to stream `st`. The order is rendered as a
+  semicolon-delimited list of ranges. This function may be used as an
+  `MTAB` display routine.
 
-- `t_stat tmxr_show_cstat(FILE *st, UNIT *uptr, int32_t val, const void
-  *desc)` – outputs either the connections (`val = 1`) or the statistics
-  (`val = 0`) of the multiplexer `(TMXR *) desc` to stream `st`. Also
-  checks for multiplexer not attached, or all lines disconnected.
+- `t_stat tmxr_show_log(FILE *st, UNIT *uptr, int32_t val,
+  const void *desc)` – output the logging status of a line of the
+  multiplexer described by `desc` to stream `st`. This function may be
+  used as an `MTAB` display routine.
 
-- `t_stat tmxr_show_lines(FILE *st, UNIT *uptr, int32_t val, const void
-  *desc)` – outputs the number of lines in the terminal multiplexer
-  `(TMXR *)` I to stream I.
+- `t_stat tmxr_show_summ(FILE *st, UNIT *uptr, int32_t val,
+  const void *desc)` – output summary connection status for the
+  multiplexer `(TMXR *) desc` to stream `st`.
 
-- `t_stat tmxr_set_modem_control_passthru(TMXR *mp)` – Enables modem
-  control passthru behaviors, and disables internal manipulation of
-  `DTR` (&`RTS`) by tmxr APIs. Enables the `tmxr_set_get_modem_bits` and
-  `tmxr_set_config_line` APIs.
+- `t_stat tmxr_show_cstat(FILE *st, UNIT *uptr, int32_t val,
+  const void *desc)` – output either the connections (`val = 1`) or the
+  statistics (`val = 0`) for the multiplexer `(TMXR *) desc` to stream
+  `st`.
 
-- `t_stat tmxr_clear_modem_control_passthru(TMXR *mp)` – Disables
-  modem control passthru behaviors, and enables internal manipulation
-  of `DTR` (&`RTS`) by tmxr apis. Disables the `tmxr_set_get_modem_bits`
-  and `tmxr_set_config_line` APIs.
+- `t_stat tmxr_show_lines(FILE *st, UNIT *uptr, int32_t val,
+  const void *desc)` – output the number of lines in the terminal
+  multiplexer `(TMXR *) desc` to stream `st`.
 
-- `t_stat tmxr_set_port_speed_control(TMXR *mp)` – Declares that the
-  device which interfaces the specified `TMXR` uses the
-  tmxr_set_config_line API to set the port line speed. This
-  declaration should be made in the device reset routine and called
-  before any line attachments are made.
+- `t_stat tmxr_flush_log_files(void)` – flush all active multiplexer log
+  files.
 
-- `t_stat tmxr_clear_port_speed_control(TMXR *mp)` – Declares that the
-  device which interfaces the specified `TMXR` does not use the
-  `tmxr_set_config_line` API to set the port line speed. This
-  declaration should only be necessary if `tmxr_set_port_speed_control`
-  had been called previously. I will fail if any line attachments are
-  active.
+Modem, serial, and line-behavior routines include:
+
+- `t_stat tmxr_set_modem_control_passthru(TMXR *mp)` – enable modem
+  control pass-through for `mp`. This disables internal manipulation of
+  `DTR` and `RTS` by the `TMXR` library and enables the
+  `tmxr_set_get_modem_bits` and `tmxr_set_config_line` APIs.
+
+- `t_stat tmxr_clear_modem_control_passthru(TMXR *mp)` – disable modem
+  control pass-through for `mp`. This re-enables internal manipulation
+  of `DTR` and `RTS` by the `TMXR` library and disables the
+  `tmxr_set_get_modem_bits` and `tmxr_set_config_line` APIs.
+
+- `t_stat tmxr_set_port_speed_control(TMXR *mp)` – declare that the
+  device interfacing with `mp` uses the `tmxr_set_config_line` API to
+  set the port line speed. This declaration should be made in the device
+  reset routine before any line attachments are made.
+
+- `t_stat tmxr_clear_port_speed_control(TMXR *mp)` – declare that the
+  device interfacing with `mp` does not use the `tmxr_set_config_line`
+  API to set the port line speed. This declaration should only be
+  necessary if `tmxr_set_port_speed_control` had been called previously.
+  It will fail if any line attachments are active.
 
 - `t_stat tmxr_set_line_port_speed_control(TMXR *mp, int line)` –
-  Declares that the device which interfaces the specified `TMXR` uses
-  the `tmxr_set_config_line` API to set the port line speed for the
+  declare that the device interfacing with `mp` uses the
+  `tmxr_set_config_line` API to set the port line speed for the
   specified line. This declaration should be made in the device reset
-  routine and called before any line attachments are made.
+  routine before any line attachments are made.
 
 - `t_stat tmxr_clear_line_port_speed_control(TMXR *mp, int line)` –
-  Declares that the device which interfaces the specified `TMXR` does
-  not use the `tmxr_set_config_line` API to set the port line speed
-  for the specified line. This declaration should only be necessary if
-  `tmxr_set_port_speed_control` had been called previously. I will
+  declare that the device interfacing with `mp` does not use the
+  `tmxr_set_config_line` API to set the port line speed for the
+  specified line. This declaration should only be necessary if
+  `tmxr_set_line_port_speed_control` had been called previously. It will
   fail if any line attachments are active.
 
 - `t_stat tmxr_set_get_modem_bits(TMLN *lp, int32_t bits_to_set, int32_t
   bits_to_clear, int32_t *incoming_bits)` – For a line connected to a
   serial port on a `TMXR` device with `modem_control_passthru` enabled,
-  then the bits_to_set and/or bits_to_clear (`DTR` and `RTS`) are
-  changed and if incoming_bits is not `NULL`, then the current modem
-  bits are returned (`DCD`,`RNG`,`CTS`, `DSR`).
+  change the outgoing modem bits requested by `bits_to_set` and
+  `bits_to_clear` (`DTR` and `RTS`). If `incoming_bits` is not `NULL`,
+  the current incoming modem bits (`DCD`, `RNG`, `CTS`, and `DSR`) are
+  returned there.
+
+- `t_stat tmxr_set_line_loopback(TMLN *lp, bool enable_loopback)` –
+  enable or disable loopback mode for the line described by `lp`.
+
+- `bool tmxr_get_line_loopback(TMLN *lp)` – return whether loopback mode
+  is enabled for the line described by `lp`.
+
+- `t_stat tmxr_set_line_halfduplex(TMLN *lp, bool enable_loopback)` –
+  enable or disable half-duplex mode for the line described by `lp`.
+
+- `bool tmxr_get_line_halfduplex(TMLN *lp)` – return whether half-duplex
+  mode is enabled for the line described by `lp`.
+
+- `t_stat tmxr_set_line_speed(TMLN *lp, const char *speed)` – set the
+  line speed for the line described by `lp`.
 
 - `t_stat tmxr_set_config_line(TMLN *lp, const char *config)` – sets
   the line configuration (speed, parity, character size, stopbits) on
-  a serial port. Config is a string of the form: `9600-8N1`.
+  a serial port. `config` is a string of the form `9600-8N1`.
 
-- `t_stat tmxr_set_line_unit(TMXR *mp, int line, UNIT *uptr)` –
-  Declare which unit polls for input on a given line (only needed if
-  the input polling unit is different than the unit provided when the
-  multiplexer was attached.
+- `t_stat tmxr_set_line_modem_control(TMLN *lp, bool enab_disab)` –
+  enable or disable modem-control behavior for the line described by
+  `lp`.
 
-- `t_stat tmxr_set_line_output_unit(TMXR *mp, int line, UNIT *uptr)` –
-  Declare which unit polls for output on a given line (only needed if
-  the output polling unit is different than the unit provided when the
-  multiplexer was attached.
+`SEND` and `EXPECT` helpers include:
 
-The OS dependent serial I/O and socket routines should not be accessed
-by the terminal simulators. The routines provided by sim_sock and
-sim_serial are for internal use by the `TMXR` library only and should
-be not be used directly by any simulator.
+- `t_stat tmxr_locate_line_send(const char *dev_line, SEND **snd)` –
+  locate the `SEND` context for a named line.
+
+- `t_stat tmxr_locate_line_expect(const char *dev_line, EXPECT **exp)` –
+  locate the `EXPECT` context for a named line.
+
+- `t_stat tmxr_locate_line(const char *dev_line, TMLN **lp)` – locate
+  the line descriptor for a named line.
+
+- `const char *tmxr_send_line_name(const SEND *snd)` – return the line
+  name associated with a `SEND` context.
+
+- `const char *tmxr_expect_line_name(const EXPECT *exp)` – return the
+  line name associated with an `EXPECT` context.
+
+The OS-dependent serial I/O and socket routines are deliberately not
+part of the terminal simulator interface. A simulator that bypasses
+`TMXR` and calls `sim_sock.c` or `sim_serial.c` directly is depending on
+library internals rather than the supported multiplexer abstraction.
 
 ## Magnetic Tape Emulation Library
 
-SIMH supports the use of emulated magnetic tapes. Magnetic tapes are
-emulated as disk files containing both data records and metadata
-markers; the format is fully described in the paper “SIMH Magtape
-Representation and Handling”. SIMH provides a supporting library,
-`sim_tape.c` (and its header file, `sim_tape.h`), that abstracts
-handling of magnetic tapes. This allows support for multiple tape
-formats, without change to magnetic device simulators.
+ZIMH supports emulated magnetic tapes. Magnetic tapes are emulated as
+disk files containing both data records and metadata markers; the
+format is fully described in “SIMH Magtape Representation and
+Handling”. ZIMH provides `sim_tape.c` and `sim_tape.h` to abstract
+magnetic-tape image handling, allowing tape device simulators to support
+multiple tape formats without format-specific code in each simulator.
 
 The magtape library does not require any special data
 structures. However, it does define some additional unit flags:
@@ -3012,12 +3125,12 @@ emulated magnetic tapes. These are declared in header file
   completion. Note that the record is returned in forward order, that
   is, byte `0` of the record is stored in `buf[0]`, and so on.
 
-- `t_stat sim_tape_wrrecf(UNIT *uptr, uint8_t buf, t_mtrlnt tbc)` –
-  Write buffer `uptr` of size `tbc` as the next record on unit `uptr`.
+- `t_stat sim_tape_wrrecf(UNIT *uptr, uint8_t *buf, t_mtrlnt tbc)` –
+  Write buffer `buf` of size `tbc` as the next record on unit `uptr`.
 
-- `t_stat sim_tape_wrrecf_a(UNIT *uptr, uint8_t buf, t_mtrlnt tbc,
-  TAPE_PCALLBACK callback)` – Write buffer `uptr` of size `tbc` as the
-  next record on unit `uptr` and call callback routine on completion.
+- `t_stat sim_tape_wrrecf_a(UNIT *uptr, uint8_t *buf, t_mtrlnt tbc,
+  TAPE_PCALLBACK callback)` – Write buffer `buf` of size `tbc` as the
+  next record on unit `uptr`. The callback is called on completion.
 
 - `t_stat sim_tape_errecf(UNIT *uptr, t_mtrlnt tbc)` – Starting at the
   current tape position, write an erase gap in the forward direction
@@ -3041,7 +3154,7 @@ emulated magnetic tapes. These are declared in header file
 
 - `t_stat sim_tape_sprecf_a(UNIT *uptr, t_mtrlnt *tbc, TAPE_PCALLBACK
   callback)` – Space unit `uptr` forward one record. The size of the
-  record is returned in `tbc` and call callback routine on completion.
+  record is returned in `tbc`. The callback is called on completion.
 
 - `t_stat sim_tape_sprecsf(UNIT *uptr, uint32_t count, uint32_t *skipped)`
   – Space unit `uptr` forward `count` records. The number of records
@@ -3050,7 +3163,7 @@ emulated magnetic tapes. These are declared in header file
 - `t_stat sim_tape_sprecsf_a(UNIT *uptr, uint32_t count, uint32_t
   *skipped, TAPE_PCALLBACK callback)` – Space unit `uptr` forward
   `count` records. The number of records actually skipped is returned
-  in `skipped` and call callback routine on completion.
+  in `skipped`. The callback is called on completion.
 
 - `t_stat sim_tape_spfilef(UNIT *uptr, uint32_t count, uint32_t *skipped)`
   – Space unit `uptr` forward `count` files. The number of files
@@ -3059,7 +3172,7 @@ emulated magnetic tapes. These are declared in header file
 - `t_stat sim_tape_spfilef_a(UNIT *uptr, uint32_t count, uint32_t
   *skipped, TAPE_PCALLBACK callback)` – Space unit `uptr` forward
   `count` files. The number of files actually skipped is returned in
-  `skipped` and call callback routine on completion.
+  `skipped`. The callback is called on completion.
 
 - `t_stat sim_tape_spfilebyrecf(UNIT *uptr, uint32_t count, uint32_t
   *skipped, uint32_t *recsskipped, bool check_leot)` – Space unit
@@ -3071,27 +3184,25 @@ emulated magnetic tapes. These are declared in header file
   *skipped, uint32_t *recsskipped, bool check_leot, TAPE_PCALLBACK
   callback)` – Space unit `uptr` forward `count` files. The number of
   files actually skipped is returned in `skipped`. The number of
-  records skipped is returned in `recsskipped` and call callback
-  routine on completion.
+  records skipped is returned in `recsskipped`. The callback is called
+  on completion.
 
 - `t_stat sim_tape_position(UNIT *uptr, uint32_t flags, uint32_t recs,
   uint32_t *recsskipped, uint32_t files, uint32_t *filesskipped, uint32_t
-  *objectsskipped)` – Space unit `uptr` forward `recs` records and
-  `files` files. The number of recordss actually skipped is returned
-  in `recsskipped`. The number of files actually skipped is returned
-  in `filesskipped`. The number of records skipped is returned in
-  `recsskipped`. The number of objects skipped is returned in
-  `objectssskipped`.
+  *objectsskipped)` – Space unit `uptr` according to `flags`, moving by
+  `recs` records and `files` files. The number of records actually
+  skipped is returned in `recsskipped`, the number of files actually
+  skipped is returned in `filesskipped`, and the total number of objects
+  skipped is returned in `objectsskipped`.
 
 - `t_stat sim_tape_position_a(UNIT *uptr, uint32_t flags, uint32_t recs,
   uint32_t *recsskipped, uint32_t files, uint32_t *filesskipped, uint32_t
   *objectsskipped, TAPE_PCALLBACK callback)` – Space unit `uptr`
-  forward `recs` records and `files` files. The number of recordss
-  actually skipped is returned in `recsskipped`. The number of files
-  actually skipped is returned in `filesskipped`. The number of
-  records skipped is returned in `recsskipped`. The number of objects
-  skipped is returned in `objectssskipped` and call callback routine
-  on completion.
+  according to `flags`, moving by `recs` records and `files` files. The
+  number of records actually skipped is returned in `recsskipped`, the
+  number of files actually skipped is returned in `filesskipped`, and
+  the total number of objects skipped is returned in `objectsskipped`.
+  The callback is called on completion.
 
 - `t_stat sim_tape_sprecr(UNIT *uptr, t_mtrlnt *tbc)` – Space unit
   `uptr` reverse one record. The size of the record is returned in
@@ -3099,12 +3210,41 @@ emulated magnetic tapes. These are declared in header file
 
 - `t_stat sim_tape_sprecr_a(UNIT *uptr, t_mtrlnt *tbc, TAPE_PCALLBACK
   callback)` – Space unit `uptr` reverse one record. The size of the
-  record is returned in `tbc` and call `callback` routine on completion.
+  record is returned in `tbc`. The callback is called on completion.
+
+- `t_stat sim_tape_sprecsr(UNIT *uptr, uint32_t count, uint32_t
+  *skipped)` – Space unit `uptr` reverse `count` records. The number of
+  records actually skipped is returned in `skipped`.
+
+- `t_stat sim_tape_sprecsr_a(UNIT *uptr, uint32_t count, uint32_t
+  *skipped, TAPE_PCALLBACK callback)` – Space unit `uptr` reverse
+  `count` records. The number of records actually skipped is returned
+  in `skipped`. The callback is called on completion.
+
+- `t_stat sim_tape_spfiler(UNIT *uptr, uint32_t count, uint32_t
+  *skipped)` – Space unit `uptr` reverse `count` files. The number of
+  files actually skipped is returned in `skipped`.
+
+- `t_stat sim_tape_spfiler_a(UNIT *uptr, uint32_t count, uint32_t
+  *skipped, TAPE_PCALLBACK callback)` – Space unit `uptr` reverse
+  `count` files. The number of files actually skipped is returned in
+  `skipped`. The callback is called on completion.
+
+- `t_stat sim_tape_spfilebyrecr(UNIT *uptr, uint32_t count, uint32_t
+  *skipped, uint32_t *recsskipped)` – Space unit `uptr` reverse `count`
+  files. The number of files actually skipped is returned in `skipped`.
+  The number of records skipped is returned in `recsskipped`.
+
+- `t_stat sim_tape_spfilebyrecr_a(UNIT *uptr, uint32_t count, uint32_t
+  *skipped, uint32_t *recsskipped, TAPE_PCALLBACK callback)` – Space
+  unit `uptr` reverse `count` files. The number of files actually
+  skipped is returned in `skipped`. The number of records skipped is
+  returned in `recsskipped`. The callback is called on completion.
 
 - `t_stat sim_tape_wrtmk(UNIT *uptr)` – Write a tape mark on unit `uptr`.
 
 - `t_stat sim_tape_wrtmk_a(UNIT *uptr, TAPE_PCALLBACK callback)` –
-  Write a tape mark on unit `uptr` and call callback routine on
+  Write a tape mark on unit `uptr`. The callback is called on
   completion.
 
 - `t_stat sim_tape_wreom(UNIT *uptr)` – Write an end-of-medium marker
@@ -3112,8 +3252,7 @@ emulated magnetic tapes. These are declared in header file
 
 - `t_stat sim_tape_wreom_a(UNIT *uptr, TAPE_PCALLBACK callback)` –
   Write an end-of-medium marker on unit `uptr` (this effectively
-  erases the rest of the tape) and call callback routine on
-  completion.
+  erases the rest of the tape). The callback is called on completion.
 
 - `t_stat sim_tape_wreomrw(UNIT *uptr)` – Write an end-of-medium
   marker on unit `uptr` and rewind (this effectively erases the rest
@@ -3121,8 +3260,8 @@ emulated magnetic tapes. These are declared in header file
 
 - `t_stat sim_tape_wreomrw_a(UNIT *uptr, TAPE_PCALLBACK callback)` –
   Write an end-of-medium marker on unit `uptr` and rewind (this
-  effectively erases the rest of the tape) and call callback routine
-  on completion.
+  effectively erases the rest of the tape). The callback is called on
+  completion.
 
 - `t_stat sim_tape_wrgap(UNIT *uptr, uint32_t gaplen)` – Write an erase
   gap on unit `uptr` of `gaplen` tenths of an inch in length at a tape
@@ -3131,14 +3270,14 @@ emulated magnetic tapes. These are declared in header file
 - `t_stat sim_tape_wrgap_a(UNIT *uptr, uint32_t gaplen, TAPE_PCALLBACK
   callback)` – Write an erase gap on unit `uptr` of `gaplen` tenths of
   an inch in length at a tape density specified by a preceding
-  `sim_tape_set_dens` call and call callback routine on completion.
+  `sim_tape_set_dens` call. The callback is called on completion.
 
 - `t_stat sim_tape_rewind(UNIT *uptr)` – Rewind unit `uptr`. This
   operation succeeds whether or not the unit is attached to a file.
 
 - `t_stat sim_tape_rewind_a(UNIT *uptr, TAPE_PCALLBACK callback)` –
   Rewind unit `uptr`. This operation succeeds whether or not the unit
-  is attached to a file and call callback routine on completion.
+  is attached to a file. The callback is called on completion.
 
 - `t_stat sim_tape_reset(UNIT *uptr)` – Reset unit `uptr`. This
   routine should be called when a tape unit is reset.
@@ -3150,8 +3289,8 @@ emulated magnetic tapes. These are declared in header file
    write-protected.
 
 - `bool sim_tape_eot(UNIT *uptr)` – Return `true` if unit `uptr` has
-  exceeded the capacity specified for the unit (kept in
-  uptr-\>capac).
+  exceeded the capacity specified for the unit, stored in
+  `uptr->capac`.
 
 The library supports reading and writing erase gaps in standard (SIMH)
 tape format image files. Before writing a gap with `sim_tape_wrgap`,
@@ -3196,6 +3335,7 @@ codes are:
 | `MTSE_BOT`     | beginning of tape encountered during reverse operation |
 | `MTSE_EOM`     | end of medium encountered                              |
 | `MTSE_WRP`     | write protected unit during write operation            |
+| `MTSE_LEOT`    | logical end of tape encountered                        |
 | `MTSE_RUNAWAY` | tape runaway occurred                                  |
 
 `sim_tape_set_fmt`, `sim_tape_show_fmt`, `sim_tape_set_capac`, and
@@ -3218,14 +3358,13 @@ the density, as indicated above.
 
 ## Disk Emulation Library
 
-SIMH supports the use of disk drives. Disk drives as disk files
-containing both data and potentially additional metadata which
-describes various aspects of the disk container and the disk drive it
-emulates. SIMH provides a supporting library, `sim_disk.c` (and its
-header file, `sim_disk.h`), that abstracts handling of disk drives
-which have sectors which are a multiple of 512 bytes. This allows
-support for alternate disk formats or disk access to physical devices
-on the host system, without change to disk device simulators.
+ZIMH supports emulated disk drives. Disk drives are represented as host
+files containing sector data and, for some formats, additional metadata
+describing the disk container or emulated drive. ZIMH provides
+`sim_disk.c` and `sim_disk.h` for disk devices whose sectors are a
+multiple of 512 bytes. This allows disk simulators to support alternate
+disk formats and, where available, physical host devices without
+format-specific code in each simulator.
 
 Disk simulators that attach through the `sim_disk_attach` family also
 get volatile ramdisk attach support where the host C library provides
@@ -3241,8 +3380,9 @@ flags should begin at bit number `DKUF_V_UF` instead of
 `UNIT_V_UF`. The disk library maintains the current disk position in
 the `pos` field of the `UNIT` structure.
 
-Library `sim_disk.c` provides the following routines to support
-emulated disk drives. These are declared in include file `sim_disk.h`.
+Library `sim_disk.c` provides the following commonly used routines to
+support emulated disk drives. These are declared in include file
+`sim_disk.h`, which is the authoritative API reference.
 
 - `t_stat sim_disk_attach(UNIT *uptr, const char *cptr, size_t
   sector_size, size_t xfer_element_size, bool dontchangecapac, uint32_t
@@ -3271,6 +3411,8 @@ emulated disk drives. These are declared in include file `sim_disk.h`.
 - `t_stat sim_disk_detach(UNIT *uptr)` – Detach disk unit `uptr` from
   its current file.
 
+- `t_stat sim_disk_erase(UNIT *uptr)` – Erase disk unit `uptr`.
+
 - `t_stat sim_disk_set_fmt(UNIT *uptr, int32_t val, const char *cptr,
   void *desc)` – Set the disk format for unit `uptr` to the format
   specified by string `cptr`.
@@ -3288,27 +3430,26 @@ emulated disk drives. These are declared in include file `sim_disk.h`.
   specified by descriptor `st`.
 
 - `t_stat sim_disk_rdsect(UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt
-  *sectsread, , t_seccnt *sectstoread)` – Read up to `sectstoread`
+  *sectsread, t_seccnt sects)` – Read up to `sects`
   sectors from sector number `lba` on unit `uptr` into buffer
   `buf`. Return the number of sectors read in `sectsread`.
 
 - `t_stat sim_disk_rdsect_a(UNIT *uptr, t_lba lba, uint8_t *buf,
-  t_seccnt *sectsread, , t_seccnt *sectstoread, DISK_PCALLBACK
-  callback)` – Read up to sectstoread sectors from sector number lba
-  on unit `uptr` into buffer `buf` *asynchronously*. Return the number
-  of sectors read in `sectsread`, and call `callback` routine on
-  completion.
+  t_seccnt *sectsread, t_seccnt sects, DISK_PCALLBACK callback)` – Read
+  up to `sects` sectors from sector number `lba` on unit `uptr` into
+  buffer `buf` *asynchronously*. Return the number of sectors read in
+  `sectsread`. The callback is called on completion.
 
 - `t_stat sim_disk_wrsect(UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt
-  *sectswritten, , t_seccnt *sectstowrite)` – Write `sectstowrite`
+  *sectswritten, t_seccnt sects)` – Write `sects`
   sectors from buffer `buf` to disk sector number `lba` on unit
   `uptr`. Return the number of sectors written in `sectswritten`.
 
 - `t_stat sim_disk_wrsect_a(UNIT *uptr, t_lba lba, uint8_t *buf,
-  t_seccnt *sectswritten, , t_seccnt *sectstowrite, DISK_PCALLBACK
-  callback)` – Write `sectstowrite` sectors from buffer `buf` to disk
+  t_seccnt *sectswritten, t_seccnt sects, DISK_PCALLBACK
+  callback)` – Write `sects` sectors from buffer `buf` to disk
   sector number `lba` on unit `uptr` *asynchronously*. Return the number
-  of sectors written in `sectswritten`, and call callback routine on
+  of sectors written in `sectswritten`. The callback is called on
   completion.
 
 - `t_stat sim_disk_unload(UNIT *uptr)` – Unload or detach a disk as needed.
@@ -3322,6 +3463,12 @@ emulated disk drives. These are declared in include file `sim_disk.h`.
 - `t_stat sim_disk_reset(UNIT *uptr)` – Reset unit `uptr`. This
   routine should be called when a disk unit is reset.
 
+- `t_stat sim_disk_perror(UNIT *uptr, const char *msg)` – Report a disk
+  error for unit `uptr`, prefixing the message with `msg`.
+
+- `t_stat sim_disk_clearerr(UNIT *uptr)` – Clear the host file error
+  state for disk unit `uptr`.
+
 - `bool sim_disk_isavailable(UNIT *uptr)` – Check to see if disk is
   available for I/O, return `true` if so.
 
@@ -3332,18 +3479,23 @@ emulated disk drives. These are declared in include file `sim_disk.h`.
 - `bool sim_disk_wrp(UNIT *uptr)` – Return `true` if unit `uptr` is
   write-protected.
 
-- `t_addr sim_disk_size(UNIT *uptr)` – get disk size.
+- `t_offset sim_disk_size(UNIT *uptr)` – Return the disk size.
+
+- `bool sim_disk_vhd_support(void)` – Return `true` if VHD disk-image
+  support is available.
+
+- `bool sim_disk_raw_support(void)` – Return `true` if raw physical
+  disk access is available.
+
+- `void sim_disk_data_trace(UNIT *uptr, const uint8_t *data, size_t lba,
+  size_t len, const char *txt, int detail, uint32_t reason)` – Trace
+  disk data for debugging.
 
 `sim_disk_attach`, `sim_disk_detach`, `sim_disk_set_fmt`,
-`sim_disk_show_fmt`, `sim_disk_set_capac`, and `sim_tape_disk_capac`
-return standard SCP status codes; the other disk library routines
-return private codes for success and failure. Success status is
-`DKSE_OK` and any other value is an error. ``errno` usually will have
-the appropriate error code:
-
-| name      | description          |
-|-----------|----------------------|
-| `DKSE_OK` | operation successful |
+`sim_disk_show_fmt`, `sim_disk_set_capac`, and `sim_disk_show_capac`
+return standard SCP status codes. Sector I/O routines return `DKSE_OK`
+for success; any other value is an error, and `errno` usually has the
+host error code.
 
 `sim_disk_set_fmt`, `sim_disk_show_fmt`, `sim_disk_set_capac`, and
 `sim_disk_show_capac` should be referenced by an entry in the disk
@@ -3351,9 +3503,9 @@ device’s modifier list, as follows:
 
 ```c
 MTAB disk_mod[] = {
-    { MTAB_XTD\|MTAB_VDV, 0, "FORMAT", "FORMAT",
+    { MTAB_XTD|MTAB_VDV, 0, "FORMAT", "FORMAT",
       &sim_disk_set_fmt, &sim_disk_show_fmt, NULL },
-    { MTAB_XTD\|MTAB_VUN, 0, "CAPACITY", "CAPACITY",
+    { MTAB_XTD|MTAB_VUN, 0, "CAPACITY", "CAPACITY",
       &sim_disk_set_capac, &sim_disk_show_capac, NULL },
   /* ... */
 };
@@ -3361,10 +3513,10 @@ MTAB disk_mod[] = {
 
 ## Breakpoint Support
 
-SIMH provides a highly flexible and extensible breakpoint subsystem to
+ZIMH provides a highly flexible and extensible breakpoint subsystem to
 assist in debugging simulated code. Its features include:
 
-- Up to 26 different kinds of breakpoints (\*)
+- Up to 26 user-defined breakpoint types (\*)
 - Unlimited numbers of breakpoints
 - Proceed counts for each breakpoint
 - Automatic execution of commands when a breakpoint is taken
@@ -3380,12 +3532,12 @@ invocation of the simulator to recreate the same breakpoint set.\]
 
 ### Breakpoint Basics
 
-SIMH breakpoints are characterized by a type, an address, a class, a
+ZIMH breakpoints are characterized by a type, an address, a class, a
 proceed count, and an action string. Breakpoint types are arbitrary
 and are defined by the virtual machine. Each breakpoint type is
 assigned a unique letter. All simulators to date provide execution
-(“E”) breakpoints. A useful extension would be to provide breakpoints
-on read (“R”) and write (“W”) data access. Even finer gradations are
+(`E`) breakpoints. A useful extension would be to provide breakpoints
+on read (`R`) and write (`W`) data access. Even finer gradations are
 possible, e.g., physical versus virtual addressing, DMA versus CPU
 access, and so on.
 
@@ -3393,22 +3545,22 @@ Breakpoints can be assigned to devices other than the CPU, but
 breakpoints don’t contain a device pointer. Thus, each device must
 have its own unique set of breakpoint types. For example, if a
 simulator contained a programmable graphics processor, it would need a
-separate instruction breakpoint type (e.g., type G rather than E).
+separate instruction breakpoint type (e.g., type `G` rather than `E`).
 
-The virtual machine defines the valid breakpoint types to SIMH through
+The virtual machine defines the valid breakpoint types to ZIMH through
 two variables:
 
 - `sim_brk_types` – initialized by the VM (usually in the CPU reset
   routine) to a mask of all supported breakpoints; bit 0 (low order
-  bit) corresponds to type ‘A’, bit 1 to type ‘B’, etc.
+  bit) corresponds to type `A`, bit 1 to type `B`, etc.
 
 - `sim_brk_dflt` – initialized by the VM to the mask for the default
   breakpoint type.
 
-SIMH in turn provides the virtual machine with a summary of all the
+SCP in turn provides the virtual machine with a summary of all the
 breakpoint types that currently have active breakpoints:
 
-- `sim_brk_summ` – maintained by SIMH; provides a bit mask summary of
+- `sim_brk_summ` – maintained by ZIMH; provides a bit mask summary of
   whether any breakpoints of a particular type have been defined.
 
 When the virtual machine reaches the point in its execution cycle
@@ -3433,10 +3585,9 @@ sufficient efficiency.
 
 When a breakpoint match is detected by `sim_brk_test` the global
 variables `sim_brk_match_type` and `sim_brk_match_addr` are set to
-reflect the details of the match that was found. Simulator code can
-use this information directly or SIMH provides internal facilities to
-report the details of breakpoints which have been matched. For
-example:
+reflect the details of the match that was found. Simulator code can use
+this information directly. ZIMH also provides internal facilities to
+report the details of matched breakpoints. For example:
 
 ```c
 BRKTYPTAB cpu_breakpoints [] = {
@@ -3451,13 +3602,12 @@ BRKTYPTAB cpu_breakpoints [] = {
 
 t_stat cpu_reset (DEVICE *dptr)
 {
-  /* ... */
-    sim_brk_dflt = SWMASK ('E');
-    sim_brk_types = sim_brk_dflt|SWMASK ('P')|
-    SWMASK ('R')|SWMASK ('S')|
-    SWMASK ('W')|SWMASK ('X');
+    /* ... */
+    sim_brk_dflt = SWMASK('E');
+    sim_brk_types = sim_brk_dflt | SWMASK('P') | SWMASK('R') |
+                    SWMASK('S') | SWMASK('W') | SWMASK('X');
     sim_brk_type_desc = cpu_breakpoints;
-  /* ... */
+    /* ... */
 }
 ```
 
@@ -3480,10 +3630,9 @@ reason = sim_messagef (reason, "%s\n", sim_brk_message());
 return reason;
 ```
 
-`sim_messagef` produces a message which contains either the breakpoint
-type and the matched breakpoint address (if `sim_brk_type_desc` is not
-set), or the type mapped to it related description as indicated in the
-`BRKTYPTAB` pointed to by `sim_brk_typ_desc`.
+`sim_messagef` produces a message containing either the breakpoint type
+and matched address, or the description associated with the matched
+type in `sim_brk_type_desc`.
 
 ### Testing For Breakpoints
 
@@ -3527,8 +3676,8 @@ indirect addresses, and data reads, with a single test.
 
 ### The Replay Problem
 
-When a breakpoint is taken, control returns to the SIMH control
-package. Depending on the code structure of the simulated system and
+When a breakpoint is taken, control returns to SCP. Depending on the
+code structure of the simulated system and
 the particular type of breakpoint, a breakpoint may be taken before or
 after a specific activity has completed. If it is taken before the
 operation has actually been performed, when execution resumes, the
@@ -3536,11 +3685,11 @@ same breakpoint will be reached and taken again immediately. This
 could result in an endless loop, with the simulator never progressing
 beyond a breakpoint.
 
-To address this problem, when a breakpoint is taken, SIMH remembers
+To address this problem, when a breakpoint is taken, ZIMH remembers
 the breakpoint that was taken and the instruction executed count when
 that particular breakpoint was taken. If the next breakpoint test for
 that breakpoint type is to the same address and the instruction
-execution count is the same, SIMH suppresses the breakpoint. Thus, the
+execution count is the same, ZIMH suppresses the breakpoint. Thus, the
 simulator can make progress past the breakpoint but will take the
 breakpoint again if control returns to the same address.
 
@@ -3557,13 +3706,13 @@ happened.
 Most simulators will implement a CPU execution breakpoint concept such
 that the breakpoint is taken prior to the instruction at the
 breakpoint address having executed. This allows for the user to
-continue execution from breakpoint and the simulator will produce
-precisely the same results as if the breakpoint hadn’t been there. In
+continue execution from the breakpoint, and the simulator will produce
+the same results as if the breakpoint had not been present. In
 order for this to be true, when a breakpoint is taken, not only must
 `sim_interval` be restored to its value prior to the breakpoint, but
-all other simulator specific state must also be retained. This state
-includes program counter, the contents of registers, condition codes
-and memory that may have already changed prior to the call to
+all other simulator-specific state must also be retained. This state
+includes the program counter, register contents, condition codes, and
+memory that may have already changed prior to the call to
 `sim_brk_test` that causes the breakpoint to be taken. Achieving this
 is simplest with basic PC based execution breakpoints and gets more
 complicated with breakpoints based on various memory reference
@@ -3571,8 +3720,8 @@ activities.
 
 ### Breakpoint Classes
 
-SIMH implements up to 8 breakpoint classes. Each breakpoint class has
-its own state. Thus, if the E, R, and W breakpoints are assigned to
+ZIMH implements up to 8 breakpoint classes. Each breakpoint class has
+its own state. Thus, if the `E`, `R`, and `W` breakpoints are assigned to
 separate classes, each will be suppressed in turn until the next
 breakpoint test on that class that fails or that uses a different
 address.
@@ -3581,13 +3730,16 @@ Breakpoint classes are arbitrary identifiers and can be assigned by
 the simulator writer as desired. The class is specified as part of the
 breakpoint type in the call to `sim_brk_test`:
 
-- `<31:29>` = class number (0 by default)
-- `<25:0>` = bit mask of breakpoint types
+- `<31:29>` = class number (`0` by default)
+- `<25:0>` = bit mask of user-defined breakpoint types
 
 Note that breakpoint classes and breakpoint types are
 orthogonal. Thus, classes can be used to distinguish different cases
-of the same breakpoint type. For example, in an SMP system with ‘n’
-processors, classes 0..n-1 could be used for E-breakpoints for
-processors 0..n-1. Or in a VAX, classes 1..6 could be used for data
-breakpoints on operands 1..6, with 0 reserved for the CPU’s
-E-breakpoints.
+of the same breakpoint type. For example, in an SMP system with `n`
+processors, classes `0..n-1` could be used for `E` breakpoints for
+processors `0..n-1`. Or in a VAX, classes `1..6` could be used for data
+breakpoints on operands `1..6`, with `0` reserved for the CPU’s `E`
+breakpoints.
+
+For the authoritative breakpoint API declarations, see `scp.h` and
+`sim_defs.h`.
