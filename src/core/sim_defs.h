@@ -842,7 +842,7 @@ struct MEMFILE {
      BRDATA    Singly-subscripted array
      CRDATA    Doubly-subscripted array
 
-     SRDATA    Singly-subscripted array of general structure fields
+     STRDATA   Singly-subscripted array of general structure fields
      URDATA    Singly-subscripted array of UNIT structure fields
 
      XRDATA    Generic type with specification of all parameters
@@ -861,12 +861,12 @@ struct MEMFILE {
 
    ...specifies a register starting with array element three.
 
-   For arrays of general structures, the names of the array and selected field
-   are given:
+   For arrays of general structures, the selected field in element zero and the
+   array element size are given:
 
-     SRDATA (SYM, array, field, ...)
+     STRDATA (SYM, array[0].field, ..., sizeof (array[0]), ...)
 
-   This specifies a arrayed register whose elements are array[0].field,
+   This specifies an arrayed register whose elements are array[0].field,
    array[1].field, etc.
 
    All above macro names from ORDATA through XRDATA have two additional
@@ -905,7 +905,7 @@ struct MEMFILE {
        for the most part, not specified as a macro parameter.
 
     4. The URDATA macro is obsolescent and present for backward-compatibility.
-       It is a special case of the generic SRDATA macro, which provides the same
+       It is a special case of the generic STRDATA macro, which provides the same
        functionality.  Note also that URDATA requires a "flags" parameter value,
        which is optional for all other macros.
 
