@@ -5,7 +5,7 @@ and triage the findings.
 
 ## Work
 
-- Configure with `-DENABLE_CPPCHECK=ON` and the intended `ZIMH_C_STANDARD`.
+- Configure with `-DENABLE_CPPCHECK=ON` and the intended `CMAKE_C_STANDARD`.
 - Run `cmake --build <build-dir> --target cppcheck`.
 - Capture and group findings by subsystem.
 - Fix clear correctness issues with focused tests first.

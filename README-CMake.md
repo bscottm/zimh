@@ -107,7 +107,7 @@ The most commonly used options are:
   Default: unset.
   Optional project-level C compiler override. Set this before the first
   configure of a build tree.
-- `ZIMH_C_STANDARD`
+- `CMAKE_C_STANDARD`
   Default: `17`.
   C language standard used by ZIMH-owned targets.
 - `WITH_VIDEO`

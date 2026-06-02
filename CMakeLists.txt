@@ -105,16 +105,8 @@ project(zimh VERSION "${ZIMH_VERSION}" LANGUAGES C)
 
 # zimh actively supports C11 and above. C99 is not supported,
 # but we try not to break C99 unnecessarily.
-if (DEFINED CMAKE_C_STANDARD)
-    set(ZIMH_DEFAULT_C_STANDARD "${CMAKE_C_STANDARD}")
-else ()
-    set(ZIMH_DEFAULT_C_STANDARD "17")
-endif ()
-set(ZIMH_C_STANDARD "${ZIMH_DEFAULT_C_STANDARD}" CACHE STRING
+set(CMAKE_C_STANDARD 17 CACHE STRING
     "C language standard for zimh-owned targets.")
-unset(ZIMH_DEFAULT_C_STANDARD)
-
-set(CMAKE_C_STANDARD "${ZIMH_C_STANDARD}")
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
@@ -336,7 +328,7 @@ if (ENABLE_CPPCHECK)
              "--enable=warning,style,performance,portability,information,missingInclude"
              "--suppress=missingIncludeSystem"
              "--inline-suppr"
-             "--std=c${ZIMH_C_STANDARD}"
+             "--std=c${CMAKE_C_STANDARD}"
              "--force")
         set(CPPCHECK_STATUS "found and enabled.")
         if (WIN32)
