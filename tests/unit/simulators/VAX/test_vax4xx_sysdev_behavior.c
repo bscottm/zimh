@@ -151,6 +151,42 @@ void iccs_wr(int32_t data)
     (void)data;
 }
 
+int32_t ReadIO(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIO");
+    return 0;
+}
+
+int32_t ReadIOU(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed unaligned I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIOU");
+    return 0;
+}
+
+void WriteIO(uint32_t pa, int32_t val, int32_t lnt)
+{
+    /* Stubbed I/O write for uncalled memory access paths. */
+    (void)pa;
+    (void)val;
+    (void)lnt;
+    fail_msg("unexpected WriteIO");
+}
+
+void WriteIOU(uint32_t pa, int32_t val, int32_t lnt)
+{
+    /* Stubbed unaligned I/O write for uncalled memory access paths. */
+    (void)pa;
+    (void)val;
+    (void)lnt;
+    fail_msg("unexpected WriteIOU");
+}
+
 #define STUB_READ(name)                                                        \
     int32_t name(int32_t pa)                                                   \
     {                                                                          \

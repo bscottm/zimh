@@ -54,12 +54,31 @@ TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
     return (TLBENT){0, 0};
 }
 
+int32_t ReadIO(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIO");
+    return 0;
+}
+
+int32_t ReadIOU(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed unaligned I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIOU");
+    return 0;
+}
+
 void WriteIO(uint32_t pa, int32_t val, int32_t lnt)
 {
     /* Stubbed I/O write for uncalled memory access paths. */
     (void)pa;
     (void)val;
     (void)lnt;
+    fail_msg("unexpected WriteIO");
 }
 
 void WriteIOU(uint32_t pa, int32_t val, int32_t lnt)
@@ -68,6 +87,7 @@ void WriteIOU(uint32_t pa, int32_t val, int32_t lnt)
     (void)pa;
     (void)val;
     (void)lnt;
+    fail_msg("unexpected WriteIOU");
 }
 
 t_stat cpu_load_bootcode(const char *filename, const uchar_t *builtin_code,
