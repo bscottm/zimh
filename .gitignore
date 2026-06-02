@@ -22,6 +22,7 @@ Thumbs.db
 *#
 
 # Ignore local editor state.
+.dir-locals.el
 .vscode/
 .vs/
 **/*.code-workspace
@@ -29,6 +30,7 @@ Thumbs.db
 
 # Ignore local build and install trees.
 /build/
+/build-*/
 /vcpkg_installed/
 CMakeUserPresets.json
 
