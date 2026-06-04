@@ -73,6 +73,16 @@ configure_file(
     "${ZIMH_GENERATED_INCLUDE_DIR}/zimh_version.h"
     @ONLY)
 
+# if (WIN32)
+#     enable_language(RC)
+
+#     # Only override RC rules if we're actually using llvm-rc
+#     if (CMAKE_RC_COMPILER MATCHES "llvm-rc")
+#         set(CMAKE_RC_COMPILE_OBJECT
+#             "<CMAKE_RC_COMPILER> /L 1252 <DEFINES> <INCLUDES> /fo <OBJECT> <SOURCE>")
+#     endif ()
+# endif ()
+
 include(GNUInstallDirs)
 
 # Default build type if multi-config generator isn't used
