@@ -10,10 +10,15 @@
  * arguments are the one-based format string and first variadic argument
  * positions used by GCC and Clang's format attribute.
  */
+#ifndef PRINTF_FMT
+#if defined(__cppcheck__)
+#define PRINTF_FMT(n, m)
+#elif defined(__has_attribute)
+#if __has_attribute(format)
+#define PRINTF_FMT(n, m) __attribute__((format(printf, n, m)))
+#endif
+#endif
 #if !defined(PRINTF_FMT)
-#if defined(__GNUC__) || defined(__clang__)
-#define PRINTF_FMT(n, m) __attribute__((format(__printf__, n, m)))
-#else
 #define PRINTF_FMT(n, m)
 #endif
 #endif

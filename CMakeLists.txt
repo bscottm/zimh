@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # Enforce strict out-of-source builds early
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
-    message(FATAL_ERROR 
+    message(FATAL_ERROR
         "!!! DO NOT BUILD CMake artifacts in the source directory !!!\n"
         "Create a separate build directory, e.g., 'build/', and run cmake from there."
     )
@@ -11,7 +11,7 @@ endif()
 # Safely auto-detect and inject vcpkg if the environment variable is present,
 # but ONLY if the user hasn't specified their own toolchain file.
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" 
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         CACHE FILEPATH "Auto-detected vcpkg toolchain"
     )
     message(STATUS "Auto-detected VCPKG_ROOT: Using vcpkg toolchain.")
@@ -38,7 +38,7 @@ set(SIMH_TOOLS_ROOT ${CMAKE_SOURCE_DIR}/tools)
 set(SIMH_DOCS_ROOT ${CMAKE_SOURCE_DIR}/docs)
 set(ZIMH_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
 
-## ZIMH Version variables:
+# # ZIMH Version variables:
 set(ZIMH_VERSION_MAJOR 2026)
 set(ZIMH_VERSION_MINOR 5)
 set(ZIMH_VERSION_PATCH 29)
@@ -46,17 +46,18 @@ set(ZIMH_VERSION_TWEAK 0)
 math(EXPR ZIMH_VERSION_YEAR_VALUE "${ZIMH_VERSION_MAJOR} * 10000")
 math(EXPR ZIMH_VERSION_MONTH_VALUE "${ZIMH_VERSION_MINOR} * 100")
 math(EXPR ZIMH_VERSION_DATE_BASE
-     "${ZIMH_VERSION_YEAR_VALUE} + ${ZIMH_VERSION_MONTH_VALUE}")
+    "${ZIMH_VERSION_YEAR_VALUE} + ${ZIMH_VERSION_MONTH_VALUE}")
 math(EXPR ZIMH_VERSION_DATE
-     "${ZIMH_VERSION_DATE_BASE} + ${ZIMH_VERSION_PATCH}")
-if (ZIMH_VERSION_TWEAK EQUAL 0)
+    "${ZIMH_VERSION_DATE_BASE} + ${ZIMH_VERSION_PATCH}")
+
+if(ZIMH_VERSION_TWEAK EQUAL 0)
     set(ZIMH_VERSION
         "${ZIMH_VERSION_MAJOR}.${ZIMH_VERSION_MINOR}.${ZIMH_VERSION_PATCH}")
-else ()
+else()
     string(CONCAT ZIMH_VERSION
-           "${ZIMH_VERSION_MAJOR}.${ZIMH_VERSION_MINOR}."
-           "${ZIMH_VERSION_PATCH}.${ZIMH_VERSION_TWEAK}")
-endif ()
+        "${ZIMH_VERSION_MAJOR}.${ZIMH_VERSION_MINOR}."
+        "${ZIMH_VERSION_PATCH}.${ZIMH_VERSION_TWEAK}")
+endif()
 
 # Places to look for CMake modules/includes
 list(APPEND CMAKE_MODULE_PATH
@@ -74,15 +75,14 @@ configure_file(
     @ONLY)
 
 # if (WIN32)
-#     enable_language(RC)
+# enable_language(RC)
 
-#     # Only override RC rules if we're actually using llvm-rc
-#     if (CMAKE_RC_COMPILER MATCHES "llvm-rc")
-#         set(CMAKE_RC_COMPILE_OBJECT
-#             "<CMAKE_RC_COMPILER> /L 1252 <DEFINES> <INCLUDES> /fo <OBJECT> <SOURCE>")
-#     endif ()
+# # Only override RC rules if we're actually using llvm-rc
+# if (CMAKE_RC_COMPILER MATCHES "llvm-rc")
+# set(CMAKE_RC_COMPILE_OBJECT
+# "<CMAKE_RC_COMPILER> /L 1252 <DEFINES> <INCLUDES> /fo <OBJECT> <SOURCE>")
 # endif ()
-
+# endif ()
 include(GNUInstallDirs)
 
 # Default build type if multi-config generator isn't used
@@ -92,37 +92,40 @@ endif()
 
 # Core Feature Options
 option(BUILD_SHARED_DEPS "Prefer shared dependency runtime linkage." OFF)
-option(WITH_ASYNC       "Enable Asynchronous I/O and threading." ON)
-option(WITH_NETWORK     "Enable simulator networking support." ON)
-option(WITH_PCAP        "Enable libpcap support." ON)
-option(WITH_SLIRP       "Enable SLIRP network support." ON)
-option(WITH_TAP         "Enable TAP/TUN device network support." ON)
-option(WITH_VIDEO       "Enable simulator display and graphics support." ON)
-option(WITH_REGEXP      "Enable regular expression support, expect command." ON)
-option(WITH_UNIT_TESTS  "Enable host-side unit tests using cmocka." ON)
-option(WITH_ROMS        "Enable internal support ROM generation." ON)
+option(WITH_ASYNC "Enable Asynchronous I/O and threading." ON)
+option(WITH_NETWORK "Enable simulator networking support." ON)
+option(WITH_PCAP "Enable libpcap support." ON)
+option(WITH_SLIRP "Enable SLIRP network support." ON)
+option(WITH_TAP "Enable TAP/TUN device network support." ON)
+option(WITH_VIDEO "Enable simulator display and graphics support." ON)
+option(WITH_REGEXP "Enable regular expression support, expect command." ON)
+option(WITH_UNIT_TESTS "Enable host-side unit tests using cmocka." ON)
+option(WITH_ROMS "Enable internal support ROM generation." ON)
 
 if(WIN32)
     set(WITH_VDE OFF CACHE INTERNAL "VDE network support is not available on Windows.")
 else()
-    option(WITH_VDE     "Enable VDE2/VDE4 network support." ON)
+    option(WITH_VDE "Enable VDE2/VDE4 network support." ON)
 endif()
 
 # Developer & QA Controls
-option(ENABLE_CPPCHECK  "Enable 'cppcheck' static code analysis." OFF)
-option(WARNINGS_FATAL   "Treat compile-time warnings as errors." OFF)
-option(RELEASE_LTO      "Use Link Time Optimization (LTO) in Release builds." OFF)
-option(DEBUG_WALL       "Turn on maximal compiler warnings in Debug builds." OFF)
+option(ENABLE_CPPCHECK "Enable 'cppcheck' static code analysis." OFF)
+option(WARNINGS_FATAL "Treat compile-time warnings as errors." OFF)
+option(RELEASE_LTO "Use Link Time Optimization (LTO) in Release builds." OFF)
+option(DEBUG_WALL "Turn on maximal compiler warnings in Debug builds." OFF)
 
 # C dialect override
 include(c-dialect)
 
 # Modern Runtime Output Alignment
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-if (NOT DEFINED CMAKE_BUILD_TYPE)
+
+if(NOT DEFINED CMAKE_BUILD_TYPE)
     string(APPEND CMAKE_RUNTIME_OUTPUT_DIRECTORY "/$<CONFIG>")
-endif ()
+endif()
+
 message(STATUS "Binary and runtime artifacts in ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+
 foreach(cfg IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 endforeach()
@@ -135,10 +138,16 @@ include(simh-dependencies)
 # External Static Analysis Setup (cppcheck)
 if(ENABLE_CPPCHECK)
     find_program(CPPCHECK_EXE NAMES cppcheck)
+
     if(CPPCHECK_EXE)
         set(CMAKE_C_CPPCHECK "${CPPCHECK_EXE};--language=c;--inline-suppr;--std=c${CMAKE_C_STANDARD};--force")
+
         if(WIN32)
-            list(APPEND CMAKE_C_CPPCHECK "--platform=win${CMAKE_SIZEOF_VOID_P}")
+            if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+                list(APPEND CMAKE_C_CPPCHECK "--platform=win64")
+            else()
+                list(APPEND CMAKE_C_CPPCHECK "--platform=win32")
+            endif()
         endif()
     endif()
 endif()
@@ -153,11 +162,11 @@ include(simh-extra-tools)
 # Unit Testing Setup (Target-driven CTest)
 if(WITH_UNIT_TESTS)
     enable_testing()
-    
+
     # Simple boilerplate script testing hooks
     function(add_cmake_script_unit_test test_name script_name)
-        add_test(NAME ${test_name} 
-                 COMMAND ${CMAKE_COMMAND} -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cmake-tests/${test_name} -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests/${script_name}")
+        add_test(NAME ${test_name}
+            COMMAND ${CMAKE_COMMAND} -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/cmake-tests/${test_name} -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests/${script_name}")
         set_tests_properties(${test_name} PROPERTIES LABELS "zimh;unit")
     endfunction()
 
@@ -172,6 +181,7 @@ if(WITH_UNIT_TESTS)
         find_package(cmocka CONFIG QUIET)
     else()
         find_package(PkgConfig QUIET)
+
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(CMOCKA IMPORTED_TARGET cmocka>=1.1.5)
         endif()
@@ -179,10 +189,11 @@ if(WITH_UNIT_TESTS)
 
     if(TARGET cmocka::cmocka OR TARGET PkgConfig::CMOCKA)
         add_subdirectory(tests/unit)
-        
-        if (TARGET cmocka::cmocka)
+
+        if(TARGET cmocka::cmocka)
             target_link_libraries(unittest INTERFACE cmocka::cmocka)
         endif()
+
         if(TARGET PkgConfig::CMOCKA)
             target_link_libraries(unittest INTERFACE PkgConfig::CMOCKA)
         endif()
