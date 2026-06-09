@@ -52,6 +52,9 @@ set(SIM_VIDEO_SOURCES
     ${SIMH_COMPONENTS_ROOT}/display/display.c
     ${SIMH_COMPONENTS_ROOT}/display/sim_ws.c)
 
+set(SIM_ATOMICS_SOURCES
+    ${SIMH_LIB_ROOT}/sim_tailq.c)
+
 function(zimh_find_bison command_var job_pool_args_var)
     find_program(ZIMH_BISON_COMMAND
         NAMES bison win_bison
@@ -143,6 +146,7 @@ function(build_simcore _targ)
     endforeach ()
 
     ## Add extras to the AIO variant:
+    target_sources(${sim_aio_lib} PRIVATE ${SIM_ATOMICS_SOURCES})
     target_compile_definitions(${sim_aio_lib} PUBLIC ${AIO_FLAGS})
     target_link_libraries(${sim_aio_lib} PUBLIC thread_lib)
 

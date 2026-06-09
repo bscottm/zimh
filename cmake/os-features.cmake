@@ -6,8 +6,17 @@
 include_guard(GLOBAL)
 
 include(CheckSymbolExists)
+include(CheckSourceCompiles)
 include(CheckCSourceRuns)
 include(CMakePushCheckState)
+
+set(C11_THREAD_SRC "
+#include <threads.h>
+int main(void) {
+    thrd_t thread;
+    return 0;
+}
+")
 
 # =============================================================================
 # The threading interface library: thread_lib
@@ -28,20 +37,52 @@ endif()
 # detected and building the AIO version of the core libraries.
 set(AIO_FLAGS)
 
-if(TARGET PTW::PTW)
-    # Forward all header paths, multi-config libs, and definitions to thread_lib
-    target_link_libraries(thread_lib INTERFACE PTW::PTW)
-    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
-    message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
-else()
-    # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
-    # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
-    find_package(Threads REQUIRED)
-    
-    target_link_libraries(thread_lib INTERFACE Threads::Threads)
-    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
-    message(STATUS "pthreads-dep: Using system native Threads::Threads")
-endif()
+# Check if C11 threads are available:
+check_source_compiles(C "${C11_THREAD_SRC}" HAVE_C11_THREADS)
+
+if (NOT HAVE_C11_THREADS)
+    if(TARGET PTW::PTW)
+        # Forward all header paths, multi-config libs, and definitions to thread_lib
+        target_link_libraries(thread_lib INTERFACE PTW::PTW)
+        target_compile_definitions(thread_lib INTERFACE HAVE_PTHREAD)
+        set(valid_threads TRUE)
+        message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
+    else()
+        # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
+        # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
+        find_package(Threads REQUIRED)
+
+        if (TARGET Threads::Threads)
+            # Run the C11 check again, just in case the Linux or macOS compiler requires
+            # linking with the thread library. Obviously, we got this far because
+            # HAVE_C11_THREADS is FALSE.
+            cmake_push_check_state()
+            set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
+            check_source_compiles(C "${C11_THREAD_SRC}" HAVE_C11_THREADS)
+            cmake_pop_check_state()
+
+            if (NOT HAVE_C11_THREADS)
+                # Nope. Fall back to ordinary pthreads.
+                target_compile_definitions(thread_lib INTERFACE HAVE_PTHREAD)
+                message(STATUS "pthreads-dep: Using system native Threads::Threads")
+            else ()
+                target_compile_definitions(thread_lib INTERFACE HAVE_C11_THREADS)
+                message(STATUS "Using C11 standard concurrency library with Threads::Threads target.")
+            endif ()
+
+            # Add Threads::Threads because it's needed whether we're using C11 or native.
+            target_link_libraries(thread_lib INTERFACE Threads::Threads)
+        endif ()
+    endif()
+else ()
+    message(STATUS "Using C11 standard concurrency library.")
+    target_compile_definitions(thread_lib INTERFACE HAVE_C11_THREADS)
+endif ()
+
+
+if (TARGET PTW::PTW OR TARGET Threads::Threads OR HAVE_C11_THREADS)
+    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "USE_READER_THREAD")
+endif ()
 
 include(uuid-dep)
 
@@ -114,12 +155,12 @@ endif (WITH_ASYNC)
 ##     target_compile_definitions(os_features INTERFACE SIZE_OFF64_T=${SIZE_OFF64_T})
 ## endif ()
 
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     target_compile_definitions(os_features INTERFACE _GNU_SOURCE)
 endif ()
 
 cmake_push_check_state()
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 endif ()
 check_symbol_exists(strlcpy string.h HAVE_STRLCPY)
@@ -304,6 +345,37 @@ if (WITH_NETWORK)
             set(HAVE_TAP_NETWORK True)
         endif (if_tun_found OR net_if_tun_found)
     endif (WITH_TAP)
+
+    # poll/select detection
+    set(sim_use_select 0)
+    set(sim_use_poll   0)
+
+    set(check_poll     0)
+
+    if (NOT WIN32)
+        check_symbol_exists(poll "poll.h" have_poll_h)
+        if (have_poll_h)
+            set(sim_use_poll   1)
+        else ()
+            set(sim_use_select 1)
+        endif()
+    else ()
+        cmake_push_check_state()
+        list(APPEND CMAKE_REQUIRED_LIBRARIES "ws2_32" "wsock32")
+        check_symbol_exists(WSAPoll "winsock2.h;windows.h" have_wsa_poll)
+        if (have_wsa_poll)
+            set(sim_use_poll  1)
+        else ()
+            set(sim_use_select 1)
+        endif ()
+
+        cmake_pop_check_state()
+    endif()
+
+    target_compile_definitions(os_features INTERFACE
+        SIM_USE_POLL=${sim_use_poll}
+        SIM_USE_SELECT=${sim_use_select}
+    )
 endif (WITH_NETWORK)
 
 ## Windows: winmm (for ms timer functions), socket functions (even when networking is

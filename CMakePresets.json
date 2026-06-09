@@ -2,31 +2,15 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "windows-ninja-release",
-      "displayName": "Windows build: Ninja Release + vcpkg",
-      "description": "Automatically uses the vcpkg toolchain if VCPKG_ROOT is set in the environment.",
-      "generator": "Ninja",
+      "name": "windows-ninja-multiconfig",
+      "displayName": "Windows build: Ninja Multi-Config + vcpkg",
+      "description": "Multi-configuration generator for Release and Debug targets.",
+      "generator": "Ninja Multi-Config",
       "binaryDir": "${sourceDir}/build-win64",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang",
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
-        "VCPKG_INSTALL_OPTIONS": "--no-print-usage"
-      }
-    },
-    {
-      "name": "windows-ninja-debug",
-      "displayName": "Windows build: Ninja Debug + vcpkg",
-      "description": "Ninja debug build using vcpkg toolchain.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-win64",
-      "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang",
-        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CONFIGURATION_TYPES": "Release;Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
@@ -153,12 +137,14 @@
   "buildPresets": [
     {
       "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Release",
       "displayName": "Build: Windows Ninja Release"
     },
     {
       "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Debug",
       "displayName": "Build: Windows Ninja Debug"
     },
     {
@@ -231,8 +217,9 @@
   "testPresets": [
     {
       "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release",
-      "displayName": "Test: Windows Ninja Release",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Release",
+      "displayName": "Test: Windows Ninja multiconfig Release",
       "output": {
         "outputOnFailure": true
       },
@@ -243,8 +230,9 @@
     },
     {
       "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug",
-      "displayName": "Test: Windows Ninja Debug",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Debug",
+      "displayName": "Test: Windows Ninja multiconfig Debug",
       "output": {
         "outputOnFailure": true
       },
