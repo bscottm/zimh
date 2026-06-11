@@ -44,7 +44,7 @@ if (NOT HAVE_C11_THREADS)
     if(TARGET PTW::PTW)
         # Forward all header paths, multi-config libs, and definitions to thread_lib
         target_link_libraries(thread_lib INTERFACE PTW::PTW)
-        target_compile_definitions(thread_lib INTERFACE HAVE_PTHREAD)
+        target_compile_definitions(thread_lib INTERFACE HAVE_PTHREADS)
         set(valid_threads TRUE)
         message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
     else()
@@ -63,7 +63,7 @@ if (NOT HAVE_C11_THREADS)
 
             if (NOT HAVE_C11_THREADS)
                 # Nope. Fall back to ordinary pthreads.
-                target_compile_definitions(thread_lib INTERFACE HAVE_PTHREAD)
+                target_compile_definitions(thread_lib INTERFACE HAVE_PTHREADS)
                 message(STATUS "pthreads-dep: Using system native Threads::Threads")
             else ()
                 target_compile_definitions(thread_lib INTERFACE HAVE_C11_THREADS)
@@ -350,8 +350,6 @@ if (WITH_NETWORK)
     set(sim_use_select 0)
     set(sim_use_poll   0)
 
-    set(check_poll     0)
-
     if (NOT WIN32)
         check_symbol_exists(poll "poll.h" have_poll_h)
         if (have_poll_h)
@@ -368,7 +366,6 @@ if (WITH_NETWORK)
         else ()
             set(sim_use_select 1)
         endif ()
-
         cmake_pop_check_state()
     endif()
 
