@@ -58,4 +58,13 @@
 #  define PRIXSVALUE PRIX32
 #endif
 
+/* Similar convention for printing socket descriptors: */
+#if defined(_WIN64)
+#  define PRIsocket PRIu64
+#elif defined(_WIN32)
+#  define PRIsocket PRIu32
+#else
+#  define PRIsocket "u"
+#endif
+
 #endif /* SIM_PRINTF_FMTS_H */

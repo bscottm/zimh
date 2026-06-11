@@ -248,6 +248,12 @@ void fprint_stopped_gen (FILE *st, t_stat v, REG *pc, DEVICE *dptr);
 #define SCP_HELP_ONECMD (1u << 30)       /* Display one topic, do not prompt */
 #define SCP_HELP_ATTACH (1u << 29)       /* Top level topic is ATTACH help */
 
+/* Debug table manipulation: */
+
+extern DEBTAB *sim_combine_debtabs(const DEBTAB *tab1, const DEBTAB *tab2);
+extern size_t sim_debtab_nelems(const DEBTAB *debtab);
+extern void sim_fill_debtab_flags(DEBTAB *debtab);
+
 /* Global data */
 
 extern DEVICE *sim_dflt_dev;

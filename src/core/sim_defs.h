@@ -177,6 +177,10 @@
 #define MIN(a, b) (((a) <= (b)) ? (a) : (b))
 #endif
 
+// SIM_UNUSED_ARG is used to silence compiler warnings about unused function parameters. It does not have any
+// effect on the code itself.
+#define SIM_UNUSED_ARG(x) (void)(x)
+
 typedef int             t_stat;                         /* status */
 
 #if defined (USE_INT64)                                 /* 64b data */
