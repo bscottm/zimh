@@ -22,14 +22,8 @@
       "displayName": "VS2022-x64",
       "description": "VS 2022 Windows build using vcpkg",
       "generator": "Visual Studio 17 2022",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
-      "toolset": {
-        "value": "host=x64",
-        "strategy": "set"
-      },
+      "architecture": { "value": "x64", "strategy": "external" },
+      "toolset": { "value": "host=x64", "strategy": "set" },
       "binaryDir": "${sourceDir}/build-vs2022",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -43,14 +37,8 @@
       "displayName": "VS2026-x64",
       "description": "VS 2026 Windows build using vcpkg",
       "generator": "Visual Studio 18 2026",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
-      "toolset": {
-        "value": "host=x64",
-        "strategy": "set"
-      },
+      "architecture": { "value": "x64", "strategy": "external" },
+      "toolset": { "value": "host=x64", "strategy": "set" },
       "binaryDir": "${sourceDir}/build-vs2026",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -60,30 +48,16 @@
       }
     },
     {
-      "name": "make-debug", 
-      "displayName": "Makefile Debug", 
-      "description": "Makefile-based debug build",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "make-release", 
-      "displayName": "Makefile Release", 
-      "description": "Makefile-based release build",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "name": "ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build"
     },
     {
       "name": "ninja-debug", 
+      "inherits": "ninja-base",
       "displayName": "Ninja Debug", 
       "description": "Ninja-based debug build",
-      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -91,26 +65,50 @@
     },
     {
       "name": "ninja-release", 
+      "inherits": "ninja-base",
       "displayName": "Ninja Release", 
       "description": "Ninja-based release build",
-      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "ninja", 
-      "displayName": "Ninja", 
-      "description": "Ninja-based build, user sets CMAKE_BUILD_TYPE",
-      "generator": "Ninja",
+      "name": "make-base",
+      "hidden": true,
+      "generator": "Unix Makefiles"
+    },
+    {
+      "name": "make-debug", 
+      "inherits": "make-base",
+      "displayName": "Makefile Debug", 
+      "description": "Makefile-based debug build",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "make-release", 
+      "inherits": "make-base",
+      "displayName": "Makefile Release", 
+      "description": "Makefile-based release build",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "xcode-base",
+      "hidden": true,
+      "generator": "Xcode",
       "binaryDir": "${sourceDir}/build"
     },
     {
       "name": "xcode-debug", 
+      "inherits": "xcode-base",
       "displayName": "XCode Debug", 
       "description": "macOS XCode-based debug build",
-      "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -118,20 +116,13 @@
     },
     {
       "name": "xcode-release", 
+      "inherits": "xcode-base",
       "displayName": "XCode Release", 
       "description": "macOS XCode-based release build",
-      "generator": "Xcode",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    },
-    {
-      "name": "xcode", 
-      "displayName": "XCode", 
-      "description": "macOS XCode-based build, user sets CMAKE_BUILD_TYPE",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build"
     }
   ],
   "buildPresets": [
@@ -174,27 +165,26 @@
     {
       "name": "make-debug",
       "configurePreset": "make-debug",
+      "configuration": "Debug",
       "displayName": "Build: Makefile Debug"
     },
     {
       "name": "make-release",
       "configurePreset": "make-release",
+      "configuration": "Release",
       "displayName": "Build: Makefile Release"
     },
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug",
+      "configuration": "Debug",
       "displayName": "Build: Ninja Debug"
     },
     {
       "name": "ninja-release",
       "configurePreset": "ninja-release",
+      "configuration": "Release",
       "displayName": "Build: Ninja Release"
-    },
-    {
-      "name": "ninja",
-      "configurePreset": "ninja",
-      "displayName": "Build: Ninja (Default)"
     },
     {
       "name": "xcode-debug",
@@ -207,11 +197,6 @@
       "configurePreset": "xcode-release",
       "configuration": "Release",
       "displayName": "Build: Xcode Release"
-    },
-    {
-      "name": "xcode",
-      "configurePreset": "xcode",
-      "displayName": "Build: Xcode (Default)"
     }
   ],
   "testPresets": [
@@ -220,176 +205,96 @@
       "configurePreset": "windows-ninja-multiconfig",
       "configuration": "Release",
       "displayName": "Test: Windows Ninja multiconfig Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-ninja-debug",
       "configurePreset": "windows-ninja-multiconfig",
       "configuration": "Debug",
       "displayName": "Test: Windows Ninja multiconfig Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2022-debug",
       "configurePreset": "windows-vs2022",
       "configuration": "Debug",
       "displayName": "Test: VS2022 Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2022-release",
       "configurePreset": "windows-vs2022",
       "configuration": "Release",
       "displayName": "Test: VS2022 Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2026-debug",
       "configurePreset": "windows-vs2026",
       "configuration": "Debug",
       "displayName": "Test: VS2026 Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2026-release",
       "configurePreset": "windows-vs2026",
       "configuration": "Release",
       "displayName": "Test: VS2026 Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "make-debug",
       "configurePreset": "make-debug",
+      "configuration": "Debug",
       "displayName": "Test: Makefile Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "make-release",
       "configurePreset": "make-release",
+      "configuration": "Release",
       "displayName": "Test: Makefile Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug",
+      "configuration": "Debug",
       "displayName": "Test: Ninja Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "ninja-release",
       "configurePreset": "ninja-release",
+      "configuration": "Release",
       "displayName": "Test: Ninja Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "ninja",
-      "configurePreset": "ninja",
-      "displayName": "Test: Ninja (Default)",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "xcode-debug",
       "configurePreset": "xcode-debug",
       "configuration": "Debug",
       "displayName": "Test: Xcode Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "xcode-release",
       "configurePreset": "xcode-release",
       "configuration": "Release",
       "displayName": "Test: Xcode Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "xcode",
-      "configurePreset": "xcode",
-      "displayName": "Test: Xcode (Default)",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     }
   ]
 }
