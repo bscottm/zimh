@@ -23,7 +23,7 @@
 
 #if !defined(SIM_THREADS_H)
 
-#if __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#if defined(HAVE_C11_THREADS) || (__STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__))
 #  include <threads.h>
 #  define HAVE_STD_THREADS 1
 #  define THREAD_FUNC_DECL(FUNC) int FUNC(void *arg)
@@ -52,11 +52,15 @@ typedef pthread_mutex_t sim_mutex_t;
 #error "No standard threads or pthreads?"
 #endif
 
+/* Create a new thread.
+ *
+ * Returns 0 on success, -1 (non-zero)on failure 
+ */
 static inline int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn func, void *arg)
 {
 #if HAVE_STD_THREADS
-    return thrd_create(thread_id, func, arg);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+    return (thrd_create(thread_id, func, arg) == thrd_success) ? 0 : -1;
+#elif defined(HAVE_PTHREADS)
     pthread_attr_t attr;
     int retval;
 
@@ -65,7 +69,7 @@ static inline int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn func,
     retval = pthread_create(thread_id, &attr, func, arg);
     pthread_attr_destroy( &attr);
 
-    return retval;
+    return (retval == 0) ? 0 : -1;
 #endif
 }
 
@@ -73,7 +77,7 @@ static inline int sim_thread_equal(sim_thread_t left, sim_thread_t right)
 {
 #if HAVE_STD_THREADS
     return thrd_equal(left, right);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_equal(left, right);
 #endif
 }
@@ -82,7 +86,7 @@ static inline sim_thread_t sim_thread_self()
 {
 #if HAVE_STD_THREADS
     return thrd_current();
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_self();
 #endif
 }
@@ -91,7 +95,7 @@ static inline int sim_thread_join(sim_thread_t thread_id, sim_thread_exit_t *exi
 {
 #if HAVE_STD_THREADS
     return thrd_join(thread_id, exit_val);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_join(thread_id, exit_val);
 #endif
 }
@@ -100,7 +104,7 @@ static inline int sim_cond_init(sim_cond_t *cond)
 {
 #if HAVE_STD_THREADS
     return cnd_init(cond);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_cond_init(cond, NULL);
 #endif
 }
@@ -109,7 +113,7 @@ static inline void sim_cond_destroy(sim_cond_t *cond)
 {
 #if HAVE_STD_THREADS
     cnd_destroy(cond);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     pthread_cond_destroy(cond);
 #endif
 }
@@ -118,7 +122,7 @@ static inline int sim_cond_signal(sim_cond_t *cond)
 {
 #if HAVE_STD_THREADS
     return cnd_signal(cond);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_cond_signal(cond);
 #endif
 }
@@ -127,7 +131,7 @@ static inline int sim_cond_broadcast(sim_cond_t *cond)
 {
 #if HAVE_STD_THREADS
     return cnd_broadcast(cond);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_cond_broadcast(cond);
 #endif
 }
@@ -136,7 +140,7 @@ static inline int sim_cond_wait(sim_cond_t *cond, sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     return cnd_wait(cond, mtx);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_cond_wait(cond, mtx);
 #endif
 }
@@ -145,7 +149,7 @@ static inline int sim_cond_timedwait(sim_cond_t *cond, sim_mutex_t *mtx, const s
 {
 #if HAVE_STD_THREADS
     return cnd_timedwait(cond, mtx, tmo);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_cond_timedwait(cond, mtx, tmo);
 #endif
 }
@@ -154,7 +158,7 @@ static inline int sim_mutex_init(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     return mtx_init(mtx, mtx_plain);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     return pthread_mutex_init(mtx, NULL);
 #endif
 }
@@ -163,7 +167,7 @@ static inline int sim_mutex_recursive(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     return mtx_init(mtx, mtx_plain | mtx_recursive);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     pthread_mutexattr_t recursive;
     int retval;
 
@@ -179,7 +183,7 @@ static inline void sim_mutex_lock(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     mtx_lock(mtx);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     pthread_mutex_lock(mtx);
 #endif
 }
@@ -188,7 +192,7 @@ static inline void sim_mutex_unlock(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     mtx_unlock(mtx);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     pthread_mutex_unlock(mtx);
 #endif
 }
@@ -197,7 +201,7 @@ static inline void sim_mutex_destroy(sim_mutex_t *mtx)
 {
 #if HAVE_STD_THREADS
     mtx_destroy(mtx);
-#elif defined(USING_PTHREADS) && USING_PTHREADS
+#elif defined(HAVE_PTHREADS)
     pthread_mutex_destroy(mtx);
 #endif
 }
