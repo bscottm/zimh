@@ -17,6 +17,7 @@ set(SIM_SOURCES
     ${SIMH_LIB_ROOT}/xalloc.c
     ${SIMH_RUNTIME_ROOT}/sim_card.c
     ${SIMH_RUNTIME_ROOT}/sim_console.c
+    ${SIMH_RUNTIME_ROOT}/sim_debtab.c
     ${SIMH_RUNTIME_ROOT}/sim_disk.c
     ${SIMH_RUNTIME_ROOT}/sim_disk_ramdisk.c
     ${SIMH_RUNTIME_ROOT}/sim_ether.c
@@ -40,12 +41,8 @@ set(SIM_SOURCES
 
 if (WITH_NETWORK AND WITH_SLIRP AND HAVE_LIBSLIRP)
     list(APPEND SIM_SOURCES
-        ${SIMH_RUNTIME_ROOT}/sim_slirp.c)
-endif ()
-
-if (SIMH_COMPAT_SOURCES)
-    list(APPEND SIM_SOURCES
-        ${SIMH_COMPAT_SOURCES})
+        ${SIMH_RUNTIME_ROOT}/sim_slirp/sim_slirp.c
+        ${SIMH_RUNTIME_ROOT}/sim_slirp/slirp_poll.c)
 endif ()
 
 set(SIM_VIDEO_SOURCES
@@ -53,7 +50,8 @@ set(SIM_VIDEO_SOURCES
     ${SIMH_COMPONENTS_ROOT}/display/sim_ws.c)
 
 set(SIM_ATOMICS_SOURCES
-    ${SIMH_LIB_ROOT}/sim_tailq.c)
+    ${SIMH_LIB_ROOT}/sim_tailq.c
+    ${SIMH_LIB_ROOT}/sim_threads.c)
 
 function(zimh_find_bison command_var job_pool_args_var)
     find_program(ZIMH_BISON_COMMAND
@@ -142,6 +140,7 @@ function(build_simcore _targ)
             simh_network
             simh_regexp
             os_features
+            os_compat
         )
     endforeach ()
 
@@ -554,14 +553,11 @@ build_simcore(simhi64_besm6  VIDEO INT64 BESM6_SDL_HACK)
 
 if (WITH_ROMS)
     add_executable(BuildROMs ${SIMH_RUNTIME_ROOT}/sim_BuildROMs.c)
-    if (SIMH_NEED_STRLCPY)
-        target_sources(BuildROMs PRIVATE ${SIMH_COMPAT_ROOT}/strlcpy.c)
-    endif ()
     target_include_directories(BuildROMs PUBLIC
         "${SIMH_CORE_ROOT}"
         "${SIMH_INCLUDE_ROOT}"
         "${SIMH_RUNTIME_ROOT}")
-    target_link_libraries(BuildROMs os_features)
+    target_link_libraries(BuildROMs os_features os_compat)
     add_custom_command(
         OUTPUT
             ${SIMH_SIMULATOR_ROOT}/VAX/vax_ka655x_bin.h
