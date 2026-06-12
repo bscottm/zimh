@@ -15,8 +15,8 @@
 
 typedef struct eth_test_backend {
     char *name;
-    ETH_QUE rx_to_guest;
-    ETH_QUE tx_from_guest;
+    ETH_RING_FIFO rx_to_guest;
+    ETH_RING_FIFO tx_from_guest;
     int write_status;
     struct eth_test_backend *next;
 } ETH_TEST_BACKEND;
@@ -90,10 +90,10 @@ static uint32_t eth_test_append_crc(uint8_t *msg, uint32_t len)
 }
 
 /* Queue one packet into a backend receive or transmit queue. */
-static t_stat eth_test_queue_packet(ETH_QUE *queue, const uint8_t *data,
+static t_stat eth_test_queue_packet(ETH_RING_FIFO *queue, const uint8_t *data,
                                     size_t len, size_t crc_len, int32_t status)
 {
-    if (!queue || !data || (len > ETH_FRAME_SIZE) ||
+    if (queue == NULL || data == NULL || (len > ETH_FRAME_SIZE) ||
         (crc_len > ETH_FRAME_SIZE) || ((crc_len != 0) && (crc_len < len)))
         return SCPE_ARG;
 
