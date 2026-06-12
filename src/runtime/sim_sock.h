@@ -24,11 +24,12 @@
 */
 
 #ifndef SIM_SOCK_H_
-#define SIM_SOCK_H_    1
 
-#if defined (_WIN32)                                    /* Windows */
+#if defined (_WIN32) || defined(_WIN64)                 /* Windows */
 #include <winsock2.h>
 #include <winerror.h>
+#include <ws2tcpip.h>
+#include <in6addr.h>
 
 #else                                                   /* POSIX sockets */
 #include <sys/types.h>                                  /* for fcntl, getpid */
@@ -42,10 +43,16 @@
 #include <arpa/inet.h>                                  /* for inet_addr and inet_ntoa */
 #include <netdb.h>
 #include <sys/time.h>                                   /* for EMX */
+#  if defined(SIM_USE_POLL) && SIM_USE_POLL
+#    include <poll.h>
+#  endif
 
 #define WSAGetLastError()       errno                   /* Windows macros */
 #define WSASetLastError(err) errno = err
+#if !defined(closesocket)
+/* libslirp defines this too. */
 #define closesocket     close
+#endif
 #define SOCKET          int
 #define WSAEWOULDBLOCK  EWOULDBLOCK
 #define WSAENAMETOOLONG ENAMETOOLONG
@@ -78,8 +85,20 @@ int sim_parse_addr (const char *cptr, char *host, size_t hostlen, const char *de
                                       const char *validate_addr);
 int sim_parse_addr_ex (const char *cptr, char *host, size_t hostlen, const char *default_host,
                                          char *port, size_t port_len, char *localport, size_t local_port_len, const char *default_port);
+
+const char *sim_inet_ntoa4(const struct in_addr *addr);
+#if defined(AF_INET6)
+const char *sim_inet_ntoa6(const struct in6_addr *addr);
+#else
+const char *sim_inet_ntoa6(const void *addr);
+#endif
+#if defined(WINVER) && WINVER < 0x0601
+int sim_inet_pton(int af, const char *src, void *dst);
+#endif
+
 int sim_addr_acl_check (const char *validate_addr, const char *acl);
 void sim_sock_convert_ipv4_mapped_ipv6(char *hostnamebuf);
+
 #define SIM_SOCK_OPT_REUSEADDR      0x0001
 #define SIM_SOCK_OPT_DATAGRAM       0x0002
 #define SIM_SOCK_OPT_NODELAY        0x0004
@@ -100,4 +119,20 @@ int sim_getnames_sock (SOCKET sock, char **socknamebuf, char **peernamebuf);
 void sim_init_sock (void);
 void sim_cleanup_sock (void);
 
+#if defined(SIM_USE_POLL) && SIM_USE_POLL
+/* Meta-function for poll() (Posix) and WSAPoll() (Windows) */
+#  if (defined(_WIN32) || defined(_WIN64))
+static inline int sim_poll_fds(WSAPOLLFD *fds, size_t n_fds, int timeout)
+{
+  return WSAPoll(fds, (ULONG) n_fds, timeout);
+}
+#  else
+static inline int sim_poll_fds(struct pollfd fds[], size_tnfds, int timeout)
+{
+   return poll(fds, (nfds_t) nfds, timeout);
+}
+#  endif
+#endif
+
+#define SIM_SOCK_H_    1
 #endif
