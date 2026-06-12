@@ -338,15 +338,15 @@ DEVICE sim_scp_dev = {
 
 /* Asynch I/O support */
 #if defined (SIM_ASYNCH_IO)
-pthread_mutex_t sim_asynch_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t sim_asynch_wake = PTHREAD_COND_INITIALIZER;
+sim_mutex_t sim_asynch_lock;
+sim_cond_t sim_asynch_wake;
 
-pthread_mutex_t sim_timer_lock     = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t sim_timer_wake      = PTHREAD_COND_INITIALIZER;
-pthread_mutex_t sim_tmxr_poll_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t sim_tmxr_poll_cond  = PTHREAD_COND_INITIALIZER;
+sim_mutex_t sim_timer_lock;
+sim_cond_t sim_timer_wake;
+sim_mutex_t sim_tmxr_poll_lock;
+sim_cond_t sim_tmxr_poll_cond;
 int32_t sim_tmxr_poll_count;
-pthread_t sim_asynch_main_threadid;
+sim_thread_t sim_asynch_main_threadid;
 UNIT * volatile sim_asynch_queue;
 bool sim_asynch_enabled = true;
 int32_t sim_asynch_check;
@@ -5586,7 +5586,7 @@ else {
     }
 sim_show_clock_queues (st, dnotused, unotused, flag, cptr);
 #if defined (SIM_ASYNCH_IO)
-pthread_mutex_lock (&sim_asynch_lock);
+sim_mutex_lock (&sim_asynch_lock);
 sim_mfile = &buf;
 fprintf (st, "asynchronous pending event queue\n");
 if (sim_asynch_queue == QUEUE_LIST_END)
@@ -5604,7 +5604,7 @@ else {
     }
 fprintf (st, "asynch latency: %d nanoseconds\n", sim_asynch_latency);
 fprintf (st, "asynch instruction latency: %d %s\n", sim_asynch_inst_latency, sim_vm_interval_units);
-pthread_mutex_unlock (&sim_asynch_lock);
+sim_mutex_unlock (&sim_asynch_lock);
 sim_mfile = NULL;
 fprintf (st, "%*.*s", (int)buf.pos, (int)buf.pos, buf.buf);
 free (buf.buf);
