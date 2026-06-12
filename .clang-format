@@ -17,3 +17,4 @@ AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: Empty
 SortIncludes: false
 IndentCaseLabels: false
+IndentPPDirectives: AfterHash
