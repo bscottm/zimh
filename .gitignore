@@ -35,5 +35,8 @@ Thumbs.db
 /vcpkg_installed/
 CMakeUserPresets.json
 
+## Developmer-local clangd customization
+.clangd
+
 # Temporary files during work
 tmp/
