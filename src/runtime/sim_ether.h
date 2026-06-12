@@ -49,8 +49,10 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
-#include "sim_sock.h"
+// #include "sim_sock.h"
 #include "sim_types.h"
+#include "sim_threads.h"
+#include "sim_tailq.h"
 
 /* make common BSD code a bit easier to read in this file */
 /* OS/X seems to define and compile using one of these BSD types */
@@ -76,18 +78,27 @@
 #if defined(__struct_timespec_defined) && !defined(_TIMESPEC_DEFINED)
 #define _TIMESPEC_DEFINED
 #endif
-
 /* set related values to have correct relationships */
 #if defined (USE_READER_THREAD)
-#include <pthread.h>
-#if defined (USE_SETNONBLOCK)
-#undef USE_SETNONBLOCK
-#endif /* USE_SETNONBLOCK */
-#undef PCAP_READ_TIMEOUT
-#define PCAP_READ_TIMEOUT 15
-#if (!defined (xBSD) && !defined(_WIN32)) || defined (HAVE_TAP_NETWORK) || defined (HAVE_VDE_NETWORK)
-#define MUST_DO_SELECT 1
-#endif
+#  include "sim_atomic.h"
+
+#  if defined (USE_SETNONBLOCK)
+#    undef USE_SETNONBLOCK
+#  endif /* USE_SETNONBLOCK */
+
+#  undef PCAP_READ_TIMEOUT
+#  define PCAP_READ_TIMEOUT 15
+#  if (!defined (xBSD) && !defined(_WIN32)) || defined (HAVE_TAP_NETWORK) || defined (HAVE_VDE_NETWORK)
+#    define MUST_DO_SELECT 1
+#  endif
+
+/* Reader, writer thread states */
+typedef enum {
+  ETH_THREAD_IDLE,
+  ETH_THREAD_RUNNING,
+  ETH_THREAD_SHUTDOWN,
+  ETH_THREAD_EXITED
+} sim_eththread_state_t;
 #endif /* USE_READER_THREAD */
 
 /* give priority to USE_NETWORK over USE_LOADED_WINPCAP */
@@ -117,10 +128,6 @@
 #endif
 #else
 #define DONT_USE_PCAP_FINDALLDEVS 1
-#endif
-
-#if defined (USE_READER_THREAD)
-#include <pthread.h>
 #endif
 
 /* structure declarations */
@@ -192,17 +199,7 @@ struct eth_item {
   struct eth_packet   packet;
 };
 
-struct eth_queue {
-  int                 max;
-  int                 count;
-  int                 head;
-  int                 tail;
-  int                 loss;
-  int                 high;
-  struct eth_item*    item;
-};
-
-typedef uchar_t ETH_MAC[6];
+typedef uint8_t ETH_MAC[6];
 
 struct eth_list {
   char    name[ETH_DEV_NAME_MAX];
@@ -210,40 +207,40 @@ struct eth_list {
   int     eth_api;
 };
 
-typedef int ETH_BOOL;
-typedef uchar_t ETH_MULTIHASH[8];
+typedef uint8_t ETH_MULTIHASH[8];
 typedef struct eth_packet  ETH_PACK;
 typedef void (*ETH_PCALLBACK)(int status);
 typedef struct eth_list ETH_LIST;
-typedef struct eth_queue ETH_QUE;
 typedef struct eth_item ETH_ITEM;
-struct eth_write_request {
+typedef struct eth_write_request {
   struct eth_write_request *next;
   ETH_PACK packet;
-  };
-typedef struct eth_write_request ETH_WRITE_REQUEST;
+} ETH_WRITE_REQUEST;
 
-struct eth_device {
+typedef enum eth_api_enum {
+  ETH_API_NONE,                                         /* No API in use yet */
+  ETH_API_PCAP,                                         /* Pcap API in use */
+  ETH_API_TAP,                                          /* tun/tap API in use */
+  ETH_API_VDE,                                          /* VDE API in use */
+  ETH_API_UDP,                                          /* UDP API in use */
+  ETH_API_NAT,                                          /* NAT (SLiRP) API in use */
+  ETH_API_TEST,                                         /* test API in use */
+} eth_api_t;
+
+typedef struct eth_device {
   char*         name;                                   /* name of ethernet device */
   void*         handle;                                 /* handle of implementation-specific device */
   SOCKET        fd_handle;                              /* fd to kernel device (where needed) */
   char*         bpf_filter;                             /* bpf filter currently in effect */
-  int           eth_api;                                /* Designator for which API is being used to move packets */
-#define ETH_API_NONE 0                                  /* No API in use yet */
-#define ETH_API_PCAP 1                                  /* Pcap API in use */
-#define ETH_API_TAP  2                                  /* tun/tap API in use */
-#define ETH_API_VDE  3                                  /* VDE API in use */
-#define ETH_API_UDP  4                                  /* UDP API in use */
-#define ETH_API_NAT  5                                  /* NAT (SLiRP) API in use */
-#define ETH_API_TEST 6                                  /* test API in use */
+  eth_api_t     eth_api;                                /* Designator for which API is being used to move packets */
   ETH_PCALLBACK read_callback;                          /* read callback function */
   ETH_PCALLBACK write_callback;                         /* write callback function */
   ETH_PACK*     read_packet;                            /* read packet */
   ETH_MAC       filter_address[ETH_FILTER_MAX];         /* filtering addresses */
   int           addr_count;                             /* count of filtering addresses */
-  ETH_BOOL      promiscuous;                            /* promiscuous mode flag */
-  ETH_BOOL      all_multicast;                          /* receive all multicast messages */
-  ETH_BOOL      hash_filter;                            /* filter using AUTODIN II multicast hash */
+  bool          promiscuous;                            /* promiscuous mode flag */
+  bool          all_multicast;                          /* receive all multicast messages */
+  bool          hash_filter;                            /* filter using AUTODIN II multicast hash */
   ETH_MULTIHASH hash;                                   /* AUTODIN II multicast hash */
   int32_t       loopback_self_sent;                     /* loopback packets sent but not seen */
   int32_t       loopback_self_sent_total;               /* total loopback packets sent */
@@ -260,7 +257,7 @@ struct eth_device {
   uint32_t      transmit_packet_errors;                 /* Total Send Packet Errors */
   uint32_t      receive_packet_errors;                  /* Total Read Packet Errors */
   int32_t       error_waiting_threads;                  /* Count of threads currently waiting after an error */
-  ETH_BOOL      error_needs_reset;                      /* Flag indicating to force reset */
+  bool          error_needs_reset;                      /* Flag indicating to force reset */
 #define ETH_ERROR_REOPEN_THRESHOLD 10                   /* Attempt ReOpen after 20 send/receive errors */
 #define ETH_ERROR_REOPEN_PAUSE 4                        /* Seconds to pause between closing and reopening LAN */
   uint32_t      error_reopen_count;                     /* Count of ReOpen Attempts */
@@ -281,27 +278,52 @@ struct eth_device {
   uint32_t      throttle_events;                        /* keeps track of packet arrival values */
   uint32_t      throttle_packet_time;                   /* time last packet was transmitted */
   uint32_t      throttle_count;                         /* Total Throttle Delays */
+
 #if defined (USE_READER_THREAD)
   bool          asynch_io;                              /* Asynchronous Interrupt scheduling enabled */
   int           asynch_io_latency;                      /* instructions to delay pending interrupt */
-  ETH_QUE       read_queue;
-  pthread_mutex_t     lock;
-  pthread_t     reader_thread;                          /* Reader Thread Id */
-  pthread_t     writer_thread;                          /* Writer Thread Id */
-  bool          reader_thread_started;                  /* Reader thread must be joined */
-  bool          writer_thread_started;                  /* Writer thread must be joined */
-  bool          threading_initialized;                  /* Thread state needs cleanup */
-  pthread_mutex_t     writer_lock;
-  pthread_mutex_t     self_lock;
-  pthread_cond_t      writer_cond;
-  ETH_WRITE_REQUEST *write_requests;
-  int write_queue_peak;
-  ETH_WRITE_REQUEST *write_buffers;
-  t_stat write_status;
-#endif
-};
+  sim_mutex_t   lock;
+  sim_thread_t  reader_thread;                          /* Reader Thread Id */
+  sim_thread_t  writer_thread;                          /* Writer Thread Id */
+  
+  sim_mutex_t   writer_lock;
+  sim_mutex_t   self_lock;
+  sim_cond_t    writer_cond;
+  
+  /* Startup transient coordination: */
+  sim_mutex_t     startup_lock;
+  sim_cond_t      startup_cond;
 
-typedef struct eth_device  ETH_DEV;
+  /* ETH_ITEM tail queue for incoming packets */
+  sim_tailq_t         read_queue;
+  /* Max numer of packets in the read queue. */
+  sim_atomic_type_t   read_queue_peak;
+  /* ETH_WRITE_REQUEST tail queue of pending outbound packets. */
+  sim_tailq_t         write_requests;
+  /* Maximum size of the write queue. */
+  sim_atomic_type_t   write_queue_peak;
+  /* ETH_WRITE_REQUEST tail queue of free buffers. */
+  sim_tailq_t   write_buffers;
+  /* t_stat embedded inside an atomic value. write_status is shared across
+   * multiple threads, necessitating synchronization. */
+  sim_atomic_value_t  write_status;
+
+  /* Thread states */
+  sim_atomic_value_t reader_state;
+  sim_atomic_value_t writer_state;
+
+  /* API functions */
+  /* reader(): Ethernet receiver-specific read function. Does the
+   * poll()/select(), and dispatches a packet if data is available
+   * from the socket. */
+  int (*reader)(struct eth_device *eth_dev, int ms_timeout);
+  /* reader_shutdown(), writer_shutdown(): Ethernet device-specific shutdown
+   * function. Used by libslirp support to signal the condition variable if
+   * waiting for sockets. Otherwise, a NOP for other Ethernet devices. */
+  void (*reader_shutdown)(void *opaque);
+  void (*writer_shutdown)(void *opaque);
+#endif
+} ETH_DEV;
 
 /* prototype declarations*/
 
@@ -315,18 +337,18 @@ int eth_read      (ETH_DEV* dev, ETH_PACK* packet,      /* read single packet; *
                    ETH_PCALLBACK routine);              /*  callback when done*/
 t_stat eth_filter (ETH_DEV* dev, int addr_count,        /* set filter on incoming packets */
                    const ETH_MAC addresses[],
-                   ETH_BOOL all_multicast,
-                   ETH_BOOL promiscuous);
+                   bool all_multicast,
+                   bool promiscuous);
 t_stat eth_filter_hash (ETH_DEV* dev, int addr_count,   /* set filter on incoming packets with hash */
                         const ETH_MAC addresses[],
-                        ETH_BOOL all_multicast,
-                        ETH_BOOL promiscuous,
+                        bool all_multicast,
+                        bool promiscuous,
                         ETH_MULTIHASH* const hash);     /* AUTODIN II based 8 byte imperfect hash */
 t_stat eth_filter_hash_ex (ETH_DEV* dev, int addr_count,/* set filter on incoming packets with hash */
                            const ETH_MAC addresses[],
-                           ETH_BOOL all_multicast,
-                           ETH_BOOL promiscuous,
-                           ETH_BOOL match_broadcast,
+                           bool all_multicast,
+                           bool promiscuous,
+                           bool match_broadcast,
                            ETH_MULTIHASH* const hash);  /* AUTODIN II based 8 byte imperfect hash */
 t_stat eth_check_address_conflict (ETH_DEV* dev,
                                    const ETH_MAC address);
@@ -343,7 +365,7 @@ t_stat eth_show (FILE* st, UNIT* uptr,                  /* show ethernet devices
                  int32_t val, const void* desc);
 t_stat eth_show_devices (FILE* st, DEVICE *dptr,        /* show ethernet devices */
                          UNIT* uptr, int32_t val, const char* desc);
-int eth_devices (int max, ETH_LIST* dev, ETH_BOOL framers); /* get ethernet devices on host */
+int eth_devices (int max, ETH_LIST* dev, bool framers); /* get ethernet devices on host */
 void eth_show_dev (FILE*st, ETH_DEV* dev);              /* show ethernet device state */
 
 #define ETH_MAC_STRING_SIZE sizeof("XX:XX:XX:XX:XX:XX")
@@ -353,15 +375,31 @@ t_stat eth_mac_scan (ETH_MAC mac, const char* strmac);  /* scan string for mac, 
 t_stat eth_mac_scan_ex (ETH_MAC mac,                    /* scan string for mac, put in mac */
                         const char* strmac, UNIT *uptr);/* for specified unit */
 
-t_stat ethq_init (ETH_QUE* que, int max);               /* initialize FIFO queue */
-void ethq_clear  (ETH_QUE* que);                        /* clear FIFO queue */
-void ethq_remove (ETH_QUE* que);                        /* remove item from FIFO queue */
-void ethq_insert (ETH_QUE* que, int32_t type,           /* insert item into FIFO queue */
+/*! 
+ * Ethernet device ring FIFO functions: Simulator devices, such as the PDP-11 XQ
+ * Ethernet device, can have fixed size send and receive ring buffers that
+ * operate as packet FIFOs. (This typedef was formerly known as ETH_QUE.)
+ */
+typedef struct eth_fifo_ring_s {
+  int                 max;      /* Maximum eth_item's in the FIFO's ring. */
+  int                 count;    /* Current count of eth_item's. */
+  int                 head;     /* FIFO ring's head element index. */
+  int                 tail;     /* FIFO ring's tail element index. */
+  int                 loss;
+  int                 high;
+  struct eth_item*    item;
+} ETH_RING_FIFO;
+
+t_stat ethq_init (ETH_RING_FIFO *que, int max);         /* initialize FIFO queue */
+void ethq_clear  (ETH_RING_FIFO *que);                  /* clear FIFO queue */
+t_stat ethq_destroy(ETH_RING_FIFO *que);                /* release FIFO queue */
+
+void ethq_remove (ETH_RING_FIFO* que);                  /* remove item from FIFO queue */
+void ethq_insert (ETH_RING_FIFO* que, int32_t type,     /* insert item into FIFO queue */
                   ETH_PACK* packet, int32_t status);
-void ethq_insert_data(ETH_QUE* que, int32_t type,       /* insert item into FIFO queue */
+void ethq_insert_data(ETH_RING_FIFO* que, int32_t type, /* insert item into FIFO queue */
                   const uint8_t *data, int used, size_t len,
                   size_t crc_len, const uint8_t *crc_data, int32_t status);
-t_stat ethq_destroy(ETH_QUE* que);                      /* release FIFO queue */
 const char *eth_capabilities(void);
 t_stat sim_ether_test (DEVICE *dptr, const char *cptr); /* unit test routine */
 
