@@ -134,6 +134,7 @@ function(build_simcore _targ)
             simh_network
             simh_regexp
             os_features
+            sanitizer_options
         )
     endforeach ()
 

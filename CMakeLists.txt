@@ -77,12 +77,6 @@ configure_file(
 # if (WIN32)
 # enable_language(RC)
 
-# # Only override RC rules if we're actually using llvm-rc
-# if (CMAKE_RC_COMPILER MATCHES "llvm-rc")
-# set(CMAKE_RC_COMPILE_OBJECT
-# "<CMAKE_RC_COMPILER> /L 1252 <DEFINES> <INCLUDES> /fo <OBJECT> <SOURCE>")
-# endif ()
-# endif ()
 include(GNUInstallDirs)
 
 # Default build type if multi-config generator isn't used
@@ -102,6 +96,12 @@ option(WITH_REGEXP "Enable regular expression support, expect command." ON)
 option(WITH_UNIT_TESTS "Enable host-side unit tests using cmocka." ON)
 option(WITH_ROMS "Enable internal support ROM generation." ON)
 
+# Sanitizer options:
+option(SANITIZE_ADDRESS   "Enable the address sanitizer" OFF)
+option(SANITIZE_THREAD    "Enable the thread sanitizer" OFF)
+option(SANITIZE_MEMORY    "Enable the memory sanitizer" OFF)
+option(SANITIZE_UNDEFINED "Enable the undefined behavior sanitizer" OFF)
+
 if(WIN32)
     set(WITH_VDE OFF CACHE INTERNAL "VDE network support is not available on Windows.")
 else()
@@ -116,6 +116,9 @@ option(DEBUG_WALL "Turn on maximal compiler warnings in Debug builds." OFF)
 
 # C dialect override
 include(c-dialect)
+
+# Runtime execution sanitizers
+include(sanitizers)
 
 # Modern Runtime Output Alignment
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
