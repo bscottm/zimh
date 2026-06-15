@@ -2,15 +2,43 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "windows-ninja-release",
-      "displayName": "Windows build: Ninja Release + vcpkg",
-      "description": "Automatically uses the vcpkg toolchain if VCPKG_ROOT is set in the environment.",
-      "generator": "Ninja",
+      "name": "address-sanitizer",
+      "hidden": true,
+      "cacheVariables": {
+        "SANITIZE_ADDRESS": "On"
+      }
+    },
+    {
+      "name": "thread-sanitizer",
+      "hidden": true,
+      "cacheVariables": {
+        "SANITIZE_THREAD": "On"
+      }
+    },
+    {
+      "name": "memory-sanitizer",
+      "hidden": true,
+      "cacheVariables": {
+        "SANITIZE_MEMORY": "On"
+      }
+    },
+    {
+      "name": "undefined-sanitizer",
+      "hidden": true,
+      "cacheVariables": {
+        "SANITIZE_UNDEFINED": "On"
+      }
+    },
+    {
+      "name": "windows-ninja-multiconfig",
+      "displayName": "Windows build: Ninja Multi-Config + vcpkg",
+      "description": "Multi-configuration generator for Release, Debug, and RelWithDebInfo targets.",
+      "generator": "Ninja Multi-Config",
       "binaryDir": "${sourceDir}/build-win64",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang",
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CONFIGURATION_TYPES": "Release;Debug;RelWithDebInfo",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static",
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
@@ -18,20 +46,9 @@
       }
     },
     {
-      "name": "windows-ninja-debug",
-      "displayName": "Windows build: Ninja Debug + vcpkg",
-      "description": "Ninja debug build using vcpkg toolchain.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-win64",
-      "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang",
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
-        "VCPKG_INSTALL_OPTIONS": "--no-print-usage"
-      }
+      "name": "windows-ninja-asan",
+      "displayName": "Windows: Ninja Multi-Config + ASan",
+      "inherits": ["windows-ninja-multiconfig", "address-sanitizer"]
     },
     {
       "name": "windows-vs2022",
@@ -55,6 +72,11 @@
       }
     },
     {
+      "name": "windows-vs2022-asan",
+      "displayName": "Windows: VS 2022 Windows + ASan",
+      "inherits": ["windows-vs2022", "address-sanitizer"]
+    },
+    {
       "name": "windows-vs2026",
       "displayName": "VS2026-x64",
       "description": "VS 2026 Windows build using vcpkg",
@@ -74,6 +96,11 @@
         "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
         "VCPKG_INSTALL_OPTIONS": "--no-print-usage"
       }
+    },
+    {
+      "name": "windows-vs2026-asan",
+      "displayName": "Windows: VS 2026 Windows + ASan",
+      "inherits": ["windows-vs2026", "address-sanitizer"]
     },
     {
       "name": "make-debug", 
@@ -96,11 +123,18 @@
       }
     },
     {
+      "name": "ninja-base",
+      "displayName": "Ninja (base flags)",
+      "description": "Ninja base configuration",
+      "generator": "Ninja",
+      "hidden": true
+    },
+    {
       "name": "ninja-debug", 
       "displayName": "Ninja Debug", 
       "description": "Ninja-based debug build",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/debug",
+      "inherits": ["ninja-base"],
+      "binaryDir": "${sourceDir}/build/Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -109,18 +143,45 @@
       "name": "ninja-release", 
       "displayName": "Ninja Release", 
       "description": "Ninja-based release build",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/release",
+      "inherits": ["ninja-base"],
+      "binaryDir": "${sourceDir}/build/Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "ninja", 
-      "displayName": "Ninja", 
-      "description": "Ninja-based build, user sets CMAKE_BUILD_TYPE",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build"
+      "name": "ninja-relwithdebinfo", 
+      "displayName": "Ninja RelWithDebInfo", 
+      "description": "Ninja-based optimized build with debug symbols",
+      "inherits": ["ninja-base"],
+      "binaryDir": "${sourceDir}/build/RelWithDebInfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "ninja-sanitizer-asan", 
+      "displayName": "Ninja Optimized + ASan",
+      "description": "Ninja RelWithDebInfo with address sanitizer",
+      "inherits": ["ninja-relwithdebinfo", "address-sanitizer"]
+    },
+    {
+      "name": "ninja-sanitizer-tsan", 
+      "displayName": "Ninja Optimized + TSan", 
+      "description": "Ninja RelWithDebInfo with thread sanitizer",
+      "inherits": ["ninja-relwithdebinfo", "thread-sanitizer"]
+    },
+    {
+      "name": "ninja-sanitizer-msan", 
+      "displayName": "Ninja Optimized + MSan", 
+      "description": "Ninja RelWithDebInfo with memory sanitizer",
+      "inherits": ["ninja-relwithdebinfo", "memory-sanitizer"]
+    },
+    {
+      "name": "ninja-sanitizer-ubsan", 
+      "displayName": "Ninja Optimized + UBSan", 
+      "description": "Ninja RelWithDebInfo with undefined behavior sanitizer",
+      "inherits": ["ninja-relwithdebinfo", "undefined-sanitizer"]
     },
     {
       "name": "xcode-debug", 
@@ -141,25 +202,32 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    },
-    {
-      "name": "xcode", 
-      "displayName": "XCode", 
-      "description": "macOS XCode-based build, user sets CMAKE_BUILD_TYPE",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build"
     }
   ],
   "buildPresets": [
     {
       "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Release",
       "displayName": "Build: Windows Ninja Release"
     },
     {
       "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Debug",
       "displayName": "Build: Windows Ninja Debug"
+    },
+    {
+      "name": "windows-ninja-asan",
+      "configurePreset": "windows-ninja-asan",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Build: Windows Ninja RelWithDebInfo and ASAN"
+    },
+    {
+      "name": "windows-ninja-relwithdebinfo",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Build: Windows Ninja RelWithDebInfo"
     },
     {
       "name": "windows-vs2022-debug",
@@ -206,9 +274,29 @@
       "displayName": "Build: Ninja Release"
     },
     {
-      "name": "ninja",
-      "configurePreset": "ninja",
-      "displayName": "Build: Ninja (Default)"
+      "name": "ninja-relwithdebinfo",
+      "configurePreset": "ninja-relwithdebinfo",
+      "displayName": "Build: Ninja RelWithDebInfo"
+    },
+    {
+      "name": "ninja-sanitizer-asan",
+      "configurePreset": "ninja-sanitizer-asan",
+      "displayName": "Build: Ninja ASan (Optimized)"
+    },
+    {
+      "name": "ninja-sanitizer-tsan",
+      "configurePreset": "ninja-sanitizer-tsan",
+      "displayName": "Build: Ninja TSan (Optimized)"
+    },
+    {
+      "name": "ninja-sanitizer-msan",
+      "configurePreset": "ninja-sanitizer-msan",
+      "displayName": "Build: Ninja MSan (Optimized)"
+    },
+    {
+      "name": "ninja-sanitizer-ubsan",
+      "configurePreset": "ninja-sanitizer-ubsan",
+      "displayName": "Build: Ninja UBSan (Optimized)"
     },
     {
       "name": "xcode-debug",
@@ -221,187 +309,75 @@
       "configurePreset": "xcode-release",
       "configuration": "Release",
       "displayName": "Build: Xcode Release"
-    },
-    {
-      "name": "xcode",
-      "configurePreset": "xcode",
-      "displayName": "Build: Xcode (Default)"
     }
   ],
   "testPresets": [
     {
       "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Release",
       "displayName": "Test: Windows Ninja Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug",
+      "configurePreset": "windows-ninja-multiconfig",
+      "configuration": "Debug",
       "displayName": "Test: Windows Ninja Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2022-debug",
       "configurePreset": "windows-vs2022",
       "configuration": "Debug",
       "displayName": "Test: VS2022 Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "windows-vs2022-release",
       "configurePreset": "windows-vs2022",
       "configuration": "Release",
       "displayName": "Test: VS2022 Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "windows-vs2026-debug",
-      "configurePreset": "windows-vs2026",
-      "configuration": "Debug",
-      "displayName": "Test: VS2026 Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "windows-vs2026-release",
-      "configurePreset": "windows-vs2026",
-      "configuration": "Release",
-      "displayName": "Test: VS2026 Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "make-debug",
       "configurePreset": "make-debug",
       "displayName": "Test: Makefile Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "make-release",
       "configurePreset": "make-release",
       "displayName": "Test: Makefile Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug",
       "displayName": "Test: Ninja Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
       "name": "ninja-release",
       "configurePreset": "ninja-release",
       "displayName": "Test: Ninja Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     },
     {
-      "name": "ninja",
-      "configurePreset": "ninja",
-      "displayName": "Test: Ninja (Default)",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "xcode-debug",
-      "configurePreset": "xcode-debug",
-      "configuration": "Debug",
-      "displayName": "Test: Xcode Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "xcode-release",
-      "configurePreset": "xcode-release",
-      "configuration": "Release",
-      "displayName": "Test: Xcode Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
-    },
-    {
-      "name": "xcode",
-      "configurePreset": "xcode",
-      "displayName": "Test: Xcode (Default)",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 8,
-        "timeout": 300
-      }
+      "name": "ninja-sanitizer-asan",
+      "configurePreset": "ninja-sanitizer-asan",
+      "displayName": "Test: Ninja ASan (Optimized)",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
     }
   ]
 }

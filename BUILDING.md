@@ -116,7 +116,7 @@ cmake --build --preset ninja-release
 *Generated binaries will land inside `build/release/bin/`. For debug variants,
  substitute `ninja-debug` (which outputs to `build/debug/bin/`).*
 
-### 2. Multi-Config Frameworks (macOS Xcode & Windows MSVC)
+### 2. Multi-Config Frameworks (macOS Xcode, Windows MSVC, Ninja/Clang)
 
 Multi-configuration generators use a base configuration layout that handles
 building distinct targets cleanly.
@@ -148,6 +148,19 @@ cmake --build --preset windows-vs2022-debug
 
 *Generated binaries will map to `build-vs2022/bin/Release/` or
  `build-vs2022/bin/Debug/` respectively.*
+
+
+Additionally, for the Ninja and Clang on Windows connoisseur:
+
+```pwsh
+# Configure using the Ninja + Clang multi-configuration generators
+cmake --preset windows-ninja-multiconfig
+
+# Compile either the Debug, Release or RelWithDebInfo target variants
+cmake --build --preset windows-ninja-release
+cmake --build --preset windows-ninja-debug
+cmake --build --preset windows-ninja-relwithdebinfo
+```
 
 ---
 
@@ -186,6 +199,40 @@ cmake --build --preset ninja-release
   extensions, as might be avaiable via `gnu11` in the GNU C
   compiler. Consequently, this configuration variable has very little
   effect. It exists for completeness.
+
+---
+
+## Runtime Sanitizers
+
+Preset names ending in `-asan`, `-tsan`, `-msan` and `-ubsan` enable
+the runtime address, thread, memory and undefined behavior sanitizers,
+respectively. For example:
+
+
+```bash
+# Configure a Ninja RelWithDebInfo build and the address sanitizer:
+cmake --preset ninja-relwithdebinfo-asan
+cmake --build ninja-relwithdebinfo
+```
+
+```pwsh
+# Configure Ninja/Clang on Windows with the address sanitizer: 
+cmake --preset windows-ninja-asan
+cmake --preset windows-ninja-relwithdebinfo
+```
+
+The corresponding command line configuration variables are:
+
+- `-DSANITIZE_ADDRESS:Bool=On`: Enable the address sanitizer
+- `-DSANITIZE_THREAD:Bool=On`: Enable the thread sanitizer
+- `-DSANITIZE_MEMORY:Bool=On`: Enable the memory sanitizer
+- `-DSANITIZE_UNDEFINED:Bool=On`: Enable the undefined behavior sanitizer
+
+_Windows note:_ You will need to find and copy the
+`clang_rt.asan_dynamic-x86_64.dll` library to the
+`build-win64/bin/RelWithDebInfo` directory where the Window Ninja+ASan
+binaries are located. Otherwise, you'll get an pop-up about a missing
+DLL. There is no static link option for this library.
 
 ---
 

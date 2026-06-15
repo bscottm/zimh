@@ -33,7 +33,10 @@ Thumbs.db
 /build/
 /build-*/
 /vcpkg_installed/
+
+# Local user customization files.
 CMakeUserPresets.json
+.clangd
 
 # Temporary files during work
 tmp/

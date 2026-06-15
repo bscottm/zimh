@@ -2,31 +2,53 @@ name: zimh cross-platform build
 
 on:
   push:
-
   pull_request:
-
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }} - ${{ matrix.config }})
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
-        config: [Debug, Release]
         include:
           - os: ubuntu-latest
-            preset: ninja
-            build_dir: build
+            config_preset: ninja-debug
+            build_preset: ninja-debug
+            name: "Ubuntu (Ninja Debug)"
+          - os: ubuntu-latest
+            config_preset: ninja-release
+            build_preset: ninja-release
+            name: "Ubuntu (Ninja Release)"
+
           - os: macos-latest
-            preset: xcode
-            build_dir: build
+            config_preset: xcode-debug
+            build_preset: xcode-debug
+            name: "macOS (Xcode Debug)"
+          - os: macos-latest
+            config_preset: xcode-release
+            build_preset: xcode-release
+            name: "macOS (Xcode Release)"
+
           - os: windows-2022
-            preset: windows-vs2022
-            build_dir: build-vs2022
+            config_preset: windows-vs2022
+            build_preset: windows-vs2022-debug
+            name: "Windows (VS 2022 Debug)"
+          - os: windows-2022
+            config_preset: windows-vs2022
+            build_preset: windows-vs2022-release
+            name: "Windows (VS 2022 Release)"
+
+          - os: windows-2022
+            config_preset: windows-ninja-multiconfig
+            build_preset: windows-ninja-debug
+            name: "Windows (Ninja Multi Debug)"
+          - os: windows-2022
+            config_preset: windows-ninja-multiconfig
+            build_preset: windows-ninja-release
+            name: "Windows (Ninja Multi Release)"
 
     steps:
     - name: Checkout Repository
@@ -36,10 +58,7 @@ jobs:
 
     # -------------------------------------------------------------------------
     # Windows-Only: vcpkg Environment & Binary Caching
-    #
-    # Note: PRESERVE VCPKG_ROOT in $GITHUB_ENV!
     # -------------------------------------------------------------------------
-
     - name: Initialize vcpkg Environment (Windows)
       if: matrix.os == 'windows-2022'
       shell: pwsh
@@ -53,11 +72,14 @@ jobs:
       uses: actions/cache@v5
       with:
         path: ${{ github.workspace }}\.vcpkg_cache
-        key: vcpkg-windows-${{ matrix.config }}-${{ hashFiles('**/vcpkg.json') }}
+        key: vcpkg-windows-${{ matrix.build_preset }}-${{ hashFiles('**/vcpkg.json') }}
         restore-keys: |
-          vcpkg-windows-${{ matrix.config }}-
+          vcpkg-windows-${{ matrix.build_preset }}-
           vcpkg-windows-
 
+    # -------------------------------------------------------------------------
+    # Platform Dependency Injections
+    # -------------------------------------------------------------------------
     - name: Ubuntu setup package manager & system dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -73,15 +95,16 @@ jobs:
       if: matrix.os == 'windows-2022'
       shell: pwsh
       run: |
-           Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-           Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-           scoop install winflexbison
-           echo "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+        Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+        scoop install winflexbison
+        echo "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH
 
-    - name: Configure CMake via Preset
-      # This leverages your unified CMakePresets.json configuration
-      run: cmake --preset ${{ matrix.preset }} -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+    # -------------------------------------------------------------------------
+    # Unified Build Execution (No forks required)
+    # -------------------------------------------------------------------------
+    - name: Run CMake Configure
+      run: cmake --preset ${{ matrix.config_preset }}
 
-    - name: Build Simulators
-      # Builds using the configuration matrix (Debug/Release) targeting the preset's output binaries
-      run: cmake --build ${{ matrix.build_dir }} --config ${{ matrix.config }}
+    - name: Run CMake Build
+      run: cmake --build --preset ${{ matrix.build_preset }}
