@@ -6,18 +6,28 @@
 include_guard(GLOBAL)
 
 include(CheckSymbolExists)
+include(CheckSourceCompiles)
 include(CheckCSourceRuns)
 include(CheckSourceCompiles)
 include(CMakePushCheckState)
+
+## =============================================================================
+## C11 concurrency source fragment
+## =============================================================================
+
+set(C11_THREAD_FRAG "
+#include <threads.h>
+int main(void) {
+    thrd_t thread;
+    return 0;
+}
+")
 
 # =============================================================================
 # The os_features library
 #
 # This library includes O/S-specific compiler definitions and compatibility
 # shim sources (e.g., strlcpy, strlcat).
-#
-# Note: OBJECT libraries have to be defined with at least one source file,
-# so we add one dummy source file and incrementally add more as needed.
 # =============================================================================
 set(DUMMY_SRC "${CMAKE_CURRENT_BINARY_DIR}/osfeatures_dummy.c")
 file(WRITE ${DUMMY_SRC} "/* Dummy source for os_features object library */\n")
@@ -33,14 +43,35 @@ if (CMAKE_HOST_SYSTEM MATCHES "Linux")
     target_compile_definitions(os_features PUBLIC _GNU_SOURCE)
 endif()
 
-# =============================================================================
-# The threading interface library: thread_lib
-# =============================================================================
-add_library(thread_lib INTERFACE)
+## =============================================================================
+## Windows version configuration: Make sure that it's at least the Win 10 API.
+## =============================================================================
 
-# Windows / vcpkg Path: Check for our modernized pthreads4w target
-if(NOT TARGET PTW::PTW AND WIN32)
-    find_package(PTW)
+if (WIN32 AND NOT DEFINED WINVER)
+    # Default to Windows 10 for SetThreadDescription support
+    message(STATUS "Setting Windows target version to Windows 10 (0x0A00)")
+    target_compile_definitions(os_features PUBLIC
+        WINVER=0x0A00
+        _WIN32_WINNT=0x0A00
+        NTDDI_VERSION=0x0A000002
+    )
+endif()
+
+# =============================================================================
+# The threading library: thread_lib
+# =============================================================================
+
+# thread_lib: Support library for thread management functions, e.g.,
+# sim_set_thread_name().
+
+if(NOT TARGET thread_lib)
+    add_library(thread_lib STATIC
+        ${SIMH_LIB_ROOT}/sim_threads.c
+        ${SIMH_LIB_ROOT}/sim_tailq.c
+    )
+    target_include_directories(thread_lib PRIVATE
+        "${SIMH_INCLUDE_ROOT}"
+    )
 endif()
 
 # AIO_FLAGS: Used in add_simulator.cmake to enable asynchronous I/O support primarily
@@ -48,19 +79,231 @@ endif()
 # detected and building the AIO version of the core libraries.
 set(AIO_FLAGS)
 
-if(TARGET PTW::PTW)
-    # Forward all header paths, multi-config libs, and definitions to thread_lib
-    target_link_libraries(thread_lib INTERFACE PTW::PTW)
-    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
-    message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
-else()
-    # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
-    # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
-    find_package(Threads REQUIRED)
+# Check if C11 threads are available:
+check_source_compiles(C "${C11_THREAD_FRAG}" HAVE_C11_THREADS)
+
+## Enable when C11 concurrency better integrated. In the meantime, keep looking
+## for pthreads.
+##
+## if (NOT HAVE_C11_THREADS)
+    # Windows / vcpkg Path: Check for our modernized pthreads4w target
+    if(NOT TARGET PTW::PTW AND WIN32)
+        find_package(PTW)
+    endif()
+
+    if(TARGET PTW::PTW)
+        # Forward all header paths, multi-config libs, and definitions to thread_lib
+        target_link_libraries(thread_lib PUBLIC PTW::PTW)
+        target_compile_definitions(thread_lib PUBLIC HAVE_PTHREADS)
+        set(valid_threads TRUE)
+        message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
+    else()
+        # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
+        # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
+        find_package(Threads REQUIRED)
+
+        if (TARGET Threads::Threads)
+            # Run the C11 check again, just in case the Linux or macOS compiler requires
+            # linking with the thread library. Obviously, we got this far because
+            # HAVE_C11_THREADS is FALSE.
+            cmake_push_check_state()
+            set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
+            check_source_compiles(C "${C11_THREAD_FRAG}" HAVE_C11_THREADS)
+            cmake_pop_check_state()
+
+            if (NOT HAVE_C11_THREADS)
+                # Nope. Fall back to ordinary pthreads.
+                target_compile_definitions(thread_lib PUBLIC HAVE_PTHREADS)
+                message(STATUS "pthreads-dep: Using system native Threads::Threads")
+            else ()
+                target_compile_definitions(thread_lib PUBLIC HAVE_C11_THREADS)
+                message(STATUS "Using C11 standard concurrency library with Threads::Threads target.")
+            endif ()
+
+            # Add Threads::Threads because it's needed whether we're using C11 or native.
+            target_link_libraries(thread_lib PUBLIC Threads::Threads)
+        endif ()
+    endif()
+## Enable me, replace next line: else ()
+if (HAVE_C11_THREADS)
+    message(STATUS "Enabling C11 standard concurrency library.")
+    target_compile_definitions(thread_lib PUBLIC HAVE_C11_THREADS)
+endif ()
+
+if (TARGET PTW::PTW OR TARGET Threads::Threads OR HAVE_C11_THREADS)
+    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "USE_READER_THREAD")
+
+    ## =============================================================================
+    ## Thread naming capability detection
+    ## =============================================================================
+
+    message(STATUS "Detecting thread naming capabilities...")
     
-    target_link_libraries(thread_lib INTERFACE Threads::Threads)
-    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "HAVE_PTHREAD" "USE_READER_THREAD")
-    message(STATUS "pthreads-dep: Using system native Threads::Threads")
+    cmake_push_check_state()
+    
+    # Inherit thread_lib's configuration for checks
+    get_property(zz_thread_defs  TARGET thread_lib PROPERTY COMPILE_DEFINITIONS)
+    get_property(zz_thread_incs  TARGET thread_lib PROPERTY INCLUDE_DIRECTORIES)
+    get_property(zz_thread_libs  TARGET thread_lib PROPERTY LINK_LIBRARIES)
+
+    ## CMAKE_REQUIRED_DEFINITIONS needs "-D" in front of each def.
+    foreach (DEF ${zz_thread_defs})
+        list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${DEF}")
+    endforeach()
+
+    list(APPEND CMAKE_REQUIRED_INCLUDES ${zz_thread_incs})
+    list(APPEND CMAKE_REQUIRED_LIBRARIES ${zz_thread_libs})
+    
+    set(THREAD_NAMING_METHOD "None")
+    
+    # Windows: SetThreadDescription
+    if (WIN32)
+        message(STATUS "  Checking for SetThreadDescription (Windows 10 1607+)...")
+        check_source_compiles(C "
+            #include <windows.h>
+            #include <processthreadsapi.h>
+            int main(void) {
+                SetThreadDescription(GetCurrentThread(), L\"test\");
+                return 0;
+            }
+        " HAVE_SETTHREADDESCRIPTION)
+        
+        if (HAVE_SETTHREADDESCRIPTION)
+            target_compile_definitions(thread_lib PRIVATE HAVE_SETTHREADDESCRIPTION)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=64)
+            set(THREAD_NAMING_METHOD "SetThreadDescription")
+            set(THREAD_NAME_MAX_VALUE 64)
+            message(STATUS "  ✓ SetThreadDescription available")
+        else()
+            message(STATUS "  ✗ SetThreadDescription not available")
+        endif()
+    endif()
+    
+    # Linux: prctl(PR_SET_NAME)
+    if (UNIX AND NOT APPLE AND NOT THREAD_NAMING_METHOD)
+        message(STATUS "  Checking for prctl(PR_SET_NAME) (Linux)...")
+        check_source_compiles(C "
+            #include <sys/prctl.h>
+            int main(void) {
+                prctl(PR_SET_NAME, \"test\", 0, 0, 0);
+                return 0;
+            }
+        " HAVE_PRCTL_SET_NAME)
+        
+        if (HAVE_PRCTL_SET_NAME)
+            target_compile_definitions(thread_lib PRIVATE HAVE_PRCTL_SET_NAME)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=16)
+            set(THREAD_NAMING_METHOD "prctl(PR_SET_NAME)")
+            set(THREAD_NAME_MAX_VALUE 16)
+            message(STATUS "  ✓ prctl(PR_SET_NAME) available (max length: 16)")
+        else()
+            message(STATUS "  ✗ prctl(PR_SET_NAME) not available")
+        endif()
+    endif()
+    
+    # macOS: pthread_setname_np (single argument)
+    if (NOT THREAD_NAMING_METHOD)
+        message(STATUS "  Checking for pthread_setname_np (single arg, macOS)...")
+        check_source_compiles(C "
+            #include <pthread.h>
+            int main(void) {
+                pthread_setname_np(\"test\");
+                return 0;
+            }
+        " HAVE_PTHREAD_SETNAME_NP_SINGLE_ARG)
+        
+        if (HAVE_PTHREAD_SETNAME_NP_SINGLE_ARG)
+            target_compile_definitions(thread_lib PRIVATE HAVE_PTHREAD_SETNAME_NP_CURRENT)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=64)
+            set(THREAD_NAMING_METHOD "pthread_setname_np (current thread)")
+            set(THREAD_NAME_MAX_VALUE 64)
+            message(STATUS "  ✓ pthread_setname_np (single arg) available")
+        else()
+            message(STATUS "  ✗ pthread_setname_np (single arg) not available")
+        endif()
+    endif()
+    
+    # FreeBSD/OpenBSD: pthread_set_name_np
+    if (NOT THREAD_NAMING_METHOD)
+        message(STATUS "  Checking for pthread_set_name_np (FreeBSD/OpenBSD)...")
+        check_source_compiles(C "
+            #include <pthread.h>
+            #include <pthread_np.h>
+            int main(void) {
+                pthread_set_name_np(pthread_self(), \"test\");
+                return 0;
+            }
+        " HAVE_PTHREAD_SET_NAME_NP)
+        
+        if (HAVE_PTHREAD_SET_NAME_NP)
+            target_compile_definitions(thread_lib PRIVATE HAVE_PTHREAD_SET_NAME_NP)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=32)
+            set(THREAD_NAMING_METHOD "pthread_set_name_np")
+            set(THREAD_NAME_MAX_VALUE 32)
+            message(STATUS "  ✓ pthread_set_name_np available")
+        else()
+            message(STATUS "  ✗ pthread_set_name_np not available")
+        endif()
+    endif()
+    
+    # NetBSD: pthread_setname_np with format string
+    if (NOT THREAD_NAMING_METHOD)
+        message(STATUS "  Checking for pthread_setname_np (format string, NetBSD)...")
+        check_source_compiles(C "
+            #include <pthread.h>
+            int main(void) {
+                pthread_setname_np(pthread_self(), \"%s\", \"test\");
+                return 0;
+            }
+        " HAVE_PTHREAD_SETNAME_NP_NETBSD)
+        
+        if (HAVE_PTHREAD_SETNAME_NP_NETBSD)
+            target_compile_definitions(thread_lib PRIVATE HAVE_PTHREAD_SETNAME_NP_NETBSD)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=32)
+            set(THREAD_NAMING_METHOD "pthread_setname_np (NetBSD)")
+            set(THREAD_NAME_MAX_VALUE 32)
+            message(STATUS "  ✓ pthread_setname_np (NetBSD format) available")
+        else()
+            message(STATUS "  ✗ pthread_setname_np (NetBSD format) not available")
+        endif()
+    endif()
+    
+    # Generic: pthread_setname_np (two arguments)
+    if (NOT THREAD_NAMING_METHOD)
+        message(STATUS "  Checking for pthread_setname_np (generic POSIX)...")
+        check_source_compiles(C "
+            #include <pthread.h>
+            int main(void) {
+                pthread_setname_np(pthread_self(), \"test\");
+                return 0;
+            }
+        " HAVE_PTHREAD_SETNAME_NP_GENERIC)
+        
+        if (HAVE_PTHREAD_SETNAME_NP_GENERIC)
+            target_compile_definitions(thread_lib PRIVATE HAVE_PTHREAD_SETNAME_NP_GENERIC)
+            target_compile_definitions(thread_lib PRIVATE THREAD_NAME_MAX=64)
+            set(THREAD_NAMING_METHOD "pthread_setname_np (generic)")
+            set(THREAD_NAME_MAX_VALUE 64)
+            message(STATUS "  ✓ pthread_setname_np (generic) available")
+        else()
+            message(STATUS "  ✗ pthread_setname_np (generic) not available")
+        endif()
+    endif()
+    
+    cmake_pop_check_state()
+    
+    # Summary
+    if (THREAD_NAMING_METHOD STREQUAL "None")
+        message(STATUS "Thread naming: NOT SUPPORTED on this platform")
+        message(STATUS "  sim_set_thread_name() will be a no-op")
+    else()
+        message(STATUS "Thread naming: ${THREAD_NAMING_METHOD}")
+        message(STATUS "  Maximum thread name length: ${THREAD_NAME_MAX_VALUE} characters")
+    endif()
+    
+    # Store for use in tests
+    set(THREAD_NAMING_METHOD "${THREAD_NAMING_METHOD}" CACHE INTERNAL "Detected thread naming method")
+    set(THREAD_NAME_MAX_VALUE "${THREAD_NAME_MAX_VALUE}" CACHE INTERNAL "Maximum thread name length")
 endif()
 
 include(uuid-dep)

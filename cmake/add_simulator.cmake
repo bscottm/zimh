@@ -484,19 +484,21 @@ function (add_simulator _targ)
         add_dependencies(${_targ} BuildROMs)
     endif ()
 
-    # Create target 'cppcheck' rule, if cppcheck detected:
-    if (ENABLE_CPPCHECK AND cppcheck_cmd)
-        get_property(cppcheck_includes TARGET ${_targ} PROPERTY INCLUDE_DIRECTORIES)
-        get_property(cppcheck_defines  TARGET ${_targ} PROPERTY COMPILE_DEFINITIONS)
-        list(TRANSFORM cppcheck_includes PREPEND "-I")
-        list(TRANSFORM cppcheck_defines  PREPEND "-D")
-        add_custom_target("${_targ}_cppcheck"
-            COMMAND ${cppcheck_cmd} ${cppcheck_defines} ${cppcheck_includes} ${SIMH_SOURCES}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
+    #### This is probably no longer needed.
+    ####
+    # # Create target 'cppcheck' rule, if cppcheck detected:
+    # if (ENABLE_CPPCHECK AND cppcheck_cmd)
+    #     get_property(cppcheck_includes TARGET ${_targ} PROPERTY INCLUDE_DIRECTORIES)
+    #     get_property(cppcheck_defines  TARGET ${_targ} PROPERTY COMPILE_DEFINITIONS)
+    #     list(TRANSFORM cppcheck_includes PREPEND "-I")
+    #     list(TRANSFORM cppcheck_defines  PREPEND "-D")
+    #     add_custom_target("${_targ}_cppcheck"
+    #         COMMAND ${cppcheck_cmd} ${cppcheck_defines} ${cppcheck_includes} ${SIMH_SOURCES}
+    #         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    #     )
 
-        add_dependencies(cppcheck "${_targ}_cppcheck")
-    endif (ENABLE_CPPCHECK AND cppcheck_cmd)
+    #     add_dependencies(cppcheck "${_targ}_cppcheck")
+    # endif (ENABLE_CPPCHECK AND cppcheck_cmd)
 
     set_property(GLOBAL APPEND PROPERTY SIMH_INTEGRATION_TARGETS ${_targ})
 endfunction ()
