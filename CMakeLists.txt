@@ -23,7 +23,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.15)
 endif()
 
 # Ensure compiler data exports:
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands for tooling" FORCE)
 
 # Well-known places:
 set(SIMH_CORE_ROOT ${CMAKE_SOURCE_DIR}/src/core)

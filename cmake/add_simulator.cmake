@@ -20,6 +20,9 @@ set(SIM_SOURCES
     ${SIMH_RUNTIME_ROOT}/sim_disk.c
     ${SIMH_RUNTIME_ROOT}/sim_disk_ramdisk.c
     ${SIMH_RUNTIME_ROOT}/sim_ether.c
+    ${SIMH_RUNTIME_ROOT}/eth_dispatch.c
+    ${SIMH_RUNTIME_ROOT}/eth_readers.c
+    ${SIMH_RUNTIME_ROOT}/eth_writers.c
     ${SIMH_RUNTIME_ROOT}/sim_ether_test.c
     ${SIMH_RUNTIME_ROOT}/sim_fio.c
     ${SIMH_RUNTIME_ROOT}/sim_host_path.c
@@ -589,9 +592,6 @@ build_simcore(simhi64_besm6  VIDEO INT64 BESM6_SDL_HACK)
 
 if (WITH_ROMS)
     add_executable(BuildROMs ${SIMH_RUNTIME_ROOT}/sim_BuildROMs.c)
-    if (SIMH_NEED_STRLCPY)
-        target_sources(BuildROMs PRIVATE ${SIMH_COMPAT_ROOT}/strlcpy.c)
-    endif ()
     target_include_directories(BuildROMs PUBLIC
         "${SIMH_CORE_ROOT}"
         "${SIMH_INCLUDE_ROOT}"

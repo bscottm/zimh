@@ -28,7 +28,7 @@ add_executable(frontpaneltest
     ${SIMH_RUNTIME_ROOT}/sim_time.c
     ${SIMH_RUNTIME_ROOT}/sim_frontpanel.c)
 
-if (SIMH_NEED_STRLCPY)
+if (NOT HAVE_STRLCPY)
     target_sources(frontpaneltest PRIVATE ${SIMH_COMPAT_ROOT}/strlcpy.c)
 endif ()
 

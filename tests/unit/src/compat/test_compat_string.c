@@ -15,6 +15,9 @@
 #undef strcasecmp
 #undef strncasecmp
 
+/* Force compatibility code: */
+#undef HAVE_STRLCPY
+
 #if defined(SIMH_NEED_STRNLEN)
 #undef strnlen
 #endif

@@ -344,9 +344,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
+ * This prevents redefinition errors on macOS 15.5+ where both net/bpf.h and pcap/bpf.h
+ * define bpf_program/bpf_insn. pcap.h is included transitively via sim_ether_internal.h. */
+#if (defined (xBSD) || defined (__APPLE__)) && (defined (HAVE_TAP_NETWORK) || defined (HAVE_PCAP_NETWORK))
+#include <sys/ioctl.h>
+#include <net/bpf.h>
+#endif
+
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_ether_test_internal.h"
+#include "eth_dispatch.h"
+#include "eth_readers.h"
+#include "eth_writers.h"
 #include "sim_sock.h"
 #include "string_util.h"
 #include "sim_time.h"
@@ -362,6 +373,9 @@
 static int _eth_get_system_id (char *buf, size_t buf_size);
 static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on);
 t_stat eth_test_dev_command_format (void);
+#if defined(USE_READER_THREAD)
+static void ethq_item_free(sim_tailq_item_t item);
+#endif
 
 static const uchar_t framer_oui[3] = { 0xaa, 0x00, 0x03 };
        const ETH_MAC eth_mac_any         = {0, 0, 0, 0, 0, 0};
@@ -659,6 +673,99 @@ static void eth_zero(ETH_DEV* dev)
   dev->reflections = -1;                          /* not established yet */
 }
 
+#if defined(USE_READER_THREAD)
+/* sim_tailq adapter functions for ethernet packet queue
+ * sim_tailq stores generic pointers, we need to wrap eth_item structures
+ */
+
+static void ethq_item_free(sim_tailq_item_t item)
+{
+  struct eth_item *eth_itm = (struct eth_item *)item;
+  if (eth_itm) {
+    if (eth_itm->packet.oversize)
+      free(eth_itm->packet.oversize);
+    free(eth_itm);
+  }
+}
+
+t_stat eth_tailq_init(sim_tailq_t* que, int max)
+{
+  (void)max;  /* sim_tailq grows dynamically, no fixed max */
+  /* sim_tailq_init returns 1 on success, 0 on failure */
+  return (sim_tailq_init(que) == 0) ? SCPE_MEM : SCPE_OK;
+}
+
+void eth_tailq_destroy(sim_tailq_t* que)
+{
+  sim_tailq_destroy(que, ethq_item_free);
+}
+
+void eth_tailq_clear(sim_tailq_t* que)
+{
+  /* Dequeue and free all items */
+  sim_tailq_item_t item;
+  while ((item = sim_tailq_dequeue(que)) != NULL) {
+    ethq_item_free(item);
+  }
+}
+
+void eth_tailq_remove(sim_tailq_t* que)
+{
+  sim_tailq_item_t item = sim_tailq_dequeue(que);
+  if (item)
+    ethq_item_free(item);
+}
+
+void eth_tailq_insert_data(sim_tailq_t* que, int32_t type, const uint8_t *data, int used,
+                      size_t len, size_t crc_len, const uint8_t *crc_data, int32_t status)
+{
+  struct eth_item *item = (struct eth_item *)calloc(1, sizeof(struct eth_item));
+  if (!item)
+    return;  /* Allocation failure - packet dropped */
+
+  item->type = type;
+  item->packet.len = (uint32_t)len;
+  item->packet.used = (uint32_t)used;
+  item->packet.crc_len = (uint32_t)crc_len;
+
+  if (MAX(len, crc_len) <= sizeof(item->packet.msg)) {
+    memcpy(item->packet.msg, data, ((len > crc_len) ? len : crc_len));
+    if (crc_data && (crc_len > len))
+      memcpy(&item->packet.msg[len], crc_data, ETH_CRC_SIZE);
+  } else {
+    item->packet.oversize = (uint8_t *)malloc(((len > crc_len) ? len : crc_len));
+    if (item->packet.oversize) {
+      memcpy(item->packet.oversize, data, ((len > crc_len) ? len : crc_len));
+      if (crc_data && (crc_len > len))
+        memcpy(&item->packet.oversize[len], crc_data, ETH_CRC_SIZE);
+    } else {
+      free(item);
+      return;  /* Allocation failure - packet dropped */
+    }
+  }
+  item->packet.status = status;
+
+  sim_tailq_enqueue(que, (sim_tailq_item_t)item);
+}
+
+void eth_tailq_insert(sim_tailq_t* que, int32_t type, ETH_PACK* pack, int32_t status)
+{
+  eth_tailq_insert_data(que, type, pack->oversize ? pack->oversize : pack->msg,
+                   pack->used, pack->len, pack->crc_len, NULL, status);
+}
+
+/* Get queue depth - for compatibility with old API */
+static int ethq_count(sim_tailq_t* que)
+{
+  return (int)sim_tailq_count(que);
+}
+
+#endif /* USE_READER_THREAD */
+
+/*============================================================================*/
+/*            ETH_QUE Functions - Always available for test backend          */
+/*============================================================================*/
+
 t_stat ethq_init(ETH_QUE* que, int max)
 {
   /* create dynamic queue if it does not exist */
@@ -743,9 +850,9 @@ void ethq_insert_data(ETH_QUE* que, int32_t type, const uint8_t *data, int used,
   /* set information in (new) tail item */
   item = &que->item[que->tail];
   item->type = type;
-  item->packet.len = len;
-  item->packet.used = used;
-  item->packet.crc_len = crc_len;
+  item->packet.len = (uint32_t)len;
+  item->packet.used = (uint32_t)used;
+  item->packet.crc_len = (uint32_t)crc_len;
   if (MAX (len, crc_len) <= sizeof (item->packet.msg)) {
     memcpy(item->packet.msg, data, ((len > crc_len) ? len : crc_len));
     if (crc_data && (crc_len > len))
@@ -1017,11 +1124,6 @@ const char *eth_capabilities(void)
 #endif
      ":UDP:TEST";
  }
-
-#if (defined (xBSD) || defined (__APPLE__)) && (defined (HAVE_TAP_NETWORK) || defined (HAVE_PCAP_NETWORK))
-#include <sys/ioctl.h>
-#include <net/bpf.h>
-#endif
 
 #if defined (HAVE_PCAP_NETWORK)
 /*============================================================================*/
@@ -1750,7 +1852,7 @@ static int _eth_get_system_id (char *buf, size_t buf_size)
     return -1;
   if (buf_size < 37)
     return -1;
-  reglen = buf_size - 1;
+  reglen = (DWORD)(buf_size - 1);
   if ((status = RegQueryValueExA (reghnd, "MachineGuid", NULL, &regtype, (LPBYTE)buf, &reglen)) != ERROR_SUCCESS) {
     RegCloseKey (reghnd);
     return -1;
@@ -1793,272 +1895,33 @@ return 0;
 #endif
 
 /* Forward declarations */
-static void
+void
 _eth_callback(u_char* info, const struct pcap_pkthdr* header, const u_char* data);
 
-static t_stat
+t_stat
 _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
 
 static t_stat
 _eth_close_port(int eth_api, pcap_t *pcap, SOCKET pcap_fd);
 
-static void
+void
 _eth_error(ETH_DEV* dev, const char* where);
 
 #if defined(HAVE_SLIRP_NETWORK)
 static void _slirp_callback (void *opaque, const uchar_t *buf, int len)
 {
+ETH_DEV *dev = (ETH_DEV *)opaque;
 struct pcap_pkthdr header;
 
+sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() received %d bytes\n", len);
 memset(&header, 0, sizeof(header));
 header.caplen = header.len = len;
 _eth_callback((u_char *)opaque, &header, buf);
+sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() delivered to _eth_callback\n");
 }
 #endif
 
 #if defined (USE_READER_THREAD)
-static void *
-_eth_reader(void *arg)
-{
-ETH_DEV* volatile dev = (ETH_DEV*)arg;
-int status = 0;
-int sel_ret = 0;
-int do_select = 0;
-SOCKET select_fd = 0;
-#if defined (_WIN32)
-HANDLE hWait = (dev->eth_api == ETH_API_PCAP) ? pcap_getevent ((pcap_t*)dev->handle) : NULL;
-#endif
-
-switch (dev->eth_api) {
-  case ETH_API_PCAP:
-#if defined (HAVE_PCAP_NETWORK)
-#if defined (MUST_DO_SELECT)
-    do_select = 1;
-    select_fd = pcap_get_selectable_fd((pcap_t *)dev->handle);
-#endif
-#endif
-    break;
-  case ETH_API_TAP:
-  case ETH_API_VDE:
-  case ETH_API_UDP:
-  case ETH_API_NAT:
-    do_select = 1;
-    select_fd = dev->fd_handle;
-    break;
-  }
-
-sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
-
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which, in general, won't be readily yielding the processor
-   when this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
-while (dev->handle) {
-#if defined (_WIN32)
-  if (dev->eth_api == ETH_API_PCAP) {
-    if (WAIT_OBJECT_0 == WaitForSingleObject (hWait, 250))
-      sel_ret = 1;
-    }
-  if ((dev->eth_api == ETH_API_UDP) || (dev->eth_api == ETH_API_NAT))
-#endif /* _WIN32 */
-  {
-    if (do_select) {
-#ifdef HAVE_SLIRP_NETWORK
-      if (dev->eth_api == ETH_API_NAT) {
-        sel_ret = sim_slirp_select ((sim_slirp_handle *)dev->handle, 250);
-        }
-      else
-#endif
-        {
-        fd_set setl;
-        struct timeval timeout;
-
-        FD_ZERO(&setl);
-        FD_SET(select_fd, &setl);
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 250*1000;
-        sel_ret = select(1+select_fd, &setl, NULL, NULL, &timeout);
-        }
-      }
-    else
-      sel_ret = 1;
-    if (sel_ret < 0 && errno != EINTR)
-      break;
-    }
-  if (sel_ret > 0) {
-    if (!dev->handle)
-      break;
-    /* dispatch read request queue available packets */
-    switch (dev->eth_api) {
-#ifdef HAVE_PCAP_NETWORK
-      case ETH_API_PCAP:
-        status = pcap_dispatch ((pcap_t*)dev->handle, -1, &_eth_callback, (u_char*)dev);
-        break;
-#endif
-#ifdef HAVE_TAP_NETWORK
-      case ETH_API_TAP:
-        {
-          struct pcap_pkthdr header;
-          int len;
-          u_char buf[ETH_MAX_JUMBO_FRAME];
-
-          memset(&header, 0, sizeof(header));
-          len = read(dev->fd_handle, buf, sizeof(buf));
-          if (len > 0) {
-            status = 1;
-            header.caplen = header.len = len;
-            _eth_callback((u_char *)dev, &header, buf);
-            }
-          else {
-            if (len < 0)
-              status = -1;
-            else
-              status = 0;
-            }
-          }
-        break;
-#endif /* HAVE_TAP_NETWORK */
-#ifdef HAVE_VDE_NETWORK
-      case ETH_API_VDE:
-        {
-          struct pcap_pkthdr header;
-          int len;
-          u_char buf[ETH_MAX_JUMBO_FRAME];
-
-          memset(&header, 0, sizeof(header));
-          len = vde_recv((VDECONN *)dev->handle, buf, sizeof(buf), 0);
-          if (len > 0) {
-            status = 1;
-            header.caplen = header.len = len;
-            _eth_callback((u_char *)dev, &header, buf);
-            }
-          else {
-            if (len < 0)
-              status = -1;
-            else
-              status = 0;
-            }
-          }
-        break;
-#endif /* HAVE_VDE_NETWORK */
-#ifdef HAVE_SLIRP_NETWORK
-      case ETH_API_NAT:
-        sim_slirp_dispatch ((sim_slirp_handle *)dev->handle);
-        status = 1;
-        break;
-#endif /* HAVE_SLIRP_NETWORK */
-      case ETH_API_UDP:
-        {
-          struct pcap_pkthdr header;
-          int len;
-          u_char buf[ETH_MAX_JUMBO_FRAME];
-
-          memset(&header, 0, sizeof(header));
-          len = (int)sim_read_sock (select_fd, (char *)buf, (int32_t)sizeof(buf));
-          if (len > 0) {
-            status = 1;
-            header.caplen = header.len = len;
-            _eth_callback((u_char *)dev, &header, buf);
-            }
-          else {
-            if (len < 0)
-              status = -1;
-            else
-              status = 0;
-            }
-          }
-        break;
-      }
-    if ((status > 0) && (dev->asynch_io)) {
-      int wakeup_needed;
-
-      pthread_mutex_lock (&dev->lock);
-      wakeup_needed = (dev->read_queue.count != 0);
-      pthread_mutex_unlock (&dev->lock);
-      if (wakeup_needed) {
-        sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
-        sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
-        }
-      }
-    if (status < 0) {
-      ++dev->receive_packet_errors;
-      _eth_error (dev, "_eth_reader");
-      if (dev->handle) { /* Still attached? */
-#if defined (_WIN32)
-        hWait = (dev->eth_api == ETH_API_PCAP) ? pcap_getevent ((pcap_t*)dev->handle) : NULL;
-#endif
-        if (do_select) {
-          select_fd = dev->fd_handle;
-#if !defined (_WIN32) && defined(HAVE_PCAP_NETWORK)
-          if (dev->eth_api == ETH_API_PCAP)
-            select_fd = pcap_get_selectable_fd((pcap_t *)dev->handle);
-#endif
-          }
-        }
-      }
-    }
-  }
-
-sim_debug(dev->dbit, dev->dptr, "Reader Thread Exiting\n");
-return NULL;
-}
-
-static void *
-_eth_writer(void *arg)
-{
-ETH_DEV* volatile dev = (ETH_DEV*)arg;
-ETH_WRITE_REQUEST *request = NULL;
-
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which in general won't be readily yielding the processor when
-   this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
-sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
-
-pthread_mutex_lock (&dev->writer_lock);
-while (dev->handle) {
-  while (dev->handle && (dev->write_requests == NULL))
-    pthread_cond_wait (&dev->writer_cond, &dev->writer_lock);
-  while (NULL != (request = dev->write_requests)) {
-    if (dev->handle == NULL)      /* Shutting down? */
-      break;
-    /* Pull buffer off request list */
-    dev->write_requests = request->next;
-    pthread_mutex_unlock (&dev->writer_lock);
-
-    if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
-      uint32_t packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
-      dev->throttle_events <<= 1;
-      dev->throttle_events += (packet_delta_time < dev->throttle_time) ? 1 : 0;
-      if ((dev->throttle_events & dev->throttle_mask) == dev->throttle_mask) {
-        sim_os_ms_sleep (dev->throttle_delay);
-        ++dev->throttle_count;
-        }
-      dev->throttle_packet_time = sim_os_msec();
-      }
-    dev->write_status = _eth_write(dev, &request->packet, NULL);
-
-    pthread_mutex_lock (&dev->writer_lock);
-    /* Put buffer on free buffer list */
-    request->next = dev->write_buffers;
-    dev->write_buffers = request;
-    request = NULL;
-    }
-  }
-/* If we exited these loops with a request allocated, */
-/* avoid buffer leaking by putting it on free buffer list */
-if (request) {
-  request->next = dev->write_buffers;
-  dev->write_buffers = request;
-  }
-pthread_mutex_unlock (&dev->writer_lock);
-
-sim_debug(dev->dbit, dev->dptr, "Writer Thread Exiting\n");
-return NULL;
-}
-
 /*
  * Stop any ethernet background threads that were successfully started.  The
  * startup path can fail after creating only the reader thread, so shutdown must
@@ -2067,17 +1930,13 @@ return NULL;
 static void
 eth_stop_threads(ETH_DEV *dev)
 {
-    if (dev->reader_thread_started) {
-        pthread_join(dev->reader_thread, NULL);
-        dev->reader_thread_started = false;
-    }
-    if (dev->writer_thread_started) {
-        pthread_mutex_lock(&dev->writer_lock);
-        pthread_cond_signal(&dev->writer_cond);
-        pthread_mutex_unlock(&dev->writer_lock);
-        pthread_join(dev->writer_thread, NULL);
-        dev->writer_thread_started = false;
-    }
+    /* Join both threads - they were created if we got here */
+    sim_thread_join(dev->reader_thread, NULL);
+
+    sim_mutex_lock(&dev->writer_lock);
+    sim_cond_signal(&dev->writer_cond);
+    sim_mutex_unlock(&dev->writer_lock);
+    sim_thread_join(dev->writer_thread, NULL);
 }
 
 /*
@@ -2091,10 +1950,12 @@ eth_destroy_thread_state(ETH_DEV *dev)
 
     if (!dev->threading_initialized)
         return;
-    pthread_mutex_destroy(&dev->lock);
-    pthread_mutex_destroy(&dev->self_lock);
-    pthread_mutex_destroy(&dev->writer_lock);
-    pthread_cond_destroy(&dev->writer_cond);
+    sim_mutex_destroy(&dev->lock);
+    sim_mutex_destroy(&dev->self_lock);
+    sim_mutex_destroy(&dev->writer_lock);
+    sim_mutex_destroy(&dev->startup_lock);
+    sim_cond_destroy(&dev->writer_cond);
+    sim_cond_destroy(&dev->startup_cond);
     while (NULL != (buffer = dev->write_buffers)) {
         dev->write_buffers = buffer->next;
         free(buffer);
@@ -2103,7 +1964,7 @@ eth_destroy_thread_state(ETH_DEV *dev)
         dev->write_requests = buffer->next;
         free(buffer);
     }
-    ethq_destroy(&dev->read_queue);
+    eth_tailq_destroy(&dev->read_queue);
     dev->threading_initialized = false;
 }
 #endif
@@ -2134,9 +1995,8 @@ if (dev->eth_api == ETH_API_TEST)
 
 dev->asynch_io = (sim_asynch_enabled != 0);
 dev->asynch_io_latency = latency;
-pthread_mutex_lock (&dev->lock);
-wakeup_needed = (dev->read_queue.count != 0);
-pthread_mutex_unlock (&dev->lock);
+/* Lock-free queue check */
+wakeup_needed = !sim_tailq_empty(&dev->read_queue);
 if (wakeup_needed) {
   sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
   sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
@@ -2178,7 +2038,7 @@ dev->throttle_mask = (1 << dev->throttle_burst) - 1;
 return SCPE_OK;
 }
 
-static t_stat _eth_open_port(char *savname, size_t savname_size, int *eth_api, void **handle, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, void *opaque, DEVICE *dptr, uint32_t dbit)
+static t_stat _eth_open_port(char *savname, size_t savname_size, eth_api_t *eth_api, void **handle, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, void *opaque, DEVICE *dptr, uint32_t dbit)
 {
   (void)savname_size;
 
@@ -2579,37 +2439,40 @@ if (dev->eth_api == ETH_API_TEST)
 #if defined (USE_READER_THREAD)
 if (dev->eth_api != ETH_API_TEST)
 {
-  pthread_attr_t attr;
   int create_status;
   pcap_t *opened_handle;
   SOCKET opened_fd;
   const char *thread_name = "reader";
 
-  r = ethq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
+  r = eth_tailq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
   if (r != SCPE_OK) {
+    sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
     _eth_close_port (dev->eth_api, (pcap_t *)dev->handle, dev->fd_handle);
     free(dev->name);
     eth_zero(dev);
     return r;
     }
-  pthread_mutex_init (&dev->lock, NULL);
-  pthread_mutex_init (&dev->writer_lock, NULL);
-  pthread_mutex_init (&dev->self_lock, NULL);
-  pthread_cond_init (&dev->writer_cond, NULL);
+  sim_mutex_init (&dev->lock);
+  sim_mutex_init (&dev->writer_lock);
+  sim_mutex_init (&dev->self_lock);
+  sim_mutex_init (&dev->startup_lock);
+  sim_cond_init (&dev->writer_cond);
+  sim_cond_init (&dev->startup_cond);
+  dev->threads_ready = 0;
   dev->threading_initialized = true;
-  pthread_attr_init(&attr);
-  pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-  create_status = pthread_create (&dev->reader_thread, &attr, _eth_reader,
-                                  (void *)dev);
+  create_status = sim_thread_create (&dev->reader_thread, _eth_reader, (void *)dev);
   if (create_status == 0) {
-    dev->reader_thread_started = true;
     thread_name = "writer";
-    create_status = pthread_create (&dev->writer_thread, &attr, _eth_writer,
-                                    (void *)dev);
-    if (create_status == 0)
-      dev->writer_thread_started = true;
+    create_status = sim_thread_create (&dev->writer_thread, _eth_writer, (void *)dev);
+    if (create_status == 0) {
+      /* Wait for both threads to signal ready */
+      sim_mutex_lock(&dev->startup_lock);
+      while (dev->threads_ready < 2) {
+        sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
+      }
+      sim_mutex_unlock(&dev->startup_lock);
     }
-  pthread_attr_destroy(&attr);
+    }
   if (create_status != 0) {
     opened_handle = (pcap_t *)dev->handle;
     opened_fd = dev->fd_handle;
@@ -2935,7 +2798,7 @@ sim_debug(dev->dbit, dev->dptr, "Reflections = %d\n", dev->reflections);
 return SCPE_OK;
 }
 
-static void
+void
 _eth_error(ETH_DEV* dev, const char* where)
 {
 char msg[64];
@@ -2967,6 +2830,14 @@ switch (dev->eth_api) {
   case ETH_API_NAT:
       netname = "nat";
       break;
+  case ETH_API_TEST:
+      netname = "test";
+      break;
+  case ETH_API_NONE:
+  case ETH_API_COUNT:
+  default:
+      netname = "unknown";
+      break;
   }
 snprintf(msg, sizeof(msg), "%s(%s): ", where, netname);
 switch (dev->eth_api) {
@@ -2980,11 +2851,11 @@ switch (dev->eth_api) {
       break;
   }
 #ifdef USE_READER_THREAD
-pthread_mutex_lock (&dev->lock);
+sim_mutex_lock (&dev->lock);
 ++dev->error_waiting_threads;
 if (!dev->error_needs_reset)
   dev->error_needs_reset = (((dev->transmit_packet_errors + dev->receive_packet_errors)%ETH_ERROR_REOPEN_THRESHOLD) == 0);
-pthread_mutex_unlock (&dev->lock);
+sim_mutex_unlock (&dev->lock);
 #else
 dev->error_needs_reset = (((dev->transmit_packet_errors + dev->receive_packet_errors)%ETH_ERROR_REOPEN_THRESHOLD) == 0);
 #endif
@@ -3000,7 +2871,7 @@ sim_os_sleep (1);
  seconds (ONLY when the error condition exists).
  */
 #ifdef USE_READER_THREAD
-pthread_mutex_lock (&dev->lock);
+sim_mutex_lock (&dev->lock);
 if ((dev->error_waiting_threads == 2) &&
     (dev->error_needs_reset)) {
 #else
@@ -3022,11 +2893,10 @@ if (dev->error_needs_reset) {
   }
 #ifdef USE_READER_THREAD
 --dev->error_waiting_threads;
-pthread_mutex_unlock (&dev->lock);
+sim_mutex_unlock (&dev->lock);
 #endif
 }
 
-static
 t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 int status = 1;   /* default to failure */
@@ -3054,63 +2924,28 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
       eth_packet_trace (dev, packet->msg, packet->len, "writing-fixed");
     }
 #ifdef USE_READER_THREAD
-    pthread_mutex_lock (&dev->self_lock);
+    sim_mutex_lock (&dev->self_lock);
 #endif
     dev->loopback_self_sent += dev->reflections;
     dev->loopback_self_sent_total++;
 #ifdef USE_READER_THREAD
-    pthread_mutex_unlock (&dev->self_lock);
+    sim_mutex_unlock (&dev->self_lock);
 #endif
   }
 
     /* dispatch write request (synchronous; no need to save write info to dev) */
-  switch (dev->eth_api) {
-#ifdef HAVE_PCAP_NETWORK
-    case ETH_API_PCAP:
-      status = pcap_sendpacket((pcap_t*)dev->handle, (u_char*)packet->msg, packet->len);
-      break;
-#endif
-#ifdef HAVE_TAP_NETWORK
-    case ETH_API_TAP:
-      status = (((int)packet->len == write(dev->fd_handle, (void *)packet->msg, packet->len)) ? 0 : -1);
-      break;
-#endif
-#ifdef HAVE_VDE_NETWORK
-    case ETH_API_VDE:
-      status = vde_send((VDECONN*)dev->handle, (void *)packet->msg, packet->len, 0);
-      if ((status == (int)packet->len) || (status == 0))
-        status = 0;
-      else
-        if ((status == -1) && ((errno == EAGAIN) || (errno == EWOULDBLOCK)))
-          status = 0;
-        else
-          status = 1;
-      break;
-#endif
-#ifdef HAVE_SLIRP_NETWORK
-    case ETH_API_NAT:
-      status = sim_slirp_send((sim_slirp_handle *)dev->handle,
-                              (char *)packet->msg, (size_t)packet->len, 0);
-      if ((status == (int)packet->len) || (status == 0))
-        status = 0;
-      else
-        status = 1;
-      break;
-#endif
-    case ETH_API_UDP:
-      status = (((int32_t)packet->len == sim_write_sock (dev->fd_handle, (char *)packet->msg, (int32_t)packet->len)) ? 0 : -1);
-      break;
-    }
+  status = eth_writer_dispatch_table[dev->eth_api](dev, packet);
+
   ++dev->packets_sent;              /* basic bookkeeping */
   /* On error, correct loopback bookkeeping */
   if ((status != 0) && loopback_self_frame) {
 #ifdef USE_READER_THREAD
-    pthread_mutex_lock (&dev->self_lock);
+    sim_mutex_lock (&dev->self_lock);
 #endif
     dev->loopback_self_sent -= dev->reflections;
     dev->loopback_self_sent_total--;
 #ifdef USE_READER_THREAD
-    pthread_mutex_unlock (&dev->self_lock);
+    sim_mutex_unlock (&dev->self_lock);
 #endif
     }
   if (status != 0) {
@@ -3142,7 +2977,7 @@ if (packet->len > sizeof (packet->msg)) /* packet oversized? */
     return SCPE_IERR;                   /* that's no good! */
 
 /* Get a buffer */
-pthread_mutex_lock (&dev->writer_lock);
+sim_mutex_lock (&dev->writer_lock);
 if (NULL != (request = dev->write_buffers))
   dev->write_buffers = request->next;
 
@@ -3173,8 +3008,8 @@ memcpy(request->packet.msg, packet->msg, packet->len);
   }
 
 /* Awaken writer thread to perform actual write */
-pthread_cond_signal (&dev->writer_cond);
-pthread_mutex_unlock (&dev->writer_lock);
+sim_cond_signal (&dev->writer_cond);
+sim_mutex_unlock (&dev->writer_lock);
 
 /* Return with a status from some prior write */
 if (routine)
@@ -3724,7 +3559,7 @@ eth_packet_trace(dev, response.msg, response.len, "loopbackforward");
 return 1;
 }
 
-static void
+void
 _eth_callback(u_char* info, const struct pcap_pkthdr* header, const u_char* data)
 {
 ETH_DEV*  dev = (ETH_DEV*) info;
@@ -3773,7 +3608,7 @@ switch (dev->eth_api) {
 if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) ||
     (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->self_lock);
+  sim_mutex_lock (&dev->self_lock);
 #endif
   dev->loopback_self_rcvd_total++;
   /* lower reflection count - if already zero, pass it on */
@@ -3786,7 +3621,7 @@ if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) ||
     if (!bpf_used)
       from_me = 0;
 #ifdef USE_READER_THREAD
-  pthread_mutex_unlock (&dev->self_lock);
+  sim_mutex_unlock (&dev->self_lock);
 #endif
   }
 
@@ -3829,10 +3664,9 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
 
     eth_packet_trace (dev, data, len, "rcvqd");
 
-    pthread_mutex_lock (&dev->lock);
-    ethq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, len, crc_len, crc_data, 0);
+    /* Lock-free enqueue - sim_tailq_t is SPSC safe */
+    eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, len, crc_len, crc_data, 0);
     ++dev->packets_received;
-    pthread_mutex_unlock (&dev->lock);
     free(moved_data);
     }
 #else /* !USE_READER_THREAD */
@@ -3970,6 +3804,12 @@ do {
           }
         }
       break;
+    case ETH_API_NONE:
+    case ETH_API_TEST:
+    case ETH_API_COUNT:
+      /* Should never reach here - these are not valid runtime API types */
+      status = -1;
+      break;
     }
   } while ((status > 0) && (0 == packet->len));
 if (status < 0) {
@@ -3980,16 +3820,18 @@ if (status < 0) {
 #else /* USE_READER_THREAD */
 
   status = 0;
-  pthread_mutex_lock (&dev->lock);
-  if (dev->read_queue.count > 0) {
-    ETH_ITEM* item = &dev->read_queue.item[dev->read_queue.head];
-    packet->len = item->packet.len;
-    packet->crc_len = item->packet.crc_len;
-    memcpy(packet->msg, item->packet.msg, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
-    status = 1;
-    ethq_remove(&dev->read_queue);
+  /* Lock-free dequeue - sim_tailq_t is SPSC safe */
+  if (!sim_tailq_empty(&dev->read_queue)) {
+    struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+    if (item) {
+      const uint8_t *src_data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
+      packet->len = item->packet.len;
+      packet->crc_len = item->packet.crc_len;
+      memcpy(packet->msg, src_data, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
+      status = 1;
+      ethq_item_free((sim_tailq_item_t)item);
+    }
   }
-  pthread_mutex_unlock (&dev->lock);
   if ((status) && (routine))
     routine(0);
 #endif
@@ -4161,7 +4003,7 @@ if (dev->dptr->dctrl & dev->dbit) {
     }
   }
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->self_lock);
+  sim_mutex_lock (&dev->self_lock);
 #endif
 /* Set the desired physical address */
 memset(dev->physical_addr, 0, sizeof(ETH_MAC));
@@ -4177,7 +4019,7 @@ for (i = 0; i < addr_count; i++) {
     }
   }
 #ifdef USE_READER_THREAD
-  pthread_mutex_unlock (&dev->self_lock);
+  sim_mutex_unlock (&dev->self_lock);
 #endif
 
 /* setup BPF filters and other fields to minimize packet delivery */
@@ -4250,9 +4092,8 @@ if (dev->eth_api == ETH_API_PCAP) {
     pcap_freecode(&bpf);
     }
 #ifdef USE_READER_THREAD
-  pthread_mutex_lock (&dev->lock);
-  ethq_clear (&dev->read_queue); /* Empty FIFO Queue when filter list changes */
-  pthread_mutex_unlock (&dev->lock);
+  /* Lock-free queue clear */
+  eth_tailq_clear (&dev->read_queue); /* Empty FIFO Queue when filter list changes */
 #endif
   }
 #endif /* USE_BPF */
@@ -4301,9 +4142,8 @@ if (dev->asynch_io)
   fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
 if (dev->throttle_count)
   fprintf(st, "  Throttle Delays:         %d\n", dev->throttle_count);
-fprintf(st, "  Read Queue: Count:       %d\n", dev->read_queue.count);
-fprintf(st, "  Read Queue: High:        %d\n", dev->read_queue.high);
-fprintf(st, "  Read Queue: Loss:        %d\n", dev->read_queue.loss);
+fprintf(st, "  Read Queue: Count:       %ld\n", (long)sim_tailq_count(&dev->read_queue));
+fprintf(st, "  Read Queue: Allocated:   %ld\n", (long)sim_tailq_allocated(&dev->read_queue));
 fprintf(st, "  Peak Write Queue Size:   %d\n", dev->write_queue_peak);
 #endif
 if (dev->error_needs_reset)

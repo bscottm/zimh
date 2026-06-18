@@ -4238,6 +4238,10 @@ struct _device_type {
 #endif
         {0,                                 NULL}};
 
+/* Potentially unused - kept for debugging/diagnostics */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static const char *_device_type_name (int DeviceType)
 {
 int i;

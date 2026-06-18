@@ -116,7 +116,8 @@
 #endif
 
 #if defined (USE_READER_THREAD)
-#include <pthread.h>
+#include "sim_threads.h"
+#include "sim_tailq.h"
 #endif
 
 /* structure declarations */
@@ -219,19 +220,80 @@ struct eth_write_request {
   };
 typedef struct eth_write_request ETH_WRITE_REQUEST;
 
+/* Ethernet API type - designates which network backend is in use */
+typedef enum eth_api_e {
+  ETH_API_NONE = 0,                                     /* No API in use yet */
+  ETH_API_PCAP = 1,                                     /* Pcap API in use */
+  ETH_API_TAP  = 2,                                     /* tun/tap API in use */
+  ETH_API_VDE  = 3,                                     /* VDE API in use */
+  ETH_API_UDP  = 4,                                     /* UDP API in use */
+  ETH_API_NAT  = 5,                                     /* NAT (SLiRP) API in use */
+  ETH_API_TEST = 6,                                     /* test API in use */
+  ETH_API_COUNT                                         /* Number of API types (for array sizing) */
+} eth_api_t;
+
+/* Forward declarations for handle types - only where not already defined */
+#ifdef HAVE_PCAP_NETWORK
+typedef struct pcap pcap_t;
+#endif
+#ifdef HAVE_VDE_NETWORK
+typedef struct vdeconn VDECONN;
+#endif
+/* sim_slirp_handle is defined in sim_slirp.h - no forward declaration needed */
+
+/* Union for API-specific handles (discriminated by eth_api field in ETH_DEV) */
+typedef union eth_handle_u {
+  void *generic;                                        /* Generic pointer for initialization */
+#ifdef HAVE_PCAP_NETWORK
+  pcap_t *pcap;                                         /* PCAP handle */
+#endif
+#ifdef HAVE_VDE_NETWORK
+  VDECONN *vde;                                         /* VDE connection */
+#endif
+  /* sim_slirp_handle* goes here but we can't reference it without including sim_slirp.h,
+   * which would create circular dependency. Legacy void* handle field used for SLiRP. */
+  /* TAP/UDP use fd_handle, no separate pointer needed */
+} eth_handle_t;
+
+/*============================================================================*/
+/*                    Reader/Writer State Machine Types                      */
+/*============================================================================*/
+
+#if defined(USE_READER_THREAD)
+
+/* Reader State Machine States */
+typedef enum eth_reader_state_e {
+    ETH_READER_INIT,            /* Initial state - perform setup */
+    ETH_READER_SELECT_WAIT,     /* Waiting for data (select/poll or Windows event) */
+    ETH_READER_DISPATCH_READ,   /* Dispatch to API-specific read handler */
+    ETH_READER_CHECK_ASYNC,     /* Check if async wakeup needed */
+    ETH_READER_ERROR_HANDLER,   /* Handle read errors */
+    ETH_READER_SHUTDOWN,        /* Clean shutdown */
+    ETH_READER_STATE_COUNT      /* Number of states (for array sizing) */
+} eth_reader_state_t;
+
+/* Writer State Machine States */
+typedef enum eth_writer_state_e {
+    ETH_WRITER_INIT,            /* Initial state - perform setup */
+    ETH_WRITER_WAIT_WORK,       /* Wait for write requests (condition variable) */
+    ETH_WRITER_GET_REQUEST,     /* Pull request from queue */
+    ETH_WRITER_THROTTLE_CHECK,  /* Check if throttle delay needed */
+    ETH_WRITER_THROTTLE_DELAY,  /* Sleep due to throttle */
+    ETH_WRITER_DISPATCH_WRITE,  /* Dispatch to API-specific write handler */
+    ETH_WRITER_CLEANUP,         /* Return buffer to free list */
+    ETH_WRITER_SHUTDOWN,        /* Clean shutdown */
+    ETH_WRITER_STATE_COUNT      /* Number of states (for array sizing) */
+} eth_writer_state_t;
+
+#endif /* USE_READER_THREAD */
+
 struct eth_device {
   char*         name;                                   /* name of ethernet device */
-  void*         handle;                                 /* handle of implementation-specific device */
+  eth_handle_t  handle_union;                           /* Discriminated union of API-specific handles */
+  void*         handle;                                 /* Legacy generic handle pointer (for compatibility) */
   SOCKET        fd_handle;                              /* fd to kernel device (where needed) */
   char*         bpf_filter;                             /* bpf filter currently in effect */
-  int           eth_api;                                /* Designator for which API is being used to move packets */
-#define ETH_API_NONE 0                                  /* No API in use yet */
-#define ETH_API_PCAP 1                                  /* Pcap API in use */
-#define ETH_API_TAP  2                                  /* tun/tap API in use */
-#define ETH_API_VDE  3                                  /* VDE API in use */
-#define ETH_API_UDP  4                                  /* UDP API in use */
-#define ETH_API_NAT  5                                  /* NAT (SLiRP) API in use */
-#define ETH_API_TEST 6                                  /* test API in use */
+  eth_api_t eth_api;                               /* Designator for which API is being used to move packets */
   ETH_PCALLBACK read_callback;                          /* read callback function */
   ETH_PCALLBACK write_callback;                         /* write callback function */
   ETH_PACK*     read_packet;                            /* read packet */
@@ -280,24 +342,77 @@ struct eth_device {
 #if defined (USE_READER_THREAD)
   bool          asynch_io;                              /* Asynchronous Interrupt scheduling enabled */
   int           asynch_io_latency;                      /* instructions to delay pending interrupt */
-  ETH_QUE       read_queue;
-  pthread_mutex_t     lock;
-  pthread_t     reader_thread;                          /* Reader Thread Id */
-  pthread_t     writer_thread;                          /* Writer Thread Id */
-  bool          reader_thread_started;                  /* Reader thread must be joined */
-  bool          writer_thread_started;                  /* Writer thread must be joined */
+  sim_tailq_t   read_queue;                             /* Lock-free SPSC packet queue */
+  sim_mutex_t   lock;
+  sim_thread_t  reader_thread;                          /* Reader Thread Id */
+  sim_thread_t  writer_thread;                          /* Writer Thread Id */
   bool          threading_initialized;                  /* Thread state needs cleanup */
-  pthread_mutex_t     writer_lock;
-  pthread_mutex_t     self_lock;
-  pthread_cond_t      writer_cond;
+  /* Startup synchronization barrier */
+  sim_mutex_t   startup_lock;
+  sim_cond_t    startup_cond;
+  int           threads_ready;                          /* Count of threads that have signaled ready */
+  sim_mutex_t   writer_lock;
+  sim_mutex_t   self_lock;
+  sim_cond_t    writer_cond;
   ETH_WRITE_REQUEST *write_requests;
   int write_queue_peak;
   ETH_WRITE_REQUEST *write_buffers;
   t_stat write_status;
+  /* State machine states */
+  eth_reader_state_t reader_state;                      /* Current reader state */
+  eth_writer_state_t writer_state;                      /* Current writer state */
 #endif
 };
 
 typedef struct eth_device  ETH_DEV;
+
+/*============================================================================*/
+/*                    Reader/Writer Dispatch Function Types                  */
+/*============================================================================*/
+
+/* Reader dispatch function: performs one read iteration for the specified API.
+ * Returns: >0 = packets received, 0 = timeout/no data, <0 = error
+ */
+typedef int (*eth_reader_dispatch_fn)(ETH_DEV *dev);
+
+/* Writer dispatch function: writes one packet using the specified API.
+ * Returns: 0 = success, non-zero = error
+ */
+typedef int (*eth_writer_dispatch_fn)(ETH_DEV *dev, const ETH_PACK *packet);
+
+/*============================================================================*/
+/*                    Reader/Writer State Machine Context                    */
+/*============================================================================*/
+
+#if defined(USE_READER_THREAD)
+
+/* Reader State Machine Context */
+typedef struct eth_reader_context_s {
+    ETH_DEV *dev;                       /* Device being serviced */
+    eth_reader_state_t current_state;   /* Current state */
+    int sel_ret;                        /* Select return value */
+    int status;                         /* Last operation status */
+    int do_select;                      /* Whether select/poll is needed */
+    SOCKET select_fd;                   /* FD for select (non-Windows) */
+#if defined(_WIN32)
+    HANDLE hWait;                       /* Event handle (Windows PCAP) */
+#endif
+} eth_reader_context_t;
+
+/* Writer State Machine Context */
+typedef struct eth_writer_context_s {
+    ETH_DEV *dev;                       /* Device being serviced */
+    eth_writer_state_t current_state;   /* Current state */
+    ETH_WRITE_REQUEST *request;         /* Current write request */
+    int status;                         /* Last write status */
+    uint32_t packet_delta_time;         /* Time since last packet (for throttling) */
+} eth_writer_context_t;
+
+/* State handler function types */
+typedef eth_reader_state_t (*eth_reader_state_handler_t)(eth_reader_context_t *ctx);
+typedef eth_writer_state_t (*eth_writer_state_handler_t)(eth_writer_context_t *ctx);
+
+#endif /* USE_READER_THREAD */
 
 /* prototype declarations*/
 
@@ -349,15 +464,27 @@ t_stat eth_mac_scan (ETH_MAC mac, const char* strmac);  /* scan string for mac, 
 t_stat eth_mac_scan_ex (ETH_MAC mac,                    /* scan string for mac, put in mac */
                         const char* strmac, UNIT *uptr);/* for specified unit */
 
-t_stat ethq_init (ETH_QUE* que, int max);               /* initialize FIFO queue */
-void ethq_clear  (ETH_QUE* que);                        /* clear FIFO queue */
-void ethq_remove (ETH_QUE* que);                        /* remove item from FIFO queue */
-void ethq_insert (ETH_QUE* que, int32_t type,           /* insert item into FIFO queue */
+/* Legacy ETH_QUE functions - always available for test backend */
+t_stat ethq_init (ETH_QUE* que, int max);              /* initialize FIFO queue */
+void ethq_clear  (ETH_QUE* que);                       /* clear FIFO queue */
+void ethq_remove (ETH_QUE* que);                       /* remove item from FIFO queue */
+void ethq_insert (ETH_QUE* que, int32_t type,          /* insert item into FIFO queue */
                   ETH_PACK* packet, int32_t status);
-void ethq_insert_data(ETH_QUE* que, int32_t type,       /* insert item into FIFO queue */
+void ethq_insert_data(ETH_QUE* que, int32_t type,      /* insert item into FIFO queue */
                   const uint8_t *data, int used, size_t len,
                   size_t crc_len, const uint8_t *crc_data, int32_t status);
-t_stat ethq_destroy(ETH_QUE* que);                      /* release FIFO queue */
+t_stat ethq_destroy(ETH_QUE* que);                     /* release FIFO queue */
+
+#if defined(USE_READER_THREAD)
+/* Adapter functions for lock-free SPSC queue - only used internally in sim_ether.c */
+t_stat eth_tailq_init (sim_tailq_t* que, int max);     /* initialize lock-free queue */
+void eth_tailq_clear  (sim_tailq_t* que);              /* clear lock-free queue */
+void eth_tailq_destroy(sim_tailq_t* que);              /* destroy lock-free queue */
+void eth_tailq_insert_data(sim_tailq_t* que, int32_t type, /* insert into lock-free queue */
+                  const uint8_t *data, int used, size_t len,
+                  size_t crc_len, const uint8_t *crc_data, int32_t status);
+#endif
+
 const char *eth_capabilities(void);
 t_stat sim_ether_test (DEVICE *dptr, const char *cptr); /* unit test routine */
 

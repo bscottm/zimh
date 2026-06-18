@@ -60,8 +60,13 @@ int setenv(const char *envname, const char *envval, int overwrite)
         errno = EINVAL;
         return -1;
     }
-    if (!overwrite && (getenv(envname) != NULL))
+    char *existing_value;
+    errno_t err = _dupenv_s(&existing_value, NULL, envname);
+    if (!overwrite && (err || existing_value != NULL)) {
+        /* _dupenv_s malloc()-s a copy. Don't leak. */
+        free(existing_value);
         return 0;
+    }
     if (*envval == '\0')
         return set_empty_env(envname);
     status = _putenv_s(envname, envval);

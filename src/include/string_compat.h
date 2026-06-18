@@ -12,7 +12,7 @@
 
 #include <stddef.h>
 
-#if defined(SIMH_NEED_STRLCPY) && !defined(strlcpy)
+#if !defined(HAVE_STRLCPY) && !defined(strlcpy)
 size_t strlcpy(char *dst, const char *src, size_t dsize);
 #endif
 

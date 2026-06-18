@@ -22,4 +22,16 @@
 /* Return whether a non-BPF receive path should deliver a packet to dev. */
 int eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data);
 
+/* Internal functions used by dispatch tables and test backend.
+ * Callers must include <pcap.h> before this header when HAVE_PCAP_NETWORK is defined. */
+#if defined(HAVE_PCAP_NETWORK)
+/* Forward declaration at file scope to ensure type compatibility.
+ * The full definition comes from <pcap.h> which callers must include first. */
+struct pcap_pkthdr;
+void _eth_callback(u_char* info, const struct pcap_pkthdr* header, const u_char* data);
+#endif
+
+t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
+void _eth_error(ETH_DEV* dev, const char* where);
+
 #endif
