@@ -62,6 +62,13 @@ static t_stat test_sim_rtcn_tick_ack(uint32_t delay, int32_t clock)
    are visible here without exporting production test hooks. */
 static void reset_timer_state(void)
 {
+    /* Disable all debug output to prevent crashes in sim_debug calls */
+    tmr_dev.dctrl = 0;
+
+    /* Initialize the timer unit to prevent crashes in sim_cancel */
+    memset(&tmr_unit, 0, sizeof(tmr_unit));
+    tmr_unit.action = &tmr_svc;
+
     tmr_iccs = 0;
     tmr_icr = 0;
     tmr_nicr = 0xFFFFD8F0;

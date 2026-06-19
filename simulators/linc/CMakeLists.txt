@@ -22,3 +22,8 @@ add_simulator(linc
     LABEL linc
     PKG_FAMILY default_family
     TEST linc)
+
+# Force serial execution to avoid parallel test conflicts.
+# LINC uses both FEATURE_DISPLAY (SDL) and USES_AIO (threads), which causes
+# resource conflicts when multiple tests run simultaneously. See TIMEOUT_INVESTIGATION.md.
+set_tests_properties(zimh-linc PROPERTIES RUN_SERIAL TRUE)

@@ -12,7 +12,9 @@ if (NOT PCAP_FOUND)
     if (PKG_CONFIG_FOUND)
         pkg_check_modules(PC_PCAP QUIET IMPORTED_TARGET libpcap)
         if (TARGET PkgConfig::PC_PCAP)
-            add_library(PCAP::PCAP ALIAS PkgConfig::PC_PCAP)
+            if (NOT CMAKE_SCRIPT_MODE_FILE)
+                add_library(PCAP::PCAP ALIAS PkgConfig::PC_PCAP)
+            endif()
             set(PCAP_FOUND TRUE)
         endif()
     endif()
@@ -24,12 +26,16 @@ if (NOT PCAP_FOUND)
     find_library(PCAP_LIBRARY NAMES pcap wpcap)
 
     if (PCAP_INCLUDE_DIR AND PCAP_LIBRARY)
-        add_library(PCAP::PCAP UNKNOWN IMPORTED)
-        set_target_properties(PCAP::PCAP PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${PCAP_INCLUDE_DIR}"
-            IMPORTED_LOCATION "${PCAP_LIBRARY}"
-        )
+        if (NOT CMAKE_SCRIPT_MODE_FILE)
+            add_library(PCAP::PCAP UNKNOWN IMPORTED)
+            set_target_properties(PCAP::PCAP PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${PCAP_INCLUDE_DIR}"
+                IMPORTED_LOCATION "${PCAP_LIBRARY}"
+            )
+        endif()
         set(PCAP_FOUND TRUE)
+        set(PCAP_LIBRARIES "${PCAP_LIBRARY}")
+        set(PCAP_INCLUDE_DIRS "${PCAP_INCLUDE_DIR}")
     endif()
 endif()
 
