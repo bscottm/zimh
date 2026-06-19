@@ -121,17 +121,30 @@ include(c-dialect)
 include(sanitizers)
 
 # Modern Runtime Output Alignment
+#
+# Strategy for output directories:
+# - Multi-config generators (VS, Xcode, Ninja Multi-Config):
+#     Use per-config output directories to separate Debug/Release/etc.
+#     Result: ${CMAKE_BINARY_DIR}/bin/Debug, ${CMAKE_BINARY_DIR}/bin/Release, etc.
+# - Single-config generators (Ninja, Make):
+#     Use a single output directory since only one config is built at a time.
+#     Result: ${CMAKE_BINARY_DIR}/bin
+#
+# The preset's binaryDir determines the base (e.g., build/Debug, build-vs2022)
+# We append /bin to organize runtime artifacts consistently.
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-if(NOT DEFINED CMAKE_BUILD_TYPE)
-    string(APPEND CMAKE_RUNTIME_OUTPUT_DIRECTORY "/$<CONFIG>")
+# For multi-config generators, set per-configuration subdirectories.
+# Single-config generators ignore these per-config variables.
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(cfg IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
+        string(TOUPPER "${cfg}" cfg_upper)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}")
+    endforeach()
 endif()
 
-message(STATUS "Binary and runtime artifacts in ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-
-foreach(cfg IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg} "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-endforeach()
+message(STATUS "Binary and runtime artifacts base: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 # Platform Quirks and Verification Hooks
 include(platform-quirks)

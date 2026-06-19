@@ -113,8 +113,9 @@ cmake --preset ninja-release
 cmake --build --preset ninja-release
 ```
 
-*Generated binaries will land inside `build/release/bin/`. For debug variants,
- substitute `ninja-debug` (which outputs to `build/debug/bin/`).*
+*Generated binaries will land inside `build/ninja/bin/Release/`. For debug
+ variants, substitute `ninja-debug` (which outputs to
+ `build/ninja/bin/Debug/`).*
 
 ### 2. Multi-Config Frameworks (macOS Xcode, Windows MSVC, Ninja/Clang)
 
@@ -129,7 +130,7 @@ cmake --preset xcode
 # Build a specific configuration layout
 cmake --build --preset xcode --config Release
 ```
-*Generated binaries land inside `build/bin/Release/`.*
+*Generated binaries land inside `build/xcode/bin/Release/`.*
 
 #### Windows (Visual Studio 2022 / 2026 with vcpkg):
 
@@ -146,8 +147,8 @@ cmake --build --preset windows-vs2022-release
 cmake --build --preset windows-vs2022-debug
 ```
 
-*Generated binaries will map to `build-vs2022/bin/Release/` or
- `build-vs2022/bin/Debug/` respectively.*
+*Generated binaries will map to `build/vs2022/bin/Release/` or
+ `build/vs2022/bin/Debug/` respectively.*
 
 
 Additionally, for the Ninja and Clang on Windows connoisseur:
@@ -161,6 +162,119 @@ cmake --build --preset windows-ninja-release
 cmake --build --preset windows-ninja-debug
 cmake --build --preset windows-ninja-relwithdebinfo
 ```
+
+---
+
+## Build Directory Structure
+
+The build system uses a unified directory layout that is both platform-agnostic
+and generator-aware, making it simple to locate build artifacts regardless of
+your development environment.
+
+### Directory Layout
+
+All build artifacts are organized under a consistent hierarchy that separates
+CMake build files from runtime executables:
+
+```
+build/
+├── ninja/              # Ninja CMake build files
+│   └── bin/           # Executables
+├── vs2022/            # Visual Studio 2022 build files
+│   └── bin/           # Executables
+├── vs2026/            # Visual Studio 2026 build files
+│   └── bin/           # Executables
+├── make/              # Unix Makefiles build files
+│   └── bin/           # Executables
+└── xcode/             # Xcode build files
+    └── bin/           # Executables
+```
+
+Within each generator's `bin/` directory, executables are organized by build
+configuration:
+
+```
+build/{generator}/bin/
+├── Debug/              # Debug executables
+├── Release/            # Release executables
+├── RelWithDebInfo/     # Optimized with debug info
+└── sanitizers/
+    ├── asan/          # Address Sanitizer
+    ├── tsan/          # Thread Sanitizer (Linux only)
+    ├── msan/          # Memory Sanitizer (Linux only)
+    └── ubsan/         # Undefined Behavior Sanitizer (Linux only)
+```
+
+### Rationale
+
+This structure provides several advantages:
+
+- **Clean separation:** CMake build files (.vcxproj, CMakeCache.txt, etc.) are
+  kept separate from runtime executables in the `bin/` subdirectory.
+- **Platform-agnostic:** The same logical path works across operating systems,
+  with only the generator name changing based on your toolchain.
+- **Generator-aware:** Different build tools (Ninja, Make, Xcode, Visual
+  Studio) each have their own namespace, preventing conflicts when switching
+  between generators.
+- **Simple artifact discovery:** Executables are always under `{generator}/bin/{config}/`,
+  making it easy to locate binaries for testing, debugging, or deployment.
+- **Configuration isolation:** Each build configuration (Debug, Release, etc.)
+  maintains its own artifact directory, eliminating cross-contamination between
+  builds.
+
+### Locating Build Artifacts
+
+To find the executables for a specific configuration, navigate to the
+appropriate path under `build/{generator}/bin/`. Here are some examples:
+
+**Linux with Ninja:**
+```sh
+# Release build
+./build/ninja/bin/Release/zimh-pdp11
+
+# Debug build with Address Sanitizer
+./build/ninja/bin/sanitizers/asan/zimh-vax
+```
+
+**Windows with Visual Studio 2022:**
+```pwsh
+# Release build
+.\build\vs2022\bin\Release\zimh-pdp11.exe
+
+# Debug build
+.\build\vs2022\bin\Debug\zimh-vax.exe
+```
+
+**Windows with Ninja and Clang:**
+```pwsh
+# Release build
+.\build\bin\ninja\release\zimh-pdp11.exe
+
+# RelWithDebInfo build with Address Sanitizer
+.\build\bin\ninja\sanitizers\asan\zimh-vax.exe
+```
+
+**macOS with Xcode:**
+```sh
+# Release build
+./build/xcode/bin/Release/zimh-pdp11
+
+# Debug build
+./build/xcode/bin/Debug/zimh-vax
+```
+
+**Linux with Unix Makefiles:**
+```sh
+# Release build
+./build/make/bin/Release/zimh-pdp11
+
+# Debug build with Thread Sanitizer
+./build/make/bin/sanitizers/tsan/zimh-vax
+```
+
+This consistent structure means you can quickly construct the path to any
+binary by knowing just three pieces of information: the generator you're using,
+the configuration you built, and the simulator name.
 
 ---
 
@@ -194,7 +308,7 @@ cmake --build --preset ninja-release
 - `-DC_DIALIECT={11|17|23|26}` - Set the C compiler's dialect to C11,
   C17, C23 or C26.
 - `-DSTD_EXTENSIONS={On|Off}` - Enable C dialect-specific extensions.
-  
+
   Note: The ZIMH code does not rely on or use dialect-specific
   extensions, as might be avaiable via `gnu11` in the GNU C
   compiler. Consequently, this configuration variable has very little
@@ -216,7 +330,7 @@ cmake --build ninja-relwithdebinfo
 ```
 
 ```pwsh
-# Configure Ninja/Clang on Windows with the address sanitizer: 
+# Configure Ninja/Clang on Windows with the address sanitizer:
 cmake --preset windows-ninja-asan
 cmake --preset windows-ninja-relwithdebinfo
 ```
@@ -230,8 +344,8 @@ The corresponding command line configuration variables are:
 
 _Windows note:_ You will need to find and copy the
 `clang_rt.asan_dynamic-x86_64.dll` library to the
-`build-win64/bin/RelWithDebInfo` directory where the Window Ninja+ASan
-binaries are located. Otherwise, you'll get an pop-up about a missing
+`build/bin/ninja/sanitizers/asan` directory where the Windows Ninja+ASan
+binaries are located. Otherwise, you'll get a pop-up about a missing
 DLL. There is no static link option for this library.
 
 ---
@@ -289,7 +403,7 @@ flags (like running a specific subset of tests via `-R`), direct `ctest` to
 the preset's binary directory manually:
 
 ```sh
-ctest --test-dir build/release -R pdp11 -j 4
+ctest --test-dir build/ninja/Release -R pdp11 -j 4
 ```
 
 Alternatively, you can route testing passes straight through the build
@@ -321,6 +435,6 @@ preset's defined folder and restart:
 
 ```sh
 # Wipe and reconfigure a standard layout folder
-rm -rf build/release
+rm -rf build/ninja/Release
 cmake --preset ninja-release
 ```

@@ -262,12 +262,34 @@ function (simh_executable_template _targ)
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
-    foreach (_cfg IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
-        string(TOUPPER "${_cfg}" _cfg_uc)
-        set_property(TARGET ${_targ}
-            PROPERTY "RUNTIME_OUTPUT_DIRECTORY_${_cfg_uc}"
-            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    endforeach ()
+    # Ensure each simulator target uses the correct output directory.
+    # For multi-config generators, we set per-config properties.
+    # For single-config generators, the base RUNTIME_OUTPUT_DIRECTORY is sufficient.
+    #
+    # The SIMH_OUTPUT_SUBDIR variable can be set by callers (e.g., add_unit_test)
+    # to add an additional subdirectory after the config (e.g., "tests").
+    if(CMAKE_CONFIGURATION_TYPES)
+        foreach (_cfg IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
+            string(TOUPPER "${_cfg}" _cfg_uc)
+            if(DEFINED SIMH_OUTPUT_SUBDIR)
+                set_property(TARGET ${_targ}
+                    PROPERTY "RUNTIME_OUTPUT_DIRECTORY_${_cfg_uc}"
+                    "${CMAKE_BINARY_DIR}/bin/${_cfg}/${SIMH_OUTPUT_SUBDIR}")
+            else()
+                set_property(TARGET ${_targ}
+                    PROPERTY "RUNTIME_OUTPUT_DIRECTORY_${_cfg_uc}"
+                    "${CMAKE_BINARY_DIR}/bin/${_cfg}")
+            endif()
+        endforeach ()
+    else()
+        if(DEFINED SIMH_OUTPUT_SUBDIR)
+            set_target_properties(${_targ} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${SIMH_OUTPUT_SUBDIR}")
+        else()
+            set_target_properties(${_targ} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+        endif()
+    endif()
     target_compile_options(${_targ} PRIVATE ${EXTRA_TARGET_CFLAGS})
     target_link_options(${_targ} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
@@ -410,7 +432,14 @@ function (add_simulator _targ)
 
     if (BUILD_SHARED_DEPS)
         ## Make sure that the tests can find built DLLs/shared objects.
-        file(TO_NATIVE_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}" native_binary_dir)
+        ## For multi-config generators, we need to include the configuration subdirectory.
+        if(CMAKE_CONFIGURATION_TYPES)
+            # Use generator expression for the config-specific directory
+            set(runtime_binary_dir "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+        else()
+            set(runtime_binary_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+        endif()
+        file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}/bin" native_binary_dir_base)
     endif ()
 
     ## Build up test environment:
@@ -423,15 +452,27 @@ function (add_simulator _targ)
 
     if (WIN32)
         if (BUILD_SHARED_DEPS)
-            set(test_path "PATH=${native_binary_dir}\\$<SEMICOLON>")
+            # For multi-config, use generator expression to get the right config directory
+            if(CMAKE_CONFIGURATION_TYPES)
+                set(test_path "PATH=${native_binary_dir_base}\\$<CONFIG>\\$<SEMICOLON>")
+            else()
+                file(TO_NATIVE_PATH "${runtime_binary_dir}" native_binary_dir)
+                set(test_path "PATH=${native_binary_dir}\\$<SEMICOLON>")
+            endif()
             string(REPLACE ";" "\\\$<SEMICOLON>" escaped_path "$ENV{PATH}")
             string(APPEND test_path "${escaped_path}")
             list(APPEND test_add_env "${test_path}")
         endif ()
     else ()
         if (BUILD_SHARED_DEPS)
-            list(APPEND test_add_env
-                 "LD_LIBRARY_PATH=${native_binary_dir}:\$LD_LIBRARY_PATH")
+            # For multi-config, use generator expression to get the right config directory
+            if(CMAKE_CONFIGURATION_TYPES)
+                list(APPEND test_add_env
+                     "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/bin/$<CONFIG>:\$LD_LIBRARY_PATH")
+            else()
+                list(APPEND test_add_env
+                     "LD_LIBRARY_PATH=${runtime_binary_dir}:\$LD_LIBRARY_PATH")
+            endif()
         endif ()
     endif ()
 
@@ -474,13 +515,13 @@ function(add_unit_test _targ)
     set(UNIT_TARGET "zimh-${_targ}")
     set(UNIT_TEST "zimh-${_targ}")
 
-    set(SAVED_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests")
-    
+    # Set a flag to tell simh_executable_template to add a /tests subdirectory
+    set(SIMH_OUTPUT_SUBDIR "tests")
+
     # Pass all arguments down to the executable template
     simh_executable_template(${UNIT_TARGET} "${ARGN}")
 
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SAVED_RUNTIME_OUTPUT_DIRECTORY}")
+    # No need to restore CMAKE_RUNTIME_OUTPUT_DIRECTORY since we're using SIMH_OUTPUT_SUBDIR
 
     # Parse arguments locally to extract features.
     cmake_parse_arguments(SIMH 
