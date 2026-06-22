@@ -66,16 +66,21 @@ jobs:
         echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
         echo "VCPKG_DEFAULT_BINARY_CACHE=${{ github.workspace }}\.vcpkg_cache" >> $env:GITHUB_ENV
         New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\.vcpkg_cache"
+        # Capture vcpkg commit for cache key
+        Push-Location $env:VCPKG_INSTALLATION_ROOT
+        $vcpkgCommit = git rev-parse --short=8 HEAD
+        Pop-Location
+        echo "VCPKG_COMMIT=$vcpkgCommit" >> $env:GITHUB_ENV
 
     - name: Cache vcpkg Binary Archives (Windows)
       if: matrix.os == 'windows-2022'
       uses: actions/cache@v5
       with:
         path: ${{ github.workspace }}\.vcpkg_cache
-        key: vcpkg-windows-${{ matrix.build_preset }}-${{ hashFiles('**/vcpkg.json') }}
+        key: vcpkg-windows-${{ env.VCPKG_COMMIT }}-${{ matrix.build_preset }}-${{ hashFiles('**/vcpkg.json') }}
         restore-keys: |
-          vcpkg-windows-${{ matrix.build_preset }}-
-          vcpkg-windows-
+          vcpkg-windows-${{ env.VCPKG_COMMIT }}-${{ matrix.build_preset }}-
+          vcpkg-windows-${{ env.VCPKG_COMMIT }}-
 
     # -------------------------------------------------------------------------
     # Platform Dependency Injections
