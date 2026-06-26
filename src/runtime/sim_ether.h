@@ -61,10 +61,6 @@
 #define USE_SETNONBLOCK 1
 #endif
 
-#if defined(__linux)
-#define USE_READER_THREAD 1
-#endif
-
 /* make common winpcap code a bit easier to read in this file */
 #if defined(_WIN32)
 #define PCAP_READ_TIMEOUT -1

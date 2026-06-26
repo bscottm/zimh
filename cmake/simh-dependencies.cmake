@@ -237,6 +237,32 @@ if(WITH_NETWORK)
         endif()
     endif()
 
+    set(HAVE_TAP_NETWORK False)
+    set(HAVE_BSDTUNTAP False)
+
+    ## TAP/TUN devices
+    if (WITH_TAP)
+        check_include_file(linux/if_tun.h if_tun_found)
+
+        if (NOT if_tun_found)
+            check_include_file(net/if_tun.h net_if_tun_found)
+            if (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
+                set(HAVE_BSDTUNTAP True)
+            endif (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
+        endif (NOT if_tun_found)
+
+        if (if_tun_found OR net_if_tun_found)
+            set(HAVE_TAP_NETWORK True)
+        endif (if_tun_found OR net_if_tun_found)
+    endif (WITH_TAP)
+
+    if (HAVE_TAP_NETWORK)
+        target_compile_definitions(simh_network INTERFACE HAVE_TAP_NETWORK)
+    endif()
+    if (HAVE_BSDTUNTAP)
+        target_compile_definitions(simh_network INTERFACE HAVE_BSDTUNTAP)
+    endif()
+
     # Set the defines so that the network code gets compiled.
     if (NOT WIN32
         AND (HAVE_TAP_NETWORK OR VDE_FOUND OR HAVE_LIBSLIRP OR TARGET PCAP::PCAP))

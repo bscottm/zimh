@@ -274,27 +274,6 @@ if (NOT MSVC AND NOT (WIN32 AND CMAKE_C_COMPILER_ID MATCHES ".*Clang"))
     target_link_libraries(os_features INTERFACE m)
 endif ()
 
-set(HAVE_TAP_NETWORK False)
-set(HAVE_BSDTUNTAP False)
-
-if (WITH_NETWORK)
-    ## TAP/TUN devices
-    if (WITH_TAP)
-        check_include_file(linux/if_tun.h if_tun_found)
-
-        if (NOT if_tun_found)
-            check_include_file(net/if_tun.h net_if_tun_found)
-            if (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
-                set(HAVE_BSDTUNTAP True)
-            endif (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
-        endif (NOT if_tun_found)
-
-        if (if_tun_found OR net_if_tun_found)
-            set(HAVE_TAP_NETWORK True)
-        endif (if_tun_found OR net_if_tun_found)
-    endif (WITH_TAP)
-endif (WITH_NETWORK)
-
 ## Windows: winmm (for ms timer functions), socket functions (even when networking is
 ## disabled. Also squelch the deprecation warnings (these warnings can be enabled
 ## via the -DENABLE_WINAPI_DEPRECATION_WARNINGS:Bool=On flag at configure
