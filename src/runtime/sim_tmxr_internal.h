@@ -25,13 +25,13 @@ typedef int (*tmxr_getnames_sock_fn)(SOCKET sock, char **socknamebuf,
                                      char **peernamebuf);
 typedef void (*tmxr_close_serial_fn)(SERHANDLE port);
 typedef int32_t (*tmxr_write_serial_fn)(SERHANDLE port, char *buffer,
-                                      int32_t count);
+                                        int32_t count);
 typedef t_stat (*tmxr_control_serial_fn)(SERHANDLE port, int32_t bits_to_set,
                                          int32_t bits_to_clear,
                                          int32_t *incoming_bits);
 typedef uint32_t (*tmxr_ms_sleep_fn)(uint_t msec);
 typedef SERHANDLE (*tmxr_open_serial_fn)(char *name, TMLN *lp, t_stat *status);
-typedef int (*tmxr_eth_devices_fn)(int max, ETH_LIST *dev, ETH_BOOL framers);
+typedef int (*tmxr_eth_devices_fn)(int max, ETH_LIST *dev, bool framers);
 typedef t_stat (*tmxr_eth_open_fn)(ETH_DEV *dev, const char *name, DEVICE *dptr,
                                    uint32_t dbit);
 typedef int (*tmxr_eth_read_fn)(ETH_DEV *dev, ETH_PACK *packet,
@@ -41,8 +41,7 @@ typedef t_stat (*tmxr_eth_write_fn)(ETH_DEV *dev, ETH_PACK *packet,
 typedef t_stat (*tmxr_eth_close_fn)(ETH_DEV *dev);
 typedef t_stat (*tmxr_eth_filter_fn)(ETH_DEV *dev, int addr_count,
                                      const ETH_MAC addresses[],
-                                     ETH_BOOL all_multicast,
-                                     ETH_BOOL promiscuous);
+                                     bool all_multicast, bool promiscuous);
 
 typedef struct {
     tmxr_master_sock_fn master_sock;

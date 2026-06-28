@@ -1234,7 +1234,7 @@ for (i=0; i<used; i++) {
 return used;
 }
 
-int eth_devices(int max, ETH_LIST* list, ETH_BOOL framers)
+int eth_devices(int max, ETH_LIST* list, bool framers)
 {
 int used = 0;
 char errbuf[PCAP_ERRBUF_SIZE] = "";
@@ -2347,7 +2347,7 @@ return SCPE_OK;
 }
 
 /* Return true when a name explicitly identifies an integrated pseudo backend. */
-static ETH_BOOL
+static bool
 eth_is_explicit_pseudo_device(const char *name)
 {
     static const char *prefixes[] = {"test:", "tap:", "vde:", "nat:", "udp:"};
@@ -3840,7 +3840,7 @@ return status;
 }
 
 static t_stat eth_bpf_filter (ETH_DEV* dev, int addr_count, ETH_MAC* const filter_address,
-                       ETH_BOOL all_multicast, ETH_BOOL promiscuous,
+                       bool all_multicast, bool promiscuous,
                        int reflections,
                        ETH_MAC physical_addr,
                        ETH_MAC host_nic_phy_hw_addr,
@@ -3921,7 +3921,7 @@ return SCPE_OK;
 }
 
 t_stat eth_filter(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                  ETH_BOOL all_multicast, ETH_BOOL promiscuous)
+                  bool all_multicast, bool promiscuous)
 {
 return eth_filter_hash_ex(dev, addr_count, addresses,
                           all_multicast, promiscuous, false,
@@ -3929,7 +3929,7 @@ return eth_filter_hash_ex(dev, addr_count, addresses,
 }
 
 t_stat eth_filter_hash(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                       ETH_BOOL all_multicast, ETH_BOOL promiscuous,
+                       bool all_multicast, bool promiscuous,
                        ETH_MULTIHASH* const hash)
 {
 return eth_filter_hash_ex(dev, addr_count, addresses,
@@ -3938,8 +3938,8 @@ return eth_filter_hash_ex(dev, addr_count, addresses,
 }
 
 t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                          ETH_BOOL all_multicast, ETH_BOOL promiscuous,
-                          ETH_BOOL match_broadcast, ETH_MULTIHASH* const hash)
+                          bool all_multicast, bool promiscuous,
+                          bool match_broadcast, ETH_MULTIHASH* const hash)
 {
 int i;
 char buf[116+66*ETH_FILTER_MAX];
