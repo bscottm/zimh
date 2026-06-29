@@ -3,7 +3,7 @@ BasedOnStyle: LLVM
 Language: C
 IndentWidth: 4
 UseTab: Never
-ColumnLimit: 80
+ColumnLimit: 110
 
 BreakBeforeBraces: Custom
 BraceWrapping:
@@ -17,3 +17,4 @@ AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: Empty
 SortIncludes: false
 IndentCaseLabels: false
+IndentPPDirectives: AfterHash
