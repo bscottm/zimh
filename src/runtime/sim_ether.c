@@ -103,12 +103,6 @@
                       simulated instructions so the simulated system will most
                       likely run faster (given that modern host CPUs are
                       multi-core and have someplace to do this work in parallel).
-  MUST_DO_SELECT    - Specifies that, when USE_READER_THREAD is active,
-                      select() should be used to determine when available
-                      packets are ready for reading.  Otherwise, we depend
-                      on the libpcap/kernel packet timeout specified on
-                      pcap_open_live.  If USE_READER_THREAD is not set, then
-                      MUST_DO_SELECT is irrelevant
   HAVE_TAP_NETWORK  - Specifies that support for tap networking should be
                       included.  This can be leveraged, along with OS bridging
                       capabilities to share a single LAN interface.  This
@@ -344,20 +338,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
- * This prevents redefinition errors on macOS 15.5+ where both net/bpf.h and pcap/bpf.h
- * define bpf_program/bpf_insn. pcap.h is included transitively via sim_ether_internal.h. */
-#if (defined (xBSD) || defined (__APPLE__)) && (defined (HAVE_TAP_NETWORK) || defined (HAVE_PCAP_NETWORK))
-#include <sys/ioctl.h>
-#include <net/bpf.h>
-#endif
-
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_ether_test_internal.h"
 #include "eth_dispatch.h"
-#include "eth_readers.h"
-#include "eth_writers.h"
+#include "eth_threads.h"
 #include "sim_sock.h"
 #include "string_util.h"
 #include "sim_time.h"
@@ -488,8 +473,8 @@ t_stat eth_mac_scan_ex (ETH_MAC mac, const char* strmac, UNIT *uptr)
     fprintf (f, "file:      %s\n", state.file);
     eth_mac_fmt (state.base_mac, filebuf, sizeof(filebuf));
     fprintf (f, "base-mac:  %s\n", filebuf);
-    fprintf (f, "specified: %d bits\n", state.bits);
-    fprintf (f, "generated: %d bits\n", 48-state.bits);
+    fprintf (f, "specified: %u bits\n", state.bits);
+    fprintf (f, "generated: %u bits\n", 48-state.bits);
     fclose (f);
     }
   /* copy into passed mac */
@@ -720,7 +705,7 @@ void eth_tailq_insert_data(sim_tailq_t* que, int32_t type, const uint8_t *data, 
                       size_t len, size_t crc_len, const uint8_t *crc_data, int32_t status)
 {
   struct eth_item *item = (struct eth_item *)calloc(1, sizeof(struct eth_item));
-  if (!item)
+  if (item == NULL)
     return;  /* Allocation failure - packet dropped */
 
   item->type = type;
@@ -755,7 +740,7 @@ void eth_tailq_insert(sim_tailq_t* que, int32_t type, ETH_PACK* pack, int32_t st
 }
 
 /* Get queue depth - for compatibility with old API */
-static int ethq_count(sim_tailq_t* que)
+static SIM_UNUSED_FUNC int ethq_count(sim_tailq_t* que)
 {
   return (int)sim_tailq_count(que);
 }
@@ -769,9 +754,9 @@ static int ethq_count(sim_tailq_t* que)
 t_stat ethq_init(ETH_QUE* que, int max)
 {
   /* create dynamic queue if it does not exist */
-  if (!que->item) {
+  if (que->item == NULL) {
     que->item = (struct eth_item *) calloc(max, sizeof(struct eth_item));
-    if (!que->item) {
+    if (que->item == NULL) {
       /* failed to allocate memory */
       sim_printf("EthQ: failed to allocate dynamic queue[%d]\n", max);
       return SCPE_MEM;
@@ -829,7 +814,7 @@ void ethq_insert_data(ETH_QUE* que, int32_t type, const uint8_t *data, int used,
   struct eth_item* item;
 
   /* if queue empty, set pointers to beginning */
-  if (!que->count) {
+  if (que->count == 0) {
     que->head = 0;
     que->tail = -1;
   }
@@ -1125,23 +1110,6 @@ const char *eth_capabilities(void)
      ":UDP:TEST";
  }
 
-#if defined (HAVE_PCAP_NETWORK)
-/*============================================================================*/
-/*      WIN32, Linux, macOS, and xBSD routines use pcap-compatible APIs       */
-/*============================================================================*/
-
-#include <pcap.h>
-#include <string.h>
-#else
-struct pcap_pkthdr {
-    uint32_t caplen; /* length of portion present */
-    uint32_t len;   /* length this packet (off wire) */
-};
-#define PCAP_ERRBUF_SIZE 256
-typedef void * pcap_t;  /* Pseudo Type to avoid compiler errors */
-#define DLT_EN10MB 1    /* Dummy Value to avoid compiler errors */
-#endif /* HAVE_PCAP_NETWORK */
-
 /*
      The libpcap provided API pcap_findalldevs() on most platforms, will
      leverage the getifaddrs() API if it is available in preference to
@@ -1253,7 +1221,7 @@ if (pcap_findalldevs(&alldevs, errbuf) == -1) {
 else {
   /* copy device list into the passed structure */
   for (used=0, dev=alldevs; dev && (used < max); dev=dev->next) {
-    edev.eth_api = ETH_API_PCAP;
+    edev.backend.eth_api = ETH_API_PCAP;
     eth_get_nic_hw_addr (&edev, dev->name, 0);
     if ((memcmp (edev.host_nic_phy_hw_addr, framer_oui, 3) == 0) != framers)
       continue;
@@ -1329,28 +1297,6 @@ if (used < max) {
 /* return device count */
 return used;
 }
-
-#ifdef HAVE_TAP_NETWORK
-#if defined(__linux) || defined(__linux__)
-#include <sys/ioctl.h>
-#include <net/if.h>
-#include <linux/if_tun.h>
-#elif defined(HAVE_BSDTUNTAP)
-#include <sys/types.h>
-#include <net/if_types.h>
-#include <net/if.h>
-#else /* We don't know how to do this on the current platform */
-#undef HAVE_TAP_NETWORK
-#endif
-#endif /* HAVE_TAP_NETWORK */
-
-#ifdef HAVE_VDE_NETWORK
-#include <libvdeplug.h>
-#endif /* HAVE_VDE_NETWORK */
-
-#ifdef HAVE_SLIRP_NETWORK
-#include "sim_slirp.h"
-#endif /* HAVE_SLIRP_NETWORK */
 
 /* Allows windows to look up user-defined adapter names */
 #if defined(_WIN32)
@@ -1664,7 +1610,7 @@ static int pcap_mac_if_win32(const char *AdapterName, uchar_t MACAddress[6])
 
   lpAdapter =   p_PacketOpenAdapter(AdapterName);
 
-  if (!lpAdapter || (*lpAdapter == (void *)-1)) {
+  if (lpAdapter == NULL || (*lpAdapter == (void *)-1)) {
       FreeLibrary(hDll);
     return -1;
   }
@@ -1754,7 +1700,7 @@ static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on)
 {
   memset(&dev->host_nic_phy_hw_addr, 0, sizeof(dev->host_nic_phy_hw_addr));
   dev->have_host_nic_phy_addr = 0;
-  if (dev->eth_api != ETH_API_PCAP)
+  if (dev->backend.eth_api != ETH_API_PCAP)
     return;
 #if defined(_WIN32)
   if (!pcap_mac_if_win32(devname, dev->host_nic_phy_hw_addr))
@@ -1902,7 +1848,7 @@ t_stat
 _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
 
 static t_stat
-_eth_close_port(int eth_api, pcap_t *pcap, SOCKET pcap_fd);
+_eth_close_port(eth_backend_t *backend, SOCKET pcap_fd);
 
 void
 _eth_error(ETH_DEV* dev, const char* where);
@@ -1930,12 +1876,21 @@ sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() delivered to _eth_callba
 static void
 eth_stop_threads(ETH_DEV *dev)
 {
-    /* Join both threads - they were created if we got here */
+    /* Signal reader thread to shutdown by atomically setting its state */
+    sim_atomic_put(&dev->reader_state, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
+
+    /* Join reader thread - will exit on next timeout (max 250ms) */
     sim_thread_join(dev->reader_thread, NULL);
 
+    /* Signal writer thread to shutdown by atomically setting its state */
+    sim_atomic_put(&dev->writer_state, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
+
+    /* Wake up writer thread if it's waiting on the condition variable */
     sim_mutex_lock(&dev->writer_lock);
     sim_cond_signal(&dev->writer_cond);
     sim_mutex_unlock(&dev->writer_lock);
+
+    /* Join writer thread - will exit when it checks shutdown flag */
     sim_thread_join(dev->writer_thread, NULL);
 }
 
@@ -1988,9 +1943,9 @@ return sim_messagef (SCPE_NOFNC, "%s", msg);
 
 int wakeup_needed;
 
-if (!dev)
+if (dev == NULL)
   return SCPE_UNATT;
-if (dev->eth_api == ETH_API_TEST)
+if (dev->backend.eth_api == ETH_API_TEST)
   return SCPE_OK;
 
 dev->asynch_io = (sim_asynch_enabled != 0);
@@ -2020,7 +1975,7 @@ return SCPE_NOFNC;
 #else
 
 /* make sure device exists */
-if (!dev) return SCPE_UNATT;
+if (dev == NULL) return SCPE_UNATT;
 
 dev->asynch_io = false;
 return SCPE_OK;
@@ -2029,7 +1984,7 @@ return SCPE_OK;
 
 t_stat eth_set_throttle (ETH_DEV* dev, uint32_t time, uint32_t burst, uint32_t delay)
 {
-if (!dev)
+if (dev == NULL)
   return SCPE_IERR;
 dev->throttle_time = time;
 dev->throttle_burst = burst;
@@ -2038,7 +1993,7 @@ dev->throttle_mask = (1 << dev->throttle_burst) - 1;
 return SCPE_OK;
 }
 
-static t_stat _eth_open_port(char *savname, size_t savname_size, eth_api_t *eth_api, void **handle, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, void *opaque, DEVICE *dptr, uint32_t dbit)
+static t_stat _eth_open_port(char *savname, size_t savname_size, eth_backend_t *backend, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, void *opaque, DEVICE *dptr, uint32_t dbit)
 {
   (void)savname_size;
 
@@ -2047,8 +2002,8 @@ int bufsz = (BUFSIZ < ETH_MAX_PACKET) ? ETH_MAX_PACKET : BUFSIZ;
 if (bufsz < ETH_MAX_JUMBO_FRAME)
   bufsz = ETH_MAX_JUMBO_FRAME;    /* Enable handling of jumbo frames */
 
-*eth_api = 0;
-*handle = NULL;
+backend->eth_api = ETH_API_NONE;
+memset(&backend->state, 0, sizeof(backend->state));
 *fd_handle = 0;
 
 /* attempt to connect device */
@@ -2059,13 +2014,12 @@ if (0 == strncmp("test:", savname, 5)) {
 
   while (isspace(*devname))
       ++devname;
-  if (!*devname)
+  if (*devname == '\0')
     return sim_messagef(SCPE_OPENERR,
                         "Eth: Must specify test backend name\n");
-  status = eth_test_open(devname, handle);
+  status = eth_test_open(devname, backend);
   if (status != SCPE_OK)
     return status;
-  *eth_api = ETH_API_TEST;
   *fd_handle = 0;
   }
 else if (0 == strncmp("tap:", savname, 4)) {
@@ -2164,8 +2118,8 @@ else if (0 == strncmp("tap:", savname, 4)) {
   strlcpy(errbuf, "No support for tap: devices", PCAP_ERRBUF_SIZE);
 #endif /* !defined(__linux) && !defined(HAVE_BSDTUNTAP) */
   if (0 == errbuf[0]) {
-    *eth_api = ETH_API_TAP;
-    *handle = (void *)1;  /* Flag used to indicated open */
+    backend->eth_api = ETH_API_TAP;
+    /* No additional state recorded in the backend.*/
     }
   }
 else { /* !tap: */
@@ -2194,11 +2148,11 @@ else { /* !tap: */
           return sim_messagef (SCPE_OPENERR, "Eth: Invalid vde port number: %s in %s\n", vdeport_s, savname);
       }
 
-    if (!(*handle = (void*) vde_open((char *)vdeswitch_s, (char *)"simh", &voa)))
+    if ((backend->state.vde = vde_open((char *)vdeswitch_s, (char *)"simh", &voa)) == NULL)
       strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
     else {
-      *eth_api = ETH_API_VDE;
-      *fd_handle = (SOCKET)vde_datafd((VDECONN*)(*handle));
+      backend->eth_api = ETH_API_VDE;
+      *fd_handle = (SOCKET) vde_datafd(backend->state.vde);
       }
 #else
     strlcpy(errbuf, "No support for vde: network devices", PCAP_ERRBUF_SIZE);
@@ -2211,12 +2165,12 @@ else { /* !tap: */
 
       while (isspace(*devname))
         ++devname;
-      if (!(*handle = (void*) sim_slirp_open(devname, opaque, &_slirp_callback, dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)))
-        strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
-      else {
-        *eth_api = ETH_API_NAT;
+      if ((backend->state.slirp = sim_slirp_open(devname, opaque, &_slirp_callback, dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)) != NULL) {
+        backend->eth_api = ETH_API_NAT;
         *fd_handle = 0;
-        }
+      } else {
+        strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
+      }
 #else
       strlcpy(errbuf, "No support for nat: network devices", PCAP_ERRBUF_SIZE);
 #endif /* defined(HAVE_SLIRP_NETWORK) */
@@ -2244,14 +2198,13 @@ else { /* !tap: */
         *fd_handle = sim_connect_sock_ex (localport, hostport, NULL, NULL, SIM_SOCK_OPT_DATAGRAM);
         if (INVALID_SOCKET == *fd_handle)
           return SCPE_OPENERR;
-        *eth_api = ETH_API_UDP;
-        *handle = (void *)1;  /* Flag used to indicated open */
+        backend->eth_api = ETH_API_UDP;
         }
       else { /* not udp:, so attempt to open the parameter as if it were an explicit device name */
 #if defined(HAVE_PCAP_NETWORK)
-        *handle = (void*) pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
+        backend->state.pcap = pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
 #if !defined(_WIN32)
-        if (!*handle) { /* can't open device */
+        if (backend->state.pcap == NULL) { /* can't open device */
           if (strstr (errbuf, "That device is not up")) {
             char command[1024];
 
@@ -2259,25 +2212,25 @@ else { /* !tap: */
             snprintf(command, sizeof(command), (sim_get_tool_path ("ifconfig")[0] != '\0') ? "ifconfig %s up" : "ip link set dev %s up", savname);
             if (system(command)) {};
             errbuf[0] = '\0';
-            *handle = (void*) pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
+            backend->state.pcap = pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
             }
           }
 #endif
-        if (!*handle)  /* can't open device */
+        if (backend->state.pcap == NULL)  /* can't open device */
           return sim_messagef (SCPE_OPENERR, "Eth: pcap_open_live error - %s\n", errbuf);
-        *eth_api = ETH_API_PCAP;
+        backend->eth_api = ETH_API_PCAP;
 #if !defined(HAS_PCAP_SENDPACKET) && defined (xBSD) && !defined (__APPLE__)
         /* Tell the kernel that the header is fully-formed when it gets it.
            This is required in order to fake the src address. */
         {
           int one = 1;
-          ioctl(pcap_fileno(*handle), BIOCSHDRCMPLT, &one);
+          ioctl(pcap_fileno(backend->state.pcap), BIOCSHDRCMPLT, &one);
           }
 #endif /* xBSD */
 #if defined(_WIN32)
-        if ((pcap_setmintocopy ((pcap_t*)(*handle), 0) == -1) ||
-            (pcap_getevent ((pcap_t*)(*handle)) == NULL)) {
-          pcap_close ((pcap_t*)(*handle));
+        if ((pcap_setmintocopy (backend->state.pcap, 0) == -1) ||
+            (pcap_getevent (backend->state.pcap) == NULL)) {
+          pcap_close (backend->state.pcap);
           errbuf[PCAP_ERRBUF_SIZE-1] = '\0';
           snprintf (errbuf, PCAP_ERRBUF_SIZE-1, "pcap can't initialize API for interface: %s", savname);
           return SCPE_OPENERR;
@@ -2286,7 +2239,7 @@ else { /* !tap: */
 #if !defined (USE_READER_THREAD)
 #ifdef USE_SETNONBLOCK
         /* set ethernet device non-blocking so pcap_dispatch() doesn't hang */
-        if (pcap_setnonblock (*handle, 1, errbuf) == -1) {
+        if (pcap_setnonblock (backend->state.pcap, 1, errbuf) == -1) {
           sim_printf ("Eth: Failed to set non-blocking: %s\n", errbuf);
           }
 #endif
@@ -2298,7 +2251,7 @@ else { /* !tap: */
            * the tcpdump mailinglist: http://seclists.org/tcpdump/2010/q1/110
            */
           int v = 1;
-          ioctl(pcap_fileno(*handle), BIOCIMMEDIATE, &v);
+          ioctl(pcap_fileno(backend->state.pcap), BIOCIMMEDIATE, &v);
           }
 #endif /* defined (__APPLE__) */
 #endif /* !defined (USE_READER_THREAD) */
@@ -2313,7 +2266,7 @@ if (errbuf[0])
   return SCPE_OPENERR;
 
 #ifdef USE_BPF
-if (bpf_filter && (*eth_api == ETH_API_PCAP)) {
+if (bpf_filter && (backend->eth_api == ETH_API_PCAP)) {
   struct bpf_program bpf;
   int status;
   bpf_u_int32  bpf_subnet, bpf_netmask;
@@ -2321,22 +2274,22 @@ if (bpf_filter && (*eth_api == ETH_API_PCAP)) {
   if (pcap_lookupnet(savname, &bpf_subnet, &bpf_netmask, errbuf)<0)
     bpf_netmask = 0;
   /* compile filter string */
-  if ((status = pcap_compile((pcap_t*)(*handle), &bpf, bpf_filter, 1, bpf_netmask)) < 0) {
-    strlcpy(errbuf, pcap_geterr((pcap_t*)(*handle)), PCAP_ERRBUF_SIZE);
+  if ((status = pcap_compile(backend->state.pcap, &bpf, bpf_filter, 1, bpf_netmask)) < 0) {
+    strlcpy(errbuf, pcap_geterr(backend->state.pcap), PCAP_ERRBUF_SIZE);
     sim_printf("Eth: pcap_compile error: %s\n", errbuf);
     /* show erroneous BPF string */
     sim_printf ("Eth: BPF string is: |%s|\n", bpf_filter);
     }
   else {
     /* apply compiled filter string */
-    if ((status = pcap_setfilter((pcap_t*)(*handle), &bpf)) < 0) {
-      strlcpy(errbuf, pcap_geterr((pcap_t*)(*handle)), PCAP_ERRBUF_SIZE);
+    if ((status = pcap_setfilter(backend->state.pcap, &bpf)) < 0) {
+      strlcpy(errbuf, pcap_geterr(backend->state.pcap), PCAP_ERRBUF_SIZE);
       sim_printf("Eth: pcap_setfilter error: %s\n", errbuf);
       }
     else {
 #ifdef USE_SETNONBLOCK
       /* set file non-blocking */
-      status = pcap_setnonblock ((pcap_t*)(*handle), 1, errbuf);
+      status = pcap_setnonblock (backend->state.pcap, 1, errbuf);
 #endif /* USE_SETNONBLOCK */
       }
     pcap_freecode(&bpf);
@@ -2413,7 +2366,7 @@ if (strchr (namebuf, ':')) {
             namebuf[num] = tolower (namebuf[num]);
     }
 savname = namebuf;
-r = _eth_open_port(namebuf, sizeof(namebuf), &dev->eth_api, &dev->handle, &dev->fd_handle, errbuf, NULL, (void *)dev, dptr, dbit);
+r = _eth_open_port(namebuf, sizeof(namebuf), &dev->backend, &dev->fd_handle, errbuf, NULL, (void *)dev, dptr, dbit);
 
 if (errbuf[0])
   return sim_messagef (SCPE_OPENERR, "Eth: open error - %s\n", errbuf);
@@ -2433,21 +2386,19 @@ dev->name = strdup(savname);
 /* save debugging information */
 dev->dptr = dptr;
 dev->dbit = dbit;
-if (dev->eth_api == ETH_API_TEST)
+if (dev->backend.eth_api == ETH_API_TEST)
   dev->reflections = 0;
 
 #if defined (USE_READER_THREAD)
-if (dev->eth_api != ETH_API_TEST)
+if (dev->backend.eth_api != ETH_API_TEST)
 {
   int create_status;
-  pcap_t *opened_handle;
-  SOCKET opened_fd;
   const char *thread_name = "reader";
 
   r = eth_tailq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
   if (r != SCPE_OK) {
     sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
-    _eth_close_port (dev->eth_api, (pcap_t *)dev->handle, dev->fd_handle);
+    _eth_close_port (&dev->backend, dev->fd_handle);
     free(dev->name);
     eth_zero(dev);
     return r;
@@ -2474,13 +2425,11 @@ if (dev->eth_api != ETH_API_TEST)
     }
     }
   if (create_status != 0) {
-    opened_handle = (pcap_t *)dev->handle;
-    opened_fd = dev->fd_handle;
-    dev->handle = NULL;
+    SOCKET opened_fd = dev->fd_handle;
     dev->fd_handle = 0;
     eth_stop_threads(dev);
     eth_destroy_thread_state(dev);
-    _eth_close_port (dev->eth_api, opened_handle, opened_fd);
+    _eth_close_port (&dev->backend, opened_fd);
     free(dev->name);
     eth_zero(dev);
     return sim_messagef (SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
@@ -2497,33 +2446,35 @@ _eth_add_to_open_list (dev);
 return eth_filter_hash (dev, 0, NULL, false, false, NULL);
 }
 
-static t_stat _eth_close_port(int eth_api, pcap_t *pcap, SOCKET pcap_fd)
+static t_stat _eth_close_port(eth_backend_t *backend, SOCKET socket_fd)
 {
-switch (eth_api) {
-#ifdef HAVE_PCAP_NETWORK
+switch (backend->eth_api) {
   case ETH_API_PCAP:
-    pcap_close(pcap);
-    break;
+#ifdef HAVE_PCAP_NETWORK
+    pcap_close(backend->state.pcap);
 #endif
-#ifdef HAVE_TAP_NETWORK
+    break;
   case ETH_API_TAP:
-    close(pcap_fd);
-    break;
+#ifdef HAVE_TAP_NETWORK
+    sim_close_sock(socket_fd);
 #endif
-#ifdef HAVE_VDE_NETWORK
+    break;
   case ETH_API_VDE:
-    vde_close((VDECONN*)pcap);
-    break;
+#ifdef HAVE_VDE_NETWORK
+    vde_close(backend->state.vde);
 #endif
-#ifdef HAVE_SLIRP_NETWORK
+    break;
   case ETH_API_NAT:
-    sim_slirp_close((sim_slirp_handle *)pcap);
-    break;
+#ifdef HAVE_SLIRP_NETWORK
+    sim_slirp_close(backend->state.slirp);
 #endif
+    break;
   case ETH_API_UDP:
-    sim_close_sock(pcap_fd);
+    sim_close_sock(socket_fd);
     break;
   case ETH_API_TEST:
+  case ETH_API_NONE:
+  case ETH_API_COUNT:
     break;
   }
 return SCPE_OK;
@@ -2531,27 +2482,24 @@ return SCPE_OK;
 
 t_stat eth_close(ETH_DEV* dev)
 {
-pcap_t *pcap;
-SOCKET pcap_fd;
+SOCKET socket_fd;
 
 /* make sure device exists */
-if (!dev) return SCPE_UNATT;
+if (dev == NULL) return SCPE_UNATT;
 
 /* close the device */
-pcap_fd = dev->fd_handle;                   /* save handle to possibly close later */
-pcap = (pcap_t *)dev->handle;
-dev->handle = NULL;
+socket_fd = dev->fd_handle;                   /* save handle to possibly close later */
 dev->fd_handle = 0;
 dev->have_host_nic_phy_addr = 0;
 
 #if defined (USE_READER_THREAD)
-if (dev->eth_api != ETH_API_TEST) {
+if (dev->backend.eth_api != ETH_API_TEST) {
   eth_stop_threads(dev);
   eth_destroy_thread_state(dev);
   }
 #endif
 
-_eth_close_port (dev->eth_api, pcap, pcap_fd);
+_eth_close_port (&dev->backend, socket_fd);
 sim_messagef (SCPE_OK, "Eth: closed %s\n", dev->name);
 
 /* clean up the mess */
@@ -2727,7 +2675,7 @@ eth_filter(dev, 1, (ETH_MAC *)mac, 0, 0);
 /* send the packet */
 status = _eth_write (dev, &send, NULL);
 if (status != SCPE_OK) {
-  if (dev->eth_api == ETH_API_PCAP)
+  if (dev->backend.eth_api == ETH_API_PCAP)
     return sim_messagef (SCPE_ARG,
                          "%s: Eth: Error Transmitting packet: %s\n"
                          "You may need to run as root, or install a libpcap "
@@ -2814,7 +2762,7 @@ if ((sim_time (&now) != (time_t)-1) &&
     sim_printf ("%s", time_buf);
 else
     sim_printf ("unknown time\n");
-switch (dev->eth_api) {
+switch (dev->backend.eth_api) {
   case ETH_API_PCAP:
       netname = "pcap";
       break;
@@ -2840,10 +2788,10 @@ switch (dev->eth_api) {
       break;
   }
 snprintf(msg, sizeof(msg), "%s(%s): ", where, netname);
-switch (dev->eth_api) {
+switch (dev->backend.eth_api) {
 #if defined(HAVE_PCAP_NETWORK)
   case ETH_API_PCAP:
-      sim_printf ("%s%s\n", msg, pcap_geterr ((pcap_t*)dev->handle));
+      sim_printf ("%s%s\n", msg, pcap_geterr (dev->backend.state.pcap));
       break;
 #endif
   default:
@@ -2880,10 +2828,10 @@ if (dev->error_needs_reset) {
   char errbuf[PCAP_ERRBUF_SIZE];
   t_stat r;
 
-  _eth_close_port(dev->eth_api, (pcap_t *)dev->handle, dev->fd_handle);
+  _eth_close_port(&dev->backend, dev->fd_handle);
   sim_os_sleep (ETH_ERROR_REOPEN_PAUSE);
 
-  r = _eth_open_port(dev->name, strlen(dev->name) + 1, &dev->eth_api, &dev->handle, &dev->fd_handle, errbuf, dev->bpf_filter, (void *)dev, dev->dptr, dev->dbit);
+  r = _eth_open_port(dev->name, strlen(dev->name) + 1, &dev->backend, &dev->fd_handle, errbuf, dev->bpf_filter, (void *)dev, dev->dptr, dev->dbit);
   dev->error_needs_reset = false;
   if (r == SCPE_OK)
     sim_printf ("%s ReOpened: %s \n", msg, dev->name);
@@ -2902,10 +2850,10 @@ t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 int status = 1;   /* default to failure */
 
 /* make sure device exists */
-if ((!dev) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
+if (dev == NULL || (dev->backend.eth_api == ETH_API_NONE)) return SCPE_UNATT;
 
 /* make sure packet exists */
-if (!packet) return SCPE_ARG;
+if (packet == NULL) return SCPE_ARG;
 
 /* make sure packet is acceptable length */
 if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
@@ -2934,7 +2882,7 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
   }
 
     /* dispatch write request (synchronous; no need to save write info to dev) */
-  status = eth_writer_dispatch_table[dev->eth_api](dev, packet);
+  status = eth_writer_dispatch_table[dev->backend.eth_api](dev, packet);
 
   ++dev->packets_sent;              /* basic bookkeeping */
   /* On error, correct loopback bookkeeping */
@@ -2964,14 +2912,17 @@ return ((status == 0) ? SCPE_OK : SCPE_IOERR);
 
 t_stat eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
-if (dev && dev->eth_api == ETH_API_TEST)
+if (dev && dev->backend.eth_api == ETH_API_TEST)
   return eth_test_write(dev, packet, routine);
 
-#ifdef USE_READER_THREAD
+#    ifdef USE_READER_THREAD
 ETH_WRITE_REQUEST *request;
 
 /* make sure device exists */
-if ((!dev) || (dev->eth_api == ETH_API_NONE)) return SCPE_UNATT;
+if (dev == NULL || (dev->backend.eth_api == ETH_API_NONE))
+    return SCPE_UNATT;
+if (packet == NULL)
+    return SCPE_ARG;
 
 if (packet->len > sizeof (packet->msg)) /* packet oversized? */
     return SCPE_IERR;                   /* that's no good! */
@@ -3580,7 +3531,7 @@ if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
   free(datacopy);
   return;
 }
-switch (dev->eth_api) {
+switch (dev->backend.eth_api) {
   case ETH_API_PCAP:
 #ifdef USE_BPF
     bpf_used = 1;
@@ -3697,7 +3648,7 @@ if (bpf_used ? to_me : (to_me && !from_me)) {
   /* call optional read callback function */
   if (dev->read_callback)
     (dev->read_callback)(0);
-#endif
+#    endif
   }
 }
 
@@ -3705,18 +3656,17 @@ int eth_read(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 int status;
 
-/* make sure device exists */
+/* Make sure device exists, the backend is legitimate and the packet is
+ * also valid. */
 
-if ((!dev) || (dev->eth_api == ETH_API_NONE)) return 0;
-
-/* make sure packet exists */
-if (!packet) return 0;
+if (dev == NULL || dev->backend.eth_api == ETH_API_NONE || packet == NULL)
+    return 0;
 
 packet->len = 0;
-if (dev->eth_api == ETH_API_TEST)
+if (dev->backend.eth_api == ETH_API_TEST)
   return eth_test_read(dev, packet, routine);
 
-#if !defined (USE_READER_THREAD)
+#    if !defined(USE_READER_THREAD)
 /* set read packet */
 dev->read_packet = packet;
 
@@ -3725,14 +3675,17 @@ dev->read_callback = routine;
 
 /* dispatch read request to either receive a filtered packet or timeout */
 do {
-  switch (dev->eth_api) {
-#ifdef HAVE_PCAP_NETWORK
+  status = 0;
+
+  switch (dev->backend.eth_api) {
     case ETH_API_PCAP:
-      status = pcap_dispatch((pcap_t*)dev->handle, 1, &_eth_callback, (u_char*)dev);
-      break;
+#ifdef HAVE_PCAP_NETWORK
+      status = pcap_dispatch(dev->backend.state.pcap, 1, &_eth_callback, (u_char*)dev);
 #endif
-#ifdef HAVE_TAP_NETWORK
+      break;
+
     case ETH_API_TAP:
+#ifdef HAVE_TAP_NETWORK
       {
         struct pcap_pkthdr header;
         int len;
@@ -3752,23 +3705,25 @@ do {
             status = 0;
           }
         }
-      break;
 #endif /* HAVE_TAP_NETWORK */
-#ifdef HAVE_SLIRP_NETWORK
+      break;
+
     case ETH_API_NAT:
+#ifdef HAVE_SLIRP_NETWORK
       status = -1;
       sim_messagef(SCPE_IERR, "USE_READER_THREAD must be defined to use the SLIRP network API");
-      break;
 #endif /* HAVE_SLIRP_NETWORK */
-#ifdef HAVE_VDE_NETWORK
+      break;
+
     case ETH_API_VDE:
+#ifdef HAVE_VDE_NETWORK
       {
         struct pcap_pkthdr header;
         int len;
         u_char buf[ETH_MAX_JUMBO_FRAME];
 
         memset(&header, 0, sizeof(header));
-        len = vde_recv((VDECONN*)dev->handle, buf, sizeof(buf), 0);
+        len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
         if (len > 0) {
           status = 1;
           header.caplen = header.len = len;
@@ -3781,8 +3736,9 @@ do {
             status = 0;
           }
         }
-      break;
 #endif /* HAVE_VDE_NETWORK */
+      break;
+
     case ETH_API_UDP:
       {
         struct pcap_pkthdr header;
@@ -3950,7 +3906,7 @@ struct bpf_program bpf;
 #endif
 
 /* make sure device exists */
-if (!dev) return SCPE_UNATT;
+if (dev == NULL) return SCPE_UNATT;
 
 /* filter count OK? */
 if ((addr_count < 0) || ((addr_count + (match_broadcast ? 1 : 0)) > ETH_FILTER_MAX))
@@ -4034,15 +3990,15 @@ eth_bpf_filter (dev, dev->addr_count, dev->filter_address,
    aren't referencing IP fields, networks or values */
 
 #ifdef USE_BPF
-if (dev->eth_api == ETH_API_PCAP) {
+if (dev->backend.eth_api == ETH_API_PCAP) {
   char errbuf[PCAP_ERRBUF_SIZE];
   bpf_u_int32  bpf_subnet, bpf_netmask;
 
   if (pcap_lookupnet(dev->name, &bpf_subnet, &bpf_netmask, errbuf)<0)
     bpf_netmask = 0;
   /* compile filter string */
-  if ((status = pcap_compile((pcap_t*)dev->handle, &bpf, buf, 1, bpf_netmask)) < 0) {
-    strlcpy(errbuf, pcap_geterr((pcap_t*)dev->handle), sizeof(errbuf));
+  if ((status = pcap_compile(dev->backend.state.pcap, &bpf, buf, 1, bpf_netmask)) < 0) {
+    strlcpy(errbuf, pcap_geterr(dev->backend.state.pcap), sizeof(errbuf));
     sim_printf("Eth: pcap_compile error: %s\n", errbuf);
     /* show erroneous BPF string */
     sim_printf ("Eth: BPF string is: |%s|\n", buf);
@@ -4069,8 +4025,8 @@ if (dev->eth_api == ETH_API_PCAP) {
     }
   else {
     /* apply compiled filter string */
-    if ((status = pcap_setfilter((pcap_t*)dev->handle, &bpf)) < 0) {
-      strlcpy(errbuf, pcap_geterr((pcap_t*)dev->handle), sizeof(errbuf));
+    if ((status = pcap_setfilter(dev->backend.state.pcap, &bpf)) < 0) {
+      strlcpy(errbuf, pcap_geterr(dev->backend.state.pcap), sizeof(errbuf));
       sim_printf("Eth: pcap_setfilter error: %s\n", errbuf);
       sim_printf ("Eth: BPF string is: |%s|\n", buf);
       }
@@ -4086,7 +4042,7 @@ if (dev->eth_api == ETH_API_PCAP) {
       dev->bpf_filter = bpf_filter;
 #ifdef USE_SETNONBLOCK
       /* set file non-blocking */
-      status = pcap_setnonblock (dev->handle, 1, errbuf);
+      status = pcap_setnonblock (dev->backend.state.pcap, 1, errbuf);
 #endif /* USE_SETNONBLOCK */
       }
     pcap_freecode(&bpf);
@@ -4104,7 +4060,7 @@ return SCPE_OK;
 void eth_show_dev (FILE *st, ETH_DEV* dev)
 {
 fprintf(st, "Ethernet Device:\n");
-if (!dev) {
+if (dev == NULL) {
   fprintf(st, "-- Not Attached\n");
   return;
   }
@@ -4168,8 +4124,8 @@ if (dev->promiscuous)
 if (dev->bpf_filter)
   fprintf(st, "  BPF Filter: %s\n", dev->bpf_filter);
 #if defined(HAVE_SLIRP_NETWORK)
-if (dev->eth_api == ETH_API_NAT)
-  sim_slirp_show ((sim_slirp_handle *)dev->handle, st);
+if (dev->backend.eth_api == ETH_API_NAT)
+  sim_slirp_show ((sim_slirp_handle *)dev->backend.state.slirp, st);
 #endif
 }
 
@@ -4380,12 +4336,12 @@ for (eth_num=0; eth_num<eth_device_count; eth_num++) {
                   SIM_PRINT_BPF_ARGUMENTS;
                   sim_printf ("Eth: BPF string is: |%s|\n", buf);
                   }
-                if (dev.eth_api == ETH_API_PCAP) {
+                if (dev.backend.eth_api == ETH_API_PCAP) {
                   struct bpf_program bpf;
 
-                  if (pcap_compile ((pcap_t*)dev.handle, &bpf, buf, 1, (bpf_u_int32)0) < 0) {
+                  if (pcap_compile (dev.backend.state.pcap, &bpf, buf, 1, (bpf_u_int32)0) < 0) {
                     ++bpf_compile_error_count;
-                    strlcpy(errbuf, pcap_geterr((pcap_t*)dev.handle), sizeof(errbuf));
+                    strlcpy(errbuf, pcap_geterr(dev.backend.state.pcap), sizeof(errbuf));
                     sim_printf("Eth: pcap_compile error: %s\n", errbuf);
                     if (!(sim_switches & SWMASK('D'))) {
                       /* show erroneous BPF string */

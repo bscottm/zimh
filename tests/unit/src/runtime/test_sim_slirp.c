@@ -2,8 +2,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <glib.h>
+#include <libslirp.h>
+
 #include "test_cmocka.h"
 
+#include "sim_defs.h"
+#include "sim_sock.h"
 #include "sim_slirp.h"
 #include "sim_types.h"
 

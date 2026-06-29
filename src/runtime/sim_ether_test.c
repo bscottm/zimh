@@ -13,14 +13,6 @@
 
 #define ETH_TEST_QUEUE_MAX 256
 
-typedef struct eth_test_backend {
-    char *name;
-    ETH_QUE rx_to_guest;
-    ETH_QUE tx_from_guest;
-    int write_status;
-    struct eth_test_backend *next;
-} ETH_TEST_BACKEND;
-
 static ETH_TEST_BACKEND *eth_test_backends;
 
 /*
@@ -195,22 +187,24 @@ t_stat eth_test_set_write_status(const char *name, int status)
 }
 
 /* Open a named test backend and return the backend handle to sim_ether.c. */
-t_stat eth_test_open(const char *name, void **handle)
+t_stat eth_test_open(const char *name, eth_backend_t *backend)
 {
-    ETH_TEST_BACKEND *backend;
-    t_stat status = eth_test_get_backend(name, &backend);
+    ETH_TEST_BACKEND *test_backend;
+    t_stat status = eth_test_get_backend(name, &test_backend);
 
     if (status != SCPE_OK)
         return status;
 
-    *handle = backend;
+    backend->eth_api = ETH_API_TEST;
+    backend->state.test_backend = test_backend;
+
     return SCPE_OK;
 }
 
 /* Read one accepted packet from a test backend into the supplied packet. */
 int eth_test_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 {
-    ETH_TEST_BACKEND *backend = (ETH_TEST_BACKEND *)dev->handle;
+    ETH_TEST_BACKEND *backend = dev->backend.state.test_backend;
 
     if (!backend)
         return 0;
@@ -256,7 +250,7 @@ t_stat eth_test_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
     ETH_TEST_BACKEND *backend;
     int status;
 
-    if (!dev || dev->eth_api == ETH_API_NONE)
+    if (!dev || dev->backend.eth_api == ETH_API_NONE)
         return SCPE_UNATT;
     if (!packet)
         return SCPE_ARG;
@@ -266,7 +260,7 @@ t_stat eth_test_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         return SCPE_IOERR;
     }
 
-    backend = (ETH_TEST_BACKEND *)dev->handle;
+    backend = dev->backend.state.test_backend;
     status = backend ? backend->write_status : 1;
     if (backend)
         ethq_insert(&backend->tx_from_guest, ETH_ITM_NORMAL, packet, status);

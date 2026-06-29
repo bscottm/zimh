@@ -21,8 +21,7 @@ set(SIM_SOURCES
     ${SIMH_RUNTIME_ROOT}/sim_disk_ramdisk.c
     ${SIMH_RUNTIME_ROOT}/sim_ether.c
     ${SIMH_RUNTIME_ROOT}/eth_dispatch.c
-    ${SIMH_RUNTIME_ROOT}/eth_readers.c
-    ${SIMH_RUNTIME_ROOT}/eth_writers.c
+    ${SIMH_RUNTIME_ROOT}/eth_threads.c
     ${SIMH_RUNTIME_ROOT}/sim_ether_test.c
     ${SIMH_RUNTIME_ROOT}/sim_fio.c
     ${SIMH_RUNTIME_ROOT}/sim_host_path.c

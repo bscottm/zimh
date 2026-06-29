@@ -439,6 +439,14 @@ static int SDL_SavePNG_RW(SDL_Surface *surface, SDL_RWops *dst, int freedst)
 #define EVENT_FULLSCREEN 11                              /* fullscreen */
 #define EVENT_SIZE       12                              /* set window size */
 #define EVENT_LOGICAL    13                              /* set window logical size */
+
+/* SIMH SDL User Event Types (enum for better type safety) */
+typedef enum simh_sdl_event_e {
+    SIMH_EXIT_EVENT = EVENT_EXIT,
+    SIMH_OPEN_EVENT = EVENT_OPEN,
+    SIMH_SHOW_EVENT = EVENT_SHOW,
+    SIMH_SCREENSHOT_EVENT = EVENT_SCREENSHOT
+} simh_sdl_event_t;
 #define MAX_EVENTS       20                              /* max events in queue */
 
 typedef struct {
@@ -625,22 +633,40 @@ static int main_argc;
 static char **main_argv;
 static SDL_Thread *vid_main_thread_handle;
 
+/* Queue exit event to wake SDL main loop */
+static void queue_simh_exit_event(const char *source)
+{
+    SDL_Event user_event;
+
+    memset(&user_event, 0, sizeof(user_event));
+    user_event.type = SDL_USEREVENT;
+    user_event.user.code = SIMH_EXIT_EVENT;
+    user_event.user.data1 = NULL;
+    user_event.user.data2 = NULL;
+
+    /* Retry if queue is full */
+    while (SDL_PushEvent(&user_event) < 0) {
+        sim_os_ms_sleep(10);
+    }
+
+    if (sim_deb != NULL) {
+        fprintf(sim_deb, "%s: pushed SIMH_EXIT_EVENT\n", source);
+    }
+}
+
 static int main_thread (void *arg)
 {
 /* Generic thread entry signature.
    This implementation does not use every parameter. */
 (void)arg;
 
-SDL_Event user_event;
 int stat;
 
-stat = SDL_main (main_argc, main_argv);
-user_event.type = SDL_USEREVENT;
-user_event.user.code = EVENT_EXIT;
-user_event.user.data1 = NULL;
-user_event.user.data2 = NULL;
-while (SDL_PushEvent (&user_event) < 0)
-    sim_os_ms_sleep (10);
+stat = scp_main (main_argc, main_argv);
+
+/* Signal main event loop to exit */
+queue_simh_exit_event("main_thread");
+
 return stat;
 }
 
@@ -681,8 +707,15 @@ while (1) {
     int status = SDL_WaitEvent (&event);
     if (status == 1) {
         if (event.type == SDL_USEREVENT) {
-            if (event.user.code == EVENT_EXIT)
+            if (sim_deb != NULL) {
+                fprintf(sim_deb, "main(): received user event code=%d\n", event.user.code);
+            }
+            if (event.user.code == EVENT_EXIT) {
+                if (sim_deb != NULL) {
+                    fprintf(sim_deb, "main(): breaking on EXIT event\n");
+                }
                 break;
+            }
             if (event.user.code == EVENT_OPEN) {
                 SDL_Init (SDL_INIT_VIDEO);
                 vid_video_events ((VID_DISPLAY *)event.user.data1);

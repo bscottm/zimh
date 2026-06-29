@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
-#include "sim_ether.h"
+#include "eth_types.h"
 
 /*
  * Named test backends are opened with "test:name". Injected packets represent

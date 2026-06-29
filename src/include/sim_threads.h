@@ -221,6 +221,9 @@ static inline void sim_mutex_destroy(sim_mutex_t *mtx)
 /*=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * Traditional external function declarations:
  *=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+#if !defined(THREAD_NAME_MAX)
+#define THREAD_NAME_MAX 64
+#endif
 
 extern void sim_set_thread_name(const char *name);
 

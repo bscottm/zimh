@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
-#include "sim_sock.h"
+// #include "sim_sock.h"
 #if defined(_WIN32)
 #include <ws2tcpip.h>
 #endif

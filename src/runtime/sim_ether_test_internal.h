@@ -6,10 +6,11 @@
 #define SIM_ETHER_TEST_INTERNAL_H
 
 #include "sim_defs.h"
-#include "sim_ether.h"
+#include "eth_types.h"
+#include "eth_backends.h"
 
 /* Open a named test backend and return the backend handle to sim_ether.c. */
-t_stat eth_test_open(const char *name, void **handle);
+t_stat eth_test_open(const char *name, eth_backend_t *backend);
 
 /* Capture one packet written by a device attached to a test backend. */
 t_stat eth_test_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine);

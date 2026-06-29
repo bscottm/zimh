@@ -130,6 +130,7 @@
 #endif
 
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <winerror.h>
 #undef PACKED                       /* avoid macro name collision */
@@ -169,6 +170,22 @@
 #define SIM_NOINLINE
 #endif
 #endif
+
+/* Unused argument macro: easier to comprehend than a "(void) var;" statement. */
+#define SIM_UNUSED_ARG(x)(void) x
+
+/* Unused function attribute: easier to comprehend than a complicated compiler
+   attribute */
+#    if defined(__GNUC__) || defined(__clang__)
+#        define SIM_UNUSED_FUNC __attribute__((unused))
+#    elif defined(_MSC_VER)
+#        if __STDC_VERSION >= 201710L
+#            define SIM_UNUSED_FUNC [[maybe_unused]]
+#        else
+#            define SIM_UNUSED_FUNC
+#            pragma warning(suppress : 4505)
+#        endif
+#    endif
 
 #ifndef MAX
 #define MAX(a, b) (((a) >= (b)) ? (a) : (b))

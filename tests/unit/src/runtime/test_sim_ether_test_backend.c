@@ -169,7 +169,7 @@ static void test_test_backend_opens_explicit_pseudo_name(void **state)
     (void)state;
 
     open_test_device(&dev, "TEST:sim-ether-explicit");
-    assert_int_equal(dev.eth_api, ETH_API_TEST);
+    assert_int_equal(dev.backend.eth_api, ETH_API_TEST);
 
     close_test_device(&dev);
     assert_int_equal(eth_test_clear("sim-ether-explicit"), SCPE_OK);

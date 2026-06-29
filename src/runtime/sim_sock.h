@@ -30,6 +30,7 @@
 #include <winsock2.h>
 #include <winerror.h>
 
+#define PRIsocket "lld"                                 /* printf() descriptor for SOCKET */
 #else                                                   /* POSIX sockets */
 #include <sys/types.h>                                  /* for fcntl, getpid */
 #include <sys/socket.h>                                 /* for sockets */
@@ -66,6 +67,8 @@
 #if !defined(SOCKET_ERROR)
 #define SOCKET_ERROR    (-1)
 #endif
+
+#define PRIsocket "d"                                   /* printf() descriptor for SOCKET */
 #endif
 
 #if !defined(CBUFSIZE)
