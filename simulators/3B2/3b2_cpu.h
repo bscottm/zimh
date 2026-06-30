@@ -36,6 +36,11 @@
 
 #include "3b2_defs.h"
 
+/* Linux /usr/include/sys/ttydefaults.h workaround: */
+#if defined(CFLUSH)
+#undef CFLUSH
+#endif
+
 /* Execution Modes */
 #define EX_LVL_KERN           0
 #define EX_LVL_EXEC           1
