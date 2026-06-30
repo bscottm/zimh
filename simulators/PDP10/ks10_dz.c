@@ -28,9 +28,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "kx10_defs.h"
-#include "sim_sock.h"
+#include "sim_defs.h"
 #include "sim_tmxr.h"
+
+#include "kx10_defs.h"
 
 
 #if (NUM_DEVS_DZ > 0)

@@ -25,12 +25,13 @@
 
 */
 
-#include "kx10_defs.h"
-#include "sim_sock.h"
-#include "sim_tmxr.h"
-#include <ctype.h>
 #include <inttypes.h>
 #include <stdint.h>
+
+#include "scp.h"
+#include "sim_tmxr.h"
+
+#include "kx10_defs.h"
 
 #if KS
 #define UNIT_DUMMY      (1 << UNIT_V_UF)
