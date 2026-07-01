@@ -61,7 +61,7 @@ target_link_options(zimh-unit-scp-cmdvars-env-helper
     PRIVATE ${EXTRA_TARGET_LFLAGS}
 )
 target_link_libraries(zimh-unit-scp-cmdvars-env-helper
-    PRIVATE os_features
+    PRIVATE sim_support
 )
 
 add_unit_test(unit-scp-cmdvars

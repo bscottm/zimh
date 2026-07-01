@@ -46,7 +46,7 @@ struct eth_queue {
     struct eth_item *item;
 };
 
-typedef uchar_t ETH_MAC[6];
+typedef uint8_t ETH_MAC[6];
 
 struct eth_list {
     char name[ETH_DEV_NAME_MAX];
@@ -54,7 +54,7 @@ struct eth_list {
     int eth_api;
 };
 
-typedef uchar_t ETH_MULTIHASH[8];
+typedef uint8_t ETH_MULTIHASH[8];
 typedef struct eth_packet ETH_PACK;
 typedef void (*ETH_PCALLBACK)(int status);
 typedef struct eth_list ETH_LIST;

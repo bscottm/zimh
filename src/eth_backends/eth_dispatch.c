@@ -6,7 +6,8 @@
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_sock.h"
-#include "eth_dispatch.h"
+#include "eth_backends/eth_backends.h"
+#include "eth_backends/eth_dispatch.h"
 
 /*============================================================================*/
 /*                         Writer Dispatch Functions                          */
@@ -52,8 +53,16 @@ static int eth_writer_dispatch_vde(ETH_DEV *dev, const ETH_PACK *packet)
 
 static int eth_writer_dispatch_nat(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(HAVE_SLIRP_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
     int status = sim_slirp_send(dev->backend.state.slirp, (char *)packet->msg, (size_t)packet->len, 0);
+
+    /* Fun fact: ICMP ECHO, ARP, DHCP, TCP ACKs generate packets that end up in the read queue as the result
+     * of a write. These packets do not originate from a socket, so we have to ensure that those packets are
+     * delivered immediately instead of waiting for the reader thread's select() or poll() to time out. */
+    if (!sim_tailq_empty(&dev->read_queue)) {
+        sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
+    }
+
     return ((status == (int)packet->len) || (status == 0)) ? 0 : 1;
 #else
     (void)dev;
@@ -149,14 +158,22 @@ static int eth_reader_dispatch_vde(ETH_DEV *dev)
 
 static int eth_reader_dispatch_nat(ETH_DEV *dev)
 {
-#    if defined(HAVE_SLIRP_NETWORK)
-    sim_debug(dev->dbit, dev->dptr, "NAT: eth_reader_dispatch_nat() called\n");
-    sim_slirp_dispatch(dev->backend.state.slirp);
-    sim_debug(dev->dbit, dev->dptr, "NAT: sim_slirp_dispatch() returned\n");
-    return 1;
-#    else
+#if defined(HAVE_SLIRP_NETWORK)
+    sim_slirp_network *slirp = dev->backend.state.slirp;
+
+    /* The mutex serializes the reader and the writer threads. */
+    pthread_mutex_lock(&slirp->libslirp_lock);
+    slirp_pollfds_poll(slirp->slirp_cxn, 0, slirp_get_events_callback, slirp);
+    pthread_mutex_unlock(&slirp->libslirp_lock);
+
+    /* slirp_pollfds_poll() is void, so we can't tell from its return value
+     * whether packets arrived. But packets delivered via _slirp_callback()
+     * are queued to dev->read_queue, so check if the queue is non-empty. */
+    return sim_tailq_empty(&dev->read_queue) ? 0 : 1;
+#else
+    (void)dev;
     return 0;
-#    endif
+#endif
 }
 
 static int eth_reader_dispatch_udp(ETH_DEV *dev)

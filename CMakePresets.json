@@ -243,6 +243,12 @@
       "displayName": "Build: VS2022 Debug"
     },
     {
+      "name": "windows-vs2022-relwithdebinfo",
+      "configurePreset": "windows-vs2022",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Build: VS2022 RelWithDebInfo"
+    },
+    {
       "name": "windows-vs2022-release",
       "configurePreset": "windows-vs2022",
       "configuration": "Release",
@@ -253,6 +259,12 @@
       "configurePreset": "windows-vs2026",
       "configuration": "Debug",
       "displayName": "Build: VS2026 Debug"
+    },
+    {
+      "name": "windows-vs2026-relwithdebinfo",
+      "configurePreset": "windows-vs2026",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Build: VS2026 RelWithDebInfo"
     },
     {
       "name": "windows-vs2026-release",
@@ -344,10 +356,42 @@
       "execution": { "jobs": 8, "timeout": 300 }
     },
     {
+      "name": "windows-vs2022-relwithdebinfo",
+      "configurePreset": "windows-vs2022",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Test: VS2022 RelWithDebInfo",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
+    },
+    {
       "name": "windows-vs2022-release",
       "configurePreset": "windows-vs2022",
       "configuration": "Release",
       "displayName": "Test: VS2022 Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
+    },
+    {
+      "name": "windows-vs2026-debug",
+      "configurePreset": "windows-vs2026",
+      "configuration": "Debug",
+      "displayName": "Test: VS2026 Debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
+    },
+    {
+      "name": "windows-vs2026-relwithdebinfo",
+      "configurePreset": "windows-vs2026",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Test: VS2026 RelWithDebInfo",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
+    },
+    {
+      "name": "windows-vs2026-release",
+      "configurePreset": "windows-vs2026",
+      "configuration": "Release",
+      "displayName": "Test: VS2026 Release",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 8, "timeout": 300 }
     },

@@ -16,28 +16,40 @@
 size_t strlcpy(char *dst, const char *src, size_t dsize);
 #endif
 
-#if defined(SIMH_NEED_STRLCAT) && !defined(strlcat)
+#if !defined(HAVE_STRLCAT) && !defined(strlcat)
 size_t strlcat(char *dst, const char *src, size_t dsize);
 #endif
 
-#if defined(SIMH_NEED_STRNLEN) && !defined(strnlen)
+#if !defined(HAVE_STRNLEN) && !defined(strnlen)
+#if !defined(_MSC_VER)
 size_t strnlen(const char *s, size_t n);
+#else
+#define strnlen _strnlen_s
+#endif
 #endif
 
-#if defined(SIMH_NEED_STRDUP) && !defined(strdup)
+#if !defined(HAVE_STRDUP) && !defined(strdup)
 char *strdup(const char *s);
 #endif
 
-#if defined(SIMH_NEED_STRNDUP) && !defined(strndup)
+#if !defined(HAVE_STRNDUP) && !defined(strndup)
 char *strndup(const char *s, size_t n);
 #endif
 
-#if defined(SIMH_NEED_STRCASECMP) && !defined(strcasecmp)
+#if !defined(HAVE_STRCASECMP) && !defined(strcasecmp)
+#if !defined(_MSC_VER)
 int strcasecmp(const char *l, const char *r);
+#else
+#define strcasecmp _stricmp
+#endif
 #endif
 
-#if defined(SIMH_NEED_STRNCASECMP) && !defined(strncasecmp)
+#if !defined(HAVE_STRNCASECMP) && !defined(strncasecmp)
+#if !defined(_MSC_VER)
 int strncasecmp(const char *l, const char *r, size_t n);
+#else
+#define strncasecmp _strnicmp
+#endif
 #endif
 
 #endif /* STRING_COMPAT_H_ */

@@ -23,8 +23,7 @@ foreach (utility IN LISTS IBM1130_UTILITY_NAMES)
     set(target "ibm1130-${utility}")
     add_executable(${target} EXCLUDE_FROM_ALL
         ${utility}.c
-        ${IBM1130_UTILITY_COMMON_SOURCES}
-        ${SIMH_COMPAT_SOURCES})
+        ${IBM1130_UTILITY_COMMON_SOURCES})
     set_target_properties(${target} PROPERTIES
         C_STANDARD ${CMAKE_C_STANDARD}
         C_STANDARD_REQUIRED ON
@@ -41,7 +40,7 @@ foreach (utility IN LISTS IBM1130_UTILITY_NAMES)
         ${SIMH_INCLUDE_ROOT}
         ${SIMH_RUNTIME_ROOT}
         ${ZIMH_GENERATED_INCLUDE_DIR})
-    target_link_libraries(${target} PRIVATE os_features)
+    target_link_libraries(${target} PRIVATE sim_support)
     list(APPEND IBM1130_UTILITY_TARGETS ${target})
 endforeach ()
 

@@ -32,7 +32,7 @@ function(add_simh_unit_support_objects target core_library)
         SIMH_TEST_BINARY_ROOT="${CMAKE_BINARY_DIR}"
     )
 
-    target_link_libraries(${target} PUBLIC os_features)
+    target_link_libraries(${target} PUBLIC sim_support)
 
     if (core_library MATCHES "i64|z64")
         target_compile_definitions(${target} PRIVATE USE_INT64)
@@ -63,7 +63,7 @@ function(add_simh_unit_personality_objects target core_library)
         ${SIMH_RUNTIME_ROOT}
     )
 
-    target_link_libraries(${target} PRIVATE os_features)
+    target_link_libraries(${target} PRIVATE sim_support)
 
     if (core_library MATCHES "i64|z64")
         target_compile_definitions(${target} PRIVATE USE_INT64)

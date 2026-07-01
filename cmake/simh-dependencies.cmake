@@ -5,9 +5,41 @@
 
 # Establish Dependency "Buckets" (Interface Targets). Simulators link
 # to these unconditionally.
-add_library(simh_network INTERFACE)
 add_library(simh_video INTERFACE)
 add_library(simh_regexp INTERFACE)
+
+# simh_network: Where the emulated Ethernet and networking backends reside.
+#
+# FIXME: This should only be compiled if the user has enabled networking, so it will need to respect the
+# WITH_NETWORK option (and if WITH_NETWORK is FALSE or not set, then simh_network should be a simple interface
+# library.)
+add_library(simh_network STATIC
+    ${SIMH_ETH_BACKENDS_ROOT}/eth_dispatch.c
+    ${SIMH_ETH_BACKENDS_ROOT}/eth_threads.c
+)
+
+target_compile_definitions(simh_network PUBLIC
+    ${AIO_FLAGS}
+)
+
+target_include_directories(simh_network PRIVATE
+    "${SIMH_COMPAT_ROOT}"
+    "${SIMH_CORE_ROOT}"
+    "${SIMH_INCLUDE_ROOT}"
+    "${SIMH_RUNTIME_ROOT}"
+    "${SIMH_COMPONENTS_ROOT}"
+    "${ZIMH_GENERATED_INCLUDE_DIR}"
+)
+
+## Expose the eth_backends directory as a public include:
+target_include_directories(simh_network PUBLIC
+    "${SIMH_SOURCE_ROOT}"
+)
+
+target_link_libraries(simh_network PRIVATE
+    sim_support
+    aio_support
+)
 
 # =============================================================================
 # Function: find_vcpkg_pkgconfig_target
@@ -84,10 +116,10 @@ if(WITH_NETWORK)
         if(TARGET PCAP::PCAP)
             # PCAP on Windows (Npcap/WinPcap) historically only needs headers linked
             # for the simulator cores, but linking the target natively handles ws2_32
-            target_compile_definitions(simh_network INTERFACE
+            target_compile_definitions(simh_network PUBLIC
                 HAVE_PCAP_NETWORK
             )
-            target_link_libraries(simh_network INTERFACE PCAP::PCAP)
+            target_link_libraries(simh_network PUBLIC PCAP::PCAP)
             message(STATUS "Network: PCAP configured via vcpkg (Target Linked).")
         endif()
     else()
@@ -97,15 +129,15 @@ if(WITH_NETWORK)
         pkg_check_modules(PCAP_PKG QUIET IMPORTED_TARGET libpcap)
 
         if(TARGET PkgConfig::PCAP_PKG)
-            target_compile_definitions(simh_network INTERFACE HAVE_PCAP_NETWORK)
-            target_link_libraries(simh_network INTERFACE PkgConfig::PCAP_PKG)
+            target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
+            target_link_libraries(simh_network PRIVATE PkgConfig::PCAP_PKG)
             message(STATUS "Network: PCAP configured via pkg-config.")
         else()
             # Absolute fallback if a weird Linux distro doesn't ship libpcap.pc
             find_package(PCAP REQUIRED)
             if(TARGET PCAP::PCAP)
-                target_compile_definitions(simh_network INTERFACE HAVE_PCAP_NETWORK)
-                target_link_libraries(simh_network INTERFACE PCAP::PCAP)
+                target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
+                target_link_libraries(simh_network PUBLIC PCAP::PCAP)
             endif()
         endif()
     endif()
@@ -115,78 +147,21 @@ if(WITH_NETWORK)
     set(HAVE_LIBSLIRP FALSE)
     if(WITH_SLIRP)
         if(WIN32)
-            # Windows / vcpkg / Multi-Config Pipeline:
-            # # FindPkgConfig ignores multi-config and hardcodes the first paths it finds.
-            # # We must fetch both configurations explicitly to prevent path-poisoning.
-            # find_package(PkgConfig QUIET)
-
-            # if(PKG_CONFIG_FOUND)
-            #     # 1. Back up the original PKG_CONFIG_PATH
-            #     set(BACKUP_PKG_CONFIG_PATH "$ENV{PKG_CONFIG_PATH}")
-
-            #     # 2. Force pkg-config to extract Release paths
-            #     set(ENV{PKG_CONFIG_PATH} "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/pkgconfig")
-            #     pkg_check_modules(SLIRP_REL QUIET slirp)
-            #     pkg_check_modules(GLIB2_REL QUIET glib-2.0)
-
-            #     # 3. Force pkg-config to extract Debug paths
-            #     set(ENV{PKG_CONFIG_PATH} "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/lib/pkgconfig")
-            #     pkg_check_modules(SLIRP_DBG QUIET slirp)
-            #     pkg_check_modules(GLIB2_DBG QUIET glib-2.0)
-
-            #     # 4. Restore the environment
-            #     set(ENV{PKG_CONFIG_PATH} "${BACKUP_PKG_CONFIG_PATH}")
-
-            #     if(SLIRP_REL_FOUND AND GLIB2_REL_FOUND)
-            #         # 5. Create a unified, multi-config aware INTERFACE library
-            #         add_library(vcpkg::slirp_glib INTERFACE IMPORTED)
-
-            #         # Wire up Include Directories
-            #         target_include_directories(vcpkg::slirp_glib INTERFACE
-            #             "$<$<NOT:$<CONFIG:Debug>>:${SLIRP_REL_INCLUDE_DIRS};${GLIB2_REL_INCLUDE_DIRS}>"
-            #             "$<$<CONFIG:Debug>:${SLIRP_DBG_INCLUDE_DIRS};${GLIB2_DBG_INCLUDE_DIRS}>"
-            #         )
-
-            #         # Wire up Library Directories
-            #         target_link_directories(vcpkg::slirp_glib INTERFACE
-            #             "$<$<NOT:$<CONFIG:Debug>>:${SLIRP_REL_LIBRARY_DIRS};${GLIB2_REL_LIBRARY_DIRS}>"
-            #             "$<$<CONFIG:Debug>:${SLIRP_DBG_LIBRARY_DIRS};${GLIB2_DBG_LIBRARY_DIRS}>"
-            #         )
-
-            #         # Wire up Link Libraries (Absolute paths from _LINK_LIBRARIES prevent poisoning)
-            #         target_link_libraries(vcpkg::slirp_glib INTERFACE
-            #             "$<$<NOT:$<CONFIG:Debug>>:${SLIRP_REL_LINK_LIBRARIES};${GLIB2_REL_LINK_LIBRARIES}>"
-            #             "$<$<CONFIG:Debug>:${SLIRP_DBG_LINK_LIBRARIES};${GLIB2_DBG_LINK_LIBRARIES}>"
-            #         )
-
-            #         target_link_libraries(simh_network INTERFACE vcpkg::slirp_glib)
-            #         target_compile_definitions(simh_network INTERFACE
-            #             HAVE_SLIRP_NETWORK
-            #             USE_SIMH_SLIRP_DEBUG
-            #             LIBSLIRP_STATIC
-            #         )
-            #         set(HAVE_LIBSLIRP TRUE)
-            #         message(STATUS "Network: NAT(SLiRP) configured via multi-config pkg-config.")
-            #     endif()
-            # endif()
-            # Windows / vcpkg / Multi-Config Pipeline:
-            # Use the helper to generate robust multi-config targets.
-
             find_vcpkg_pkgconfig_target(slirp slirp SLIRP_TARGET)
             find_vcpkg_pkgconfig_target(glib2 glib-2.0 GLIB2_TARGET)
 
             if(SLIRP_TARGET AND GLIB2_TARGET)
                 # Link both distinct targets to the network interface
-                target_link_libraries(simh_network INTERFACE
+                target_link_libraries(simh_network PUBLIC
                     ${SLIRP_TARGET}
                     ${GLIB2_TARGET}
                 )
-                target_compile_definitions(simh_network INTERFACE
+                target_compile_definitions(simh_network PUBLIC
                     HAVE_SLIRP_NETWORK
                     USE_SIMH_SLIRP_DEBUG
                 )
                 if (VCPKG_TARGET_TRIPLET MATCHES "-static$")
-                    target_compile_definitions(simh_network INTERFACE LIBSLIRP_STATIC)
+                    target_compile_definitions(simh_network PUBLIC LIBSLIRP_STATIC)
                 endif ()
                 
                 set(HAVE_LIBSLIRP TRUE)
@@ -201,15 +176,15 @@ if(WITH_NETWORK)
                 pkg_check_modules(SLIRP QUIET slirp)
 
                 if(SLIRP_FOUND AND GLIB2_FOUND)
-                    target_include_directories(simh_network INTERFACE ${SLIRP_INCLUDE_DIRS} ${GLIB2_INCLUDE_DIRS})
-                    target_link_libraries(simh_network INTERFACE ${SLIRP_LIBRARIES} ${GLIB2_LIBRARIES})
+                    target_include_directories(simh_network PUBLIC ${SLIRP_INCLUDE_DIRS} ${GLIB2_INCLUDE_DIRS})
+                    target_link_libraries(simh_network PUBLIC ${SLIRP_LIBRARIES} ${GLIB2_LIBRARIES})
                     if(SLIRP_LIBRARY_DIRS)
-                        target_link_directories(simh_network INTERFACE ${SLIRP_LIBRARY_DIRS})
+                        target_link_directories(simh_network PUBLIC ${SLIRP_LIBRARY_DIRS})
                     endif()
                     if(GLIB2_LIBRARY_DIRS)
-                        target_link_directories(simh_network INTERFACE ${GLIB2_LIBRARY_DIRS})
+                        target_link_directories(simh_network PUBLIC ${GLIB2_LIBRARY_DIRS})
                     endif()
-                    target_compile_definitions(simh_network INTERFACE
+                    target_compile_definitions(simh_network PUBLIC
                         HAVE_SLIRP_NETWORK
                         USE_SIMH_SLIRP_DEBUG
                     )
@@ -218,6 +193,12 @@ if(WITH_NETWORK)
                 endif()
             endif()
         endif()
+
+        if (HAVE_LIBSLIRP)
+            target_sources(simh_network PRIVATE
+                ${SIMH_ETH_BACKENDS_ROOT}/slirp/sim_slirp.c
+                ${SIMH_ETH_BACKENDS_ROOT}/slirp/slirp_poll.c)
+        endif ()
     endif()
 
     # VDE (Non-Windows)
@@ -226,11 +207,11 @@ if(WITH_NETWORK)
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(VDE QUIET vdeplug)
             if(VDE_FOUND)
-                target_compile_definitions(simh_network INTERFACE HAVE_VDE_NETWORK)
-                target_link_libraries(simh_network INTERFACE ${VDE_LIBRARIES})
-                target_include_directories(simh_network INTERFACE ${VDE_INCLUDE_DIRS})
+                target_compile_definitions(simh_network PUBLIC HAVE_VDE_NETWORK)
+                target_link_libraries(simh_network PUBLIC ${VDE_LIBRARIES})
+                target_include_directories(simh_network PUBLIC ${VDE_INCLUDE_DIRS})
                 if(VDE_LIBRARY_DIRS)
-                    target_link_directories(simh_network INTERFACE ${VDE_LIBRARY_DIRS})
+                    target_link_directories(simh_network PUBLIC ${VDE_LIBRARY_DIRS})
                 endif()
                 message(STATUS "Network: VDE configured.")
             endif()
@@ -257,21 +238,21 @@ if(WITH_NETWORK)
     endif (WITH_TAP)
 
     if (HAVE_TAP_NETWORK)
-        target_compile_definitions(simh_network INTERFACE HAVE_TAP_NETWORK)
+        target_compile_definitions(simh_network PUBLIC HAVE_TAP_NETWORK)
     endif()
     if (HAVE_BSDTUNTAP)
-        target_compile_definitions(simh_network INTERFACE HAVE_BSDTUNTAP)
+        target_compile_definitions(simh_network PUBLIC HAVE_BSDTUNTAP)
     endif()
 
     # Set the defines so that the network code gets compiled.
     if (NOT WIN32
         AND (HAVE_TAP_NETWORK OR VDE_FOUND OR HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
         # POSIX/Unixen environments
-        target_compile_definitions(simh_network INTERFACE USE_NETWORK)
+        target_compile_definitions(simh_network PUBLIC USE_NETWORK)
     elseif (WIN32 AND (HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
         ## FIXME: Rethink the USE_LOADED_WINPCAP on the WIN32 path to enable
         ## network code.
-        target_compile_definitions(simh_network INTERFACE USE_LOADED_WINPCAP)
+        target_compile_definitions(simh_network PUBLIC USE_LOADED_WINPCAP)
     endif ()
 endif()
 

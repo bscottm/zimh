@@ -38,7 +38,7 @@ target_include_directories(frontpaneltest PUBLIC
     "${SIMH_INCLUDE_ROOT}"
     "${SIMH_RUNTIME_ROOT}"
     "${SIMH_COMPONENTS_ROOT}")
-target_link_libraries(frontpaneltest PUBLIC os_features thread_lib)
+target_link_libraries(frontpaneltest PUBLIC sim_support aio_support)
 
 if (WIN32)
     target_link_libraries(frontpaneltest PUBLIC simh_network)

@@ -136,7 +136,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
     # the VAX simulators. Reduce optimization and ensure strict overflow is turned off.
 
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
-        set(update_o2 TRUE)
+        set(update_o2 FALSE)
         if (NOT MINGW)
             if (RELEASE_LTO AND (NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Release"))
                 check_c_compiler_flag("-flto" GCC_LTO_FLAG)
@@ -176,9 +176,9 @@ if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES ".*Clang")
             endif ()
         endif ()
 
-        message(STATUS "Adding GNU-specific optimizations to optimized build flags")
-        list(APPEND opt_flags "-finline-functions" "-fgcse-after-reload" "-fpredictive-commoning"
-                            "-fipa-cp-clone" "-fno-unsafe-loop-optimizations")
+        # message(STATUS "Adding GNU-specific optimizations to optimized build flags")
+        # list(APPEND opt_flags "-finline-functions" "-fgcse-after-reload" "-fpredictive-commoning"
+        #                     "-fipa-cp-clone" "-fno-unsafe-loop-optimizations")
     elseif (CMAKE_C_COMPILER_ID MATCHES ".*Clang")
         message(STATUS "Adding Clang-specific optimizations to optimized build flags")
     endif()

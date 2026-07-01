@@ -334,6 +334,10 @@ extern int32_t sim_vm_initial_ips;                      /* base estimate of simu
 extern const char *sim_vm_interval_units;               /* Simulator can change this - default "instructions" */
 extern const char *sim_vm_step_unit;                    /* Simulator can change this - default "instruction" */
 
+/* Debug table manipulation: */
+extern DEBTAB *sim_combine_debtabs(const DEBTAB *tab1, const DEBTAB *tab2);
+extern size_t sim_debtab_nelems(const DEBTAB *debtab);
+extern void sim_fill_debtab_flags(DEBTAB *debtab);
 
 /* Core SCP libraries can potentially have unit test routines.
    These defines help implement consistent unit test functionality */

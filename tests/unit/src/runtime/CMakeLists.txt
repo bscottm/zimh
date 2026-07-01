@@ -148,6 +148,7 @@ if (WITH_NETWORK)
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_ether_test_backend.c
         INCLUDES
             ${PROJECT_SOURCE_DIR}/tests/unit/support
+        USES_AIO
     )
 endif ()
 
@@ -156,6 +157,7 @@ if (WITH_NETWORK AND WITH_SLIRP AND HAVE_LIBSLIRP)
         LABEL unit
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_slirp.c
         INCLUDES ${PROJECT_SOURCE_DIR}/tests/unit/support
+        USES_AIO
     )
 endif ()
 

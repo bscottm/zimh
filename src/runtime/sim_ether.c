@@ -341,8 +341,8 @@
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_ether_test_internal.h"
-#include "eth_dispatch.h"
-#include "eth_threads.h"
+#include "eth_backends/eth_dispatch.h"
+#include "eth_backends/eth_threads.h"
 #include "sim_sock.h"
 #include "string_util.h"
 #include "sim_time.h"
@@ -1053,18 +1053,18 @@ t_stat eth_write (ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 int eth_read (ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
   {return SCPE_NOFNC;}
 t_stat eth_filter (ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                   ETH_BOOL all_multicast, ETH_BOOL promiscuous)
+                   bool all_multicast, bool promiscuous)
   {return SCPE_NOFNC;}
 t_stat eth_filter_hash (ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                   ETH_BOOL all_multicast, ETH_BOOL promiscuous, ETH_MULTIHASH* const hash)
+                   bool all_multicast, bool promiscuous, ETH_MULTIHASH* const hash)
   {return SCPE_NOFNC;}
 t_stat eth_filter_hash_ex(ETH_DEV* dev, int addr_count, const ETH_MAC addresses[],
-                          ETH_BOOL all_multicast, ETH_BOOL promiscuous,
-                          ETH_BOOL match_broadcast, ETH_MULTIHASH* const hash)
+                          bool all_multicast, bool promiscuous,
+                          bool match_broadcast, ETH_MULTIHASH* const hash)
   {return SCPE_NOFNC;}
 const char *eth_version (void)
   {return NULL;}
-int eth_devices(int max, ETH_LIST* list, ETH_BOOL framers)
+int eth_devices(int max, ETH_LIST* list, bool framers)
   {return 0;}
 void eth_show_dev (FILE* st, ETH_DEV* dev)
   {}
@@ -1877,16 +1877,15 @@ static void
 eth_stop_threads(ETH_DEV *dev)
 {
     /* Signal reader thread to shutdown by atomically setting its state */
-    sim_atomic_put(&dev->reader_state, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
+    sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
 
     /* Join reader thread - will exit on next timeout (max 250ms) */
     sim_thread_join(dev->reader_thread, NULL);
 
-    /* Signal writer thread to shutdown by atomically setting its state */
-    sim_atomic_put(&dev->writer_state, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
-
     /* Wake up writer thread if it's waiting on the condition variable */
+    /* Signal writer thread to shutdown by atomically setting its state */
     sim_mutex_lock(&dev->writer_lock);
+    sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
     sim_cond_signal(&dev->writer_cond);
     sim_mutex_unlock(&dev->writer_lock);
 
@@ -1915,10 +1914,7 @@ eth_destroy_thread_state(ETH_DEV *dev)
         dev->write_buffers = buffer->next;
         free(buffer);
     }
-    while (NULL != (buffer = dev->write_requests)) {
-        dev->write_requests = buffer->next;
-        free(buffer);
-    }
+    eth_tailq_destroy(&dev->write_requests);
     eth_tailq_destroy(&dev->read_queue);
     dev->threading_initialized = false;
 }
@@ -1941,8 +1937,6 @@ char *msg = "Eth: Can't operate asynchronously, must poll.\n"
 return sim_messagef (SCPE_NOFNC, "%s", msg);
 #else
 
-int wakeup_needed;
-
 if (dev == NULL)
   return SCPE_UNATT;
 if (dev->backend.eth_api == ETH_API_TEST)
@@ -1951,8 +1945,7 @@ if (dev->backend.eth_api == ETH_API_TEST)
 dev->asynch_io = (sim_asynch_enabled != 0);
 dev->asynch_io_latency = latency;
 /* Lock-free queue check */
-wakeup_needed = !sim_tailq_empty(&dev->read_queue);
-if (wakeup_needed) {
+if (!sim_tailq_empty(&dev->read_queue)) {
   sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
   sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
   }
@@ -2409,6 +2402,13 @@ if (dev->backend.eth_api != ETH_API_TEST)
   sim_mutex_init (&dev->startup_lock);
   sim_cond_init (&dev->writer_cond);
   sim_cond_init (&dev->startup_cond);
+  r = eth_tailq_init (&dev->write_requests, 0);
+  if (r != SCPE_OK) {
+    _eth_close_port (&dev->backend, dev->fd_handle);
+    free(dev->name);
+    eth_zero(dev);
+    return r;
+    }
   dev->threads_ready = 0;
   dev->threading_initialized = true;
   create_status = sim_thread_create (&dev->reader_thread, _eth_reader, (void *)dev);
@@ -2943,17 +2943,12 @@ request->packet.status = packet->status;
 request->packet.crc_len = packet->crc_len;
 memcpy(request->packet.msg, packet->msg, packet->len);
 
-/* Insert buffer at the end of the write list (to make sure that */
-/* packets make it to the wire in the order they were presented here) */
+/* Insert buffer at the end of the write queue */
 {
-  int write_queue_size = 1;
-  ETH_WRITE_REQUEST **last_request = &dev->write_requests;
+  int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
 
-  while (*last_request != NULL) {
-    last_request = &(*last_request)->next;
-    ++write_queue_size;
-    }
-  *last_request = request;
+  sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
+
   if (write_queue_size > dev->write_queue_peak)
     dev->write_queue_peak = write_queue_size;
   }
@@ -4125,7 +4120,7 @@ if (dev->bpf_filter)
   fprintf(st, "  BPF Filter: %s\n", dev->bpf_filter);
 #if defined(HAVE_SLIRP_NETWORK)
 if (dev->backend.eth_api == ETH_API_NAT)
-  sim_slirp_show ((sim_slirp_handle *)dev->backend.state.slirp, st);
+  sim_slirp_show ((sim_slirp_network *)dev->backend.state.slirp, st);
 #endif
 }
 

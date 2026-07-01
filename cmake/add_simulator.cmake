@@ -13,15 +13,11 @@ set(SIM_SOURCES
     ${SIMH_CORE_ROOT}/scp_help_engine.c
     ${SIMH_CORE_ROOT}/scp_parse.c
     ${SIMH_CORE_ROOT}/scp_unit.c
-    ${SIMH_LIB_ROOT}/dynstr.c
-    ${SIMH_LIB_ROOT}/xalloc.c
     ${SIMH_RUNTIME_ROOT}/sim_card.c
     ${SIMH_RUNTIME_ROOT}/sim_console.c
     ${SIMH_RUNTIME_ROOT}/sim_disk.c
     ${SIMH_RUNTIME_ROOT}/sim_disk_ramdisk.c
     ${SIMH_RUNTIME_ROOT}/sim_ether.c
-    ${SIMH_RUNTIME_ROOT}/eth_dispatch.c
-    ${SIMH_RUNTIME_ROOT}/eth_threads.c
     ${SIMH_RUNTIME_ROOT}/sim_ether_test.c
     ${SIMH_RUNTIME_ROOT}/sim_fio.c
     ${SIMH_RUNTIME_ROOT}/sim_host_path.c
@@ -29,7 +25,6 @@ set(SIM_SOURCES
     ${SIMH_RUNTIME_ROOT}/sim_rom_patch.c
     ${SIMH_RUNTIME_ROOT}/sim_scsi.c
     ${SIMH_RUNTIME_ROOT}/sim_serial.c
-    ${SIMH_LIB_ROOT}/string_util.c
     ${SIMH_RUNTIME_ROOT}/sim_sock.c
     ${SIMH_RUNTIME_ROOT}/sim_tape.c
     ${SIMH_RUNTIME_ROOT}/sim_tape_testlib.c
@@ -40,14 +35,17 @@ set(SIM_SOURCES
     ${SIMH_RUNTIME_ROOT}/sim_uuid.c
     ${SIMH_RUNTIME_ROOT}/sim_video.c)
 
-if (WITH_NETWORK AND WITH_SLIRP AND HAVE_LIBSLIRP)
-    list(APPEND SIM_SOURCES
-        ${SIMH_RUNTIME_ROOT}/sim_slirp.c)
-endif ()
-
 set(SIM_VIDEO_SOURCES
     ${SIMH_COMPONENTS_ROOT}/display/display.c
     ${SIMH_COMPONENTS_ROOT}/display/sim_ws.c)
+
+## Augment the sim_support library:
+target_sources(sim_support PRIVATE
+    ${SIMH_CORE_ROOT}/scp_debtab.c
+    ${SIMH_LIB_ROOT}/dynstr.c
+    ${SIMH_LIB_ROOT}/string_util.c
+    ${SIMH_LIB_ROOT}/xalloc.c
+)
 
 function(zimh_find_bison command_var job_pool_args_var)
     find_program(ZIMH_BISON_COMMAND
@@ -99,6 +97,7 @@ function(build_simcore _targ)
             "${SIMH_CORE_ROOT}"
             "${SIMH_INCLUDE_ROOT}"
             "${SIMH_RUNTIME_ROOT}"
+            "${SIMH_SOURCE_ROOT}"
             "${SIMH_COMPONENTS_ROOT}"
             "${ZIMH_GENERATED_INCLUDE_DIR}")
 
@@ -133,16 +132,19 @@ function(build_simcore _targ)
         )
 
         target_link_libraries(${lib} PUBLIC
-            simh_network
             simh_regexp
-            os_features
+            sim_support
             sanitizer_options
         )
     endforeach ()
 
-    ## Add extras to the AIO variant:
+    ## Add extras to the AIO variant (which includes the Ethernet and network
+    ## backends):
     target_compile_definitions(${sim_aio_lib} PUBLIC ${AIO_FLAGS})
-    target_link_libraries(${sim_aio_lib} PUBLIC thread_lib)
+    target_link_libraries(${sim_aio_lib} PUBLIC
+        simh_network
+        aio_support
+    )
 
     # Create target cppcheck rule, if detected.
     if (ENABLE_CPPCHECK AND cppcheck_cmd)
@@ -595,7 +597,7 @@ if (WITH_ROMS)
         "${SIMH_CORE_ROOT}"
         "${SIMH_INCLUDE_ROOT}"
         "${SIMH_RUNTIME_ROOT}")
-    target_link_libraries(BuildROMs os_features)
+    target_link_libraries(BuildROMs sim_support)
     add_custom_command(
         OUTPUT
             ${SIMH_SIMULATOR_ROOT}/VAX/vax_ka655x_bin.h

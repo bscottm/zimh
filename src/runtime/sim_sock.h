@@ -26,7 +26,7 @@
 #ifndef SIM_SOCK_H_
 #define SIM_SOCK_H_    1
 
-#if defined (_WIN32)                                    /* Windows */
+#if defined (_WIN32) || defined(_WIN64)                 /* Windows */
 #include <winsock2.h>
 #include <winerror.h>
 
@@ -63,12 +63,15 @@
 #endif
 #define WSAEACCES       EACCES
 #define WSAEINTR        EINTR
+#if !defined(INVALID_SOCKET)
+// pcap.h defines this as well, without the cast.
 #define INVALID_SOCKET  ((SOCKET)-1)
+#endif
 #if !defined(SOCKET_ERROR)
 #define SOCKET_ERROR    (-1)
 #endif
 
-#define PRIsocket "d"                                   /* printf() descriptor for SOCKET */
+#define PRIsocket "u"                                   /* printf() descriptor for SOCKET */
 #endif
 
 #if !defined(CBUFSIZE)

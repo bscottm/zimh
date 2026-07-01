@@ -4,7 +4,9 @@
 #if !defined(SIM_ETH_BACKENDS_H)
 #define SIM_ETH_BACKENDS_H
 
-#include "eth_types.h"
+#include <stdint.h>
+
+#include "eth_backends/eth_types.h"
 
 /* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
  * This prevents redefinition errors on macOS 15.5+ where both net/bpf.h and pcap/bpf.h
@@ -46,7 +48,7 @@ typedef void *pcap_t; /* Pseudo Type to avoid compiler errors */
 #endif /* HAVE_VDE_NETWORK */
 
 #ifdef HAVE_SLIRP_NETWORK
-#    include "sim_slirp.h"
+#    include "eth_backends/slirp/sim_slirp.h"
 #endif
 
 /* Ethernet testing backend. */
@@ -81,7 +83,7 @@ typedef struct {
         VDECONN *vde; /* VDE connection */
 #endif
 #if defined(HAVE_SLIRP_NETWORK)
-        sim_slirp_handle *slirp; /* SLiRP handle */
+        sim_slirp_network *slirp;   /* SLiRP network state */
 #endif
     ETH_TEST_BACKEND *test_backend; /* Test backend handle */
     } state;

@@ -39,6 +39,7 @@ add_unit_test(unit-vax-xs
         VAX_440
         VAX_48
     FEATURE_FULL64
+    USES_AIO
 )
 
 add_unit_test(unit-vax4xx-stddev-behavior
