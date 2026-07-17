@@ -140,7 +140,6 @@ function(build_simcore _targ)
 
     ## Add extras to the AIO variant (which includes the Ethernet and network
     ## backends):
-    target_compile_definitions(${sim_aio_lib} PUBLIC ${AIO_FLAGS})
     target_link_libraries(${sim_aio_lib} PUBLIC
         simh_network
         aio_support

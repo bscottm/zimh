@@ -11,18 +11,6 @@ include(CheckCSourceRuns)
 include(CheckSourceCompiles)
 include(CMakePushCheckState)
 
-## =============================================================================
-## C11 concurrency source fragment
-## =============================================================================
-
-set(C11_THREAD_FRAG "
-#include <threads.h>
-int main(void) {
-    thrd_t thread;
-    return 0;
-}
-")
-
 # =============================================================================
 # The sim_support library
 #
@@ -39,26 +27,6 @@ target_include_directories(sim_support PRIVATE
     "${SIMH_INCLUDE_ROOT}"
     "${SIMH_RUNTIME_ROOT}"
 )
-
-## Linux: Make sure _GNU_SOURCE is defined.
-if (CMAKE_HOST_SYSTEM MATCHES "Linux")
-    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
-    target_compile_definitions(sim_support PUBLIC _GNU_SOURCE)
-endif()
-
-## =============================================================================
-## Windows version configuration: Make sure that it's at least the Win 10 API.
-## =============================================================================
-
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT DEFINED WINVER)
-    # Default to Windows 10 for SetThreadDescription support
-    message(STATUS "Setting Windows target version to Windows 10 (0x0A00)")
-    target_compile_definitions(sim_support PUBLIC
-        WINVER=0x0A00
-        _WIN32_WINNT=0x0A00
-        NTDDI_VERSION=0x0A000002
-    )
-endif()
 
 # =============================================================================
 # The threading and asynchronous I/O library: aio_support
@@ -77,22 +45,28 @@ if(NOT TARGET aio_support)
     )
 endif()
 
-# AIO_FLAGS: Used in add_simulator.cmake to enable asynchronous I/O support primarily
-# in Ethernet devices. It's only useful if the platform threading libraries are
-# detected and building the AIO version of the core libraries.
-set(AIO_FLAGS)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT DEFINED WINVER)
+    # Windows version configuration: Make sure that it's at least the Win 10 API.
+    # Windows 10 has SetThreadDescription support.
+    message(STATUS "Setting Windows target version to Windows 10 (0x0A00)")
+    target_compile_definitions(sim_support PUBLIC
+        WINVER=0x0A00
+        _WIN32_WINNT=0x0A00
+        NTDDI_VERSION=0x0A000002
+    )
+elseif (CMAKE_HOST_SYSTEM MATCHES "Linux")
+    ## Linux: Make sure _GNU_SOURCE is defined.
+    list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 
-# Check if C11 threads are available:
-check_source_compiles(C "${C11_THREAD_FRAG}" HAVE_C11_THREADS)
+    ## Expose _GNU_SOURCE publicly from the sim_support library, since everything uses it.
+    target_compile_definitions(sim_support PUBLIC _GNU_SOURCE)
+    ## Privately, in the aio_support library, it's also needed, but aio_support doesn't depend on sim_support.
+    target_compile_definitions(aio_support PRIVATE _GNU_SOURCE)
+endif()
 
-## Enable when C11 concurrency better integrated. In the meantime, keep looking
-## for pthreads.
-##
-## if (NOT HAVE_C11_THREADS)
-    # Windows / vcpkg Path: Check for our modernized pthreads4w target
-    if(NOT TARGET PTW::PTW AND CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        find_package(PTW)
-    endif()
+# Windows / vcpkg Path: Check for our modernized pthreads4w target
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    find_package(PTW)
 
     if(TARGET PTW::PTW)
         # Forward all header paths, multi-config libs, and definitions to aio_support
@@ -100,38 +74,18 @@ check_source_compiles(C "${C11_THREAD_FRAG}" HAVE_C11_THREADS)
         target_compile_definitions(aio_support PUBLIC HAVE_PTHREADS)
         set(valid_threads TRUE)
         message(STATUS "pthreads-dep: Using modern PTW::PTW interface target")
-    else()
-        # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
-        # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
-        find_package(Threads REQUIRED)
+    endif ()
+else()
+    # POSIX Path: Fallback to native system threads (Linux, FreeBSD, macOS)
+    # FindThreads looks for -pthread, -lpthread, etc. based on platform/compiler
+    find_package(Threads REQUIRED)
 
-        if (TARGET Threads::Threads)
-            # Run the C11 check again, just in case the Linux or macOS compiler requires
-            # linking with the thread library. Obviously, we got this far because
-            # HAVE_C11_THREADS is FALSE.
-            cmake_push_check_state()
-            set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
-            check_source_compiles(C "${C11_THREAD_FRAG}" HAVE_C11_THREADS_WITH_PTHREADS)
-            cmake_pop_check_state()
-
-            if (HAVE_C11_THREADS_WITH_PTHREADS)
-                target_compile_definitions(aio_support PUBLIC HAVE_C11_THREADS)
-                message(STATUS "Using C11 standard concurrency library with Threads::Threads target.")
-            else ()
-                # Nope. Fall back to ordinary pthreads.
-                target_compile_definitions(aio_support PUBLIC HAVE_PTHREADS)
-                message(STATUS "pthreads-dep: Using system native Threads::Threads")
-            endif ()
-
-            # Add Threads::Threads because it's needed whether we're using C11 or native.
-            target_link_libraries(aio_support PUBLIC Threads::Threads)
-        endif ()
+    if (TARGET Threads::Threads)
+        target_compile_definitions(aio_support PUBLIC HAVE_PTHREADS)
+        message(STATUS "pthreads-dep: Using system native Threads::Threads")
+        target_link_libraries(aio_support PUBLIC Threads::Threads)
     endif()
-## Enable me, replace next line: else ()
-if (HAVE_C11_THREADS)
-    message(STATUS "Enabling C11 standard concurrency library.")
-    target_compile_definitions(aio_support PUBLIC HAVE_C11_THREADS)
-endif ()
+endif()
 
 include(uuid-dep)
 
@@ -199,10 +153,6 @@ check_symbol_exists(strndup string.h HAVE_STRNDUP)
 check_symbol_exists(strcasecmp strings.h HAVE_STRCASECMP)
 check_symbol_exists(strncasecmp strings.h HAVE_STRNCASECMP)
 cmake_pop_check_state()
-
-if (HAVE_FMEMOPEN)
-    target_compile_definitions(sim_support PUBLIC HAVE_FMEMOPEN)
-endif ()
 
 configure_uuid_feature(sim_support)
 
@@ -311,6 +261,9 @@ endif (have_glob_h)
 
 cmake_push_check_state()
 check_symbol_exists(fmemopen stdio.h HAVE_FMEMOPEN)
+if (HAVE_FMEMOPEN)
+    target_compile_definitions(sim_support PUBLIC HAVE_FMEMOPEN)
+endif ()
 
 check_c_source_runs("
 #include <stdio.h>
@@ -376,7 +329,7 @@ if (NOT MSVC AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_C_COMPILER_
 endif ()
 
 if (TARGET PTW::PTW OR TARGET Threads::Threads OR HAVE_C11_THREADS)
-    list(APPEND AIO_FLAGS "SIM_ASYNCH_IO" "USE_READER_THREAD")
+    target_compile_definitions(aio_support PUBLIC "SIM_ASYNCH_IO" "USE_READER_THREAD")
 
     # =============================================================================
     # Thread naming capability detection

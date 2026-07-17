@@ -19,7 +19,7 @@ add_library(simh_network STATIC
 )
 
 target_compile_definitions(simh_network PUBLIC
-    ${AIO_FLAGS}
+    aio_support
 )
 
 target_include_directories(simh_network PRIVATE
