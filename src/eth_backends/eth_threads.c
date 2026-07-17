@@ -65,7 +65,6 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
     else
         snprintf(reader_name, sizeof(reader_name), "r: %s", dev->name);
     sim_set_thread_name(reader_name);
-    sim_os_set_thread_priority(PRIORITY_ABOVE_NORMAL);
 
     /* Signal that reader thread is ready */
     sim_mutex_lock(&dev->startup_lock);
@@ -249,7 +248,6 @@ static int eth_writer_init(ETH_DEV *dev)
     else
         snprintf(writer_name, sizeof(writer_name), "w: %s", dev->name);
     sim_set_thread_name(writer_name);
-    sim_os_set_thread_priority(PRIORITY_ABOVE_NORMAL);
 
     /* Signal that writer thread is ready */
     sim_mutex_lock(&dev->startup_lock);

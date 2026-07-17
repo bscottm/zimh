@@ -3422,11 +3422,6 @@ _console_poll(void *arg)
 int wait_count = 0;
 DEVICE *d;
 
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which, in general, won't be readily yielding the processor when
-   this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
 sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - starting\n");
 
 pthread_mutex_lock (&sim_tmxr_poll_lock);
@@ -3712,7 +3707,6 @@ if (sim_log) {
     fflush (sim_log);
     _setmode (_fileno (sim_log), _O_BINARY);
     }
-sim_os_set_thread_priority (PRIORITY_BELOW_NORMAL);
 return SCPE_OK;
 }
 
@@ -3724,7 +3718,6 @@ if (sim_log) {
     fflush (sim_log);
     _setmode (_fileno (sim_log), _O_TEXT);
     }
-sim_os_set_thread_priority (PRIORITY_NORMAL);
 if ((sim_ttisatty ()) &&
     (std_input) &&                                      /* If Not Background process? */
     (std_input != INVALID_HANDLE_VALUE) &&
@@ -3989,7 +3982,6 @@ if (ioctl (0, TIOCSETC, &runtchars) < 0)
     return SCPE_TTIERR;
 if (ioctl (0, TIOCSLTC, &runltchars) < 0)
     return SCPE_TTIERR;
-sim_os_set_thread_priority (PRIORITY_BELOW_NORMAL)l     /* lower priority */
 return SCPE_OK;
 }
 
@@ -3997,7 +3989,6 @@ static t_stat sim_os_ttcmd (void)
 {
 sim_debug (DBG_TRC, &sim_con_telnet, "sim_os_ttcmd() - BSDTTY\n");
 
-sim_os_set_thread_priority (PRIORITY_NORMAL);           /* restore priority */
 fcntl (0, F_SETFL, cmdfl);                              /* block mode */
 if (ioctl (0, TIOCSETP, &cmdtty) < 0)
     return SCPE_TTIERR;
@@ -4188,7 +4179,6 @@ if (!sigint_message_issued) {
 #endif
 if (tcsetattr (fileno(stdin), TCSETATTR_ACTION, &runtty) < 0)
     return SCPE_TTIERR;
-sim_os_set_thread_priority (PRIORITY_BELOW_NORMAL);     /* try to lower pri */
 return SCPE_OK;
 }
 
@@ -4198,7 +4188,6 @@ sim_debug (DBG_TRC, &sim_con_telnet, "sim_os_ttcmd() - BSDTTY\n");
 
 if (!isatty (fileno (stdin)))                           /* skip if !tty */
     return SCPE_OK;
-sim_os_set_thread_priority (PRIORITY_NORMAL);           /* try to raise pri */
 (void)fcntl (0, F_SETFL, cmdfl);                        /* block mode */
 if (tcsetattr (fileno(stdin), TCSETATTR_ACTION, &cmdtty) < 0)
     return SCPE_TTIERR;

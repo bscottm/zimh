@@ -3994,11 +3994,6 @@ UNIT **activated = NULL;
 SOCKET *sockets = NULL;
 int wait_count = 0;
 
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which, in general, won't be readily yielding the processor when
-   this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
 sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - starting\n");
 
 units = (UNIT **)calloc(FD_SETSIZE, sizeof(*units));
@@ -4209,11 +4204,6 @@ UNIT **units = NULL;
 UNIT **activated = NULL;
 SERHANDLE *serports = NULL;
 int wait_count = 0;
-
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which, in general, won't be readily yielding the processor when
-   this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 
 sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_serial_poll() - starting\n");
 

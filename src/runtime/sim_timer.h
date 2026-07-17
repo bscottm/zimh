@@ -110,7 +110,6 @@ bool sim_timer_idle_capable (uint32_t *host_ms_sleep_1, uint32_t *host_tick_ms);
 #define PRIORITY_BELOW_NORMAL  -1
 #define PRIORITY_NORMAL         0
 #define PRIORITY_ABOVE_NORMAL   1
-t_stat sim_os_set_thread_priority (int below_normal_above);
 uint32_t sim_get_rom_delay_factor (void);
 void sim_set_rom_delay_factor (uint32_t delay);
 uint32_t sim_rom_read_with_delay (uint32_t val);

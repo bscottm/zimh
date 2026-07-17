@@ -2280,8 +2280,6 @@ if (!initialized) {
 
 sim_debug (SIM_VID_DBG_VIDEO|SIM_VID_DBG_KEY|SIM_VID_DBG_MOUSE, vptr0->vid_dev, "vid_thread() - Starting\n");
 
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
 if (!vid_new_window (vptr0)) {
     return 0;
     }

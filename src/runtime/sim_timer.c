@@ -218,7 +218,6 @@ static uint32_t _compute_minimum_sleep (void)
 {
 uint32_t i, tot, tim;
 
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
 #if defined(MS_MIN_GRANULARITY) && (MS_MIN_GRANULARITY != 1)
 real_sim_idle_ms_sleep (2);         /* Start sampling on a tick boundary */
 for (i = 0, tot = 0; i < sleep1Samples; i++)
@@ -241,7 +240,6 @@ for (i = 0, tot = 0; i < sleep1Samples; i++)
     tot += sim_idle_ms_sleep (sim_os_sleep_min_ms + 1);
 tim = tot / sleep1Samples;          /* Truncated average */
 sim_os_sleep_inc_ms = tim - sim_os_sleep_min_ms;
-sim_os_set_thread_priority (PRIORITY_NORMAL);
 return sim_os_sleep_min_ms;
 }
 
@@ -285,59 +283,6 @@ uint32_t sim_idle_ms_sleep (uint_t msec)
 return sim_os_ms_sleep (msec);
 }
 #endif
-
-/* Mark the need for the sim_os_set_thread_priority routine, */
-/* allowing the feature and/or platform dependent code to provide it */
-#define NEED_THREAD_PRIORITY
-
-/* If we've got pthreads support then use pthreads mechanisms */
-#if defined(USE_READER_THREAD)
-
-#undef NEED_THREAD_PRIORITY
-
-#if defined(_WIN32)
-/* On Windows there are several potentially disjoint threading APIs */
-/* in use (base win32 pthreads, libSDL provided threading, and direct */
-/* calls to beginthreadex), so go directly to the Win32 threading APIs */
-/* to manage thread priority */
-t_stat sim_os_set_thread_priority (int below_normal_above)
-{
-const static int val[3] = {THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_ABOVE_NORMAL};
-
-if ((below_normal_above < -1) || (below_normal_above > 1))
-    return SCPE_ARG;
-SetThreadPriority (GetCurrentThread(), val[1 + below_normal_above]);
-return SCPE_OK;
-}
-#else
-/* Native pthreads priority implementation */
-t_stat sim_os_set_thread_priority (int below_normal_above)
-{
-int sched_policy, min_prio, max_prio;
-struct sched_param sched_priority;
-
-if ((below_normal_above < -1) || (below_normal_above > 1))
-    return SCPE_ARG;
-
-pthread_getschedparam (pthread_self(), &sched_policy, &sched_priority);
-min_prio = sched_get_priority_min(sched_policy);
-max_prio = sched_get_priority_max(sched_policy);
-switch (below_normal_above) {
-    case PRIORITY_BELOW_NORMAL:
-        sched_priority.sched_priority = min_prio;
-        break;
-    case PRIORITY_NORMAL:
-        sched_priority.sched_priority = (max_prio + min_prio) / 2;
-        break;
-    case PRIORITY_ABOVE_NORMAL:
-        sched_priority.sched_priority = max_prio;
-        break;
-    }
-pthread_setschedparam (pthread_self(), sched_policy, &sched_priority);
-return SCPE_OK;
-}
-#endif
-#endif  /* defined(USE_READER_THREAD) */
 
 /* OS-dependent timer and clock routines */
 
@@ -415,45 +360,6 @@ uint32_t sim_os_ms_sleep_init (void)
 return _compute_minimum_sleep ();
 }
 
-#if defined(NEED_THREAD_PRIORITY)
-#undef NEED_THREAD_PRIORITY
-#include <sys/time.h>
-#include <sys/resource.h>
-
-t_stat sim_os_set_thread_priority (int below_normal_above)
-{
-if ((below_normal_above < -1) || (below_normal_above > 1))
-    return SCPE_ARG;
-
-errno = 0;
-switch (below_normal_above) {
-    case PRIORITY_BELOW_NORMAL:
-        if ((getpriority (PRIO_PROCESS, 0) <= 0) &&     /* at or above normal pri? */
-            (errno == 0))
-            setpriority (PRIO_PROCESS, 0, 10);
-        break;
-    case PRIORITY_NORMAL:
-        if (getpriority (PRIO_PROCESS, 0) != 0)         /* at or above normal pri? */
-            setpriority (PRIO_PROCESS, 0, 0);
-        break;
-    case PRIORITY_ABOVE_NORMAL:
-        if ((getpriority (PRIO_PROCESS, 0) <= 0) &&     /* at or above normal pri? */
-            (errno == 0))
-            setpriority (PRIO_PROCESS, 0, -10);
-        break;
-    }
-return SCPE_OK;
-}
-#endif  /* defined(NEED_THREAD_PRIORITY) */
-
-#endif
-
-/* If one hasn't been provided yet, then just stub it */
-#if defined(NEED_THREAD_PRIORITY)
-t_stat sim_os_set_thread_priority (int below_normal_above)
-{
-return SCPE_OK;
-}
 #endif
 
 #if defined(MS_MIN_GRANULARITY) && (MS_MIN_GRANULARITY != 1)

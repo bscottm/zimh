@@ -295,11 +295,6 @@ _disk_io(void *arg)
 UNIT* volatile uptr = (UNIT*)arg;
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
-/* Boost Priority for this I/O thread vs the CPU instruction execution
-   thread which in general won't be readily yielding the processor when
-   this thread needs to run */
-sim_os_set_thread_priority (PRIORITY_ABOVE_NORMAL);
-
 sim_debug_unit (ctx->dbit, uptr, "_disk_io(unit=%d) starting\n", (int)(uptr - ctx->dptr->units));
 
 pthread_mutex_lock (&ctx->io_lock);
