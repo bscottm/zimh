@@ -3983,8 +3983,7 @@ pthread_cond_t      sim_tmxr_startup_cond;
 int32_t             sim_tmxr_poll_count = 0;
 bool                sim_tmxr_poll_running = false;
 
-static void *
-_tmxr_poll(void *arg)
+static THREAD_FUNC_DEFN(_tmxr_poll)
 {
 struct timeval timeout;
 int timeout_usec;
@@ -4191,7 +4190,7 @@ free(sockets);
 
 sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - exiting\n");
 
-return NULL;
+return THREAD_FUNC_RETURN(0);
 }
 
 #if defined(_WIN32)
@@ -4311,27 +4310,25 @@ if ((tmxr_open_device_count > 0) &&
     sim_asynch_enabled           &&
     sim_is_running               &&
     !sim_tmxr_poll_running) {
-    pthread_attr_t attr;
     int create_status;
 
     pthread_cond_init (&sim_tmxr_startup_cond, NULL);
-    pthread_attr_init (&attr);
-    pthread_attr_setscope (&attr, PTHREAD_SCOPE_SYSTEM);
     sim_tmxr_poll_running = false;
-    create_status = pthread_create (&sim_tmxr_poll_thread, &attr, _tmxr_poll,
-                                    NULL);
-    pthread_attr_destroy( &attr);
-    if (create_status != 0) {
+    create_status = sim_thread_create(&sim_tmxr_poll_thread, _tmxr_poll, NULL);
+    if (create_status == 0) {
+        while (!sim_tmxr_poll_running)             /* Wait for thread to stabilize */
+            pthread_cond_wait (&sim_tmxr_startup_cond, &sim_tmxr_poll_lock);
         pthread_cond_destroy (&sim_tmxr_startup_cond);
-        pthread_mutex_unlock (&sim_tmxr_poll_lock);
-        return sim_messagef (
-            SCPE_IOERR, "TMXR: can't start asynchronous poll thread: %s\n",
-            strerror (create_status));
+    } else {
+        if (create_status != 0) {
+            pthread_cond_destroy (&sim_tmxr_startup_cond);
+            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+            return sim_messagef (
+                SCPE_IOERR, "TMXR: can't start asynchronous poll thread: %s\n",
+                strerror (create_status));
+        }
     }
-    while (!sim_tmxr_poll_running)             /* Wait for thread to stabilize */
-        pthread_cond_wait (&sim_tmxr_startup_cond, &sim_tmxr_poll_lock);
-    pthread_cond_destroy (&sim_tmxr_startup_cond);
-    }
+}
 pthread_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 return SCPE_OK;

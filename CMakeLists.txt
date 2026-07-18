@@ -76,13 +76,11 @@ configure_file(
     "${ZIMH_GENERATED_INCLUDE_DIR}/zimh_version.h"
     @ONLY)
 
-# if (WIN32)
-# enable_language(RC)
-
 include(GNUInstallDirs)
 
 # Default build type if multi-config generator isn't used
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    message(STATUS "No build type selected, defaulting to Release")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build." FORCE)
 endif()
 
@@ -99,9 +97,9 @@ option(WITH_UNIT_TESTS "Enable host-side unit tests using cmocka." ON)
 option(WITH_ROMS "Enable internal support ROM generation." ON)
 
 # Sanitizer options:
-option(SANITIZE_ADDRESS   "Enable the address sanitizer" OFF)
-option(SANITIZE_THREAD    "Enable the thread sanitizer" OFF)
-option(SANITIZE_MEMORY    "Enable the memory sanitizer" OFF)
+option(SANITIZE_ADDRESS "Enable the address sanitizer" OFF)
+option(SANITIZE_THREAD "Enable the thread sanitizer" OFF)
+option(SANITIZE_MEMORY "Enable the memory sanitizer" OFF)
 option(SANITIZE_UNDEFINED "Enable the undefined behavior sanitizer" OFF)
 
 if(WIN32)
@@ -122,28 +120,14 @@ include(c-dialect)
 # Runtime execution sanitizers
 include(sanitizers)
 
-# Modern Runtime Output Alignment
+# Output artifact directory setup (multi-config aware):
 #
-# Strategy for output directories:
-# - Multi-config generators (VS, Xcode, Ninja Multi-Config):
-#     Use per-config output directories to separate Debug/Release/etc.
-#     Result: ${CMAKE_BINARY_DIR}/bin/Debug, ${CMAKE_BINARY_DIR}/bin/Release, etc.
-# - Single-config generators (Ninja, Make):
-#     Use a single output directory since only one config is built at a time.
-#     Result: ${CMAKE_BINARY_DIR}/bin
-#
-# The preset's binaryDir determines the base (e.g., build/Debug, build-vs2022)
-# We append /bin to organize runtime artifacts consistently.
+# Single configuration generators (plain Ninja, Makefile) already set the
+# runtime output directory to ".../bin/${CMAKE_BUILD_TYPE}".
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
-# For multi-config generators, set per-configuration subdirectories.
-# Single-config generators ignore these per-config variables.
 if(CMAKE_CONFIGURATION_TYPES)
-    foreach(cfg IN ITEMS Debug Release RelWithDebInfo MinSizeRel)
-        string(TOUPPER "${cfg}" cfg_upper)
-        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg_upper} "${CMAKE_BINARY_DIR}/bin/${cfg}")
-    endforeach()
+    string(APPEND CMAKE_RUNTIME_OUTPUT_DIRECTORY "/$<CONFIG>")
 endif()
 
 message(STATUS "Binary and runtime artifacts base: ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")

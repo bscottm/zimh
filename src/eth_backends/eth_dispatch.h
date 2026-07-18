@@ -6,8 +6,6 @@
 #ifndef ETH_DISPATCH_H
 #define ETH_DISPATCH_H
 
-#include "sim_ether.h"
-
 /*============================================================================*/
 /*                    Reader/Writer Machine Status                            */
 /*============================================================================*/
@@ -37,13 +35,7 @@ typedef enum eth_writer_state_e {
  */
 typedef int (*eth_reader_dispatch_fn)(ETH_DEV *dev);
 
-/* Writer dispatch function: writes one packet using the specified API.
- * Returns: 0 = success, non-zero = error
- */
-typedef int (*eth_writer_dispatch_fn)(ETH_DEV *dev, const ETH_PACK *packet);
-
 /* Dispatch tables - one entry per API type, indexed by eth_api_t */
 extern const eth_reader_dispatch_fn eth_reader_dispatch_table[ETH_API_COUNT];
-extern const eth_writer_dispatch_fn eth_writer_dispatch_table[ETH_API_COUNT];
 
 #endif /* ETH_DISPATCH_H */

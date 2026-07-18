@@ -64,6 +64,11 @@ struct eth_write_request {
     struct eth_write_request *next;
     ETH_PACK packet;
 };
+
 typedef struct eth_write_request ETH_WRITE_REQUEST;
+
+/* Actual struct eth_device declared in sim_ether.h */
+typedef struct eth_device ETH_DEV;
+
 
 #endif

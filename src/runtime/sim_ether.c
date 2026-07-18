@@ -1206,7 +1206,7 @@ int eth_devices(int max, ETH_LIST* list, bool framers)
 {
 int used = 0;
 char errbuf[PCAP_ERRBUF_SIZE] = "";
-#ifndef DONT_USE_PCAP_FINDALLDEVS
+#    ifndef DONT_USE_PCAP_FINDALLDEVS
 pcap_if_t* alldevs;
 pcap_if_t* dev;
 ETH_DEV edev;
@@ -1221,7 +1221,10 @@ if (pcap_findalldevs(&alldevs, errbuf) == -1) {
 else {
   /* copy device list into the passed structure */
   for (used=0, dev=alldevs; dev && (used < max); dev=dev->next) {
-    edev.backend.eth_api = ETH_API_PCAP;
+      edev.backend.eth_api = ETH_API_PCAP;
+      edev.backend.before_packet_write = NULL;
+      edev.backend.write_packet = eth_writer_pcap;
+      edev.backend.after_packet_write = NULL;
     eth_get_nic_hw_addr (&edev, dev->name, 0);
     if ((memcmp (edev.host_nic_phy_hw_addr, framer_oui, 3) == 0) != framers)
       continue;
@@ -1972,7 +1975,7 @@ if (dev == NULL) return SCPE_UNATT;
 
 dev->asynch_io = false;
 return SCPE_OK;
-#endif
+#    endif
 }
 
 t_stat eth_set_throttle (ETH_DEV* dev, uint32_t time, uint32_t burst, uint32_t delay)
@@ -1996,6 +1999,9 @@ if (bufsz < ETH_MAX_JUMBO_FRAME)
   bufsz = ETH_MAX_JUMBO_FRAME;    /* Enable handling of jumbo frames */
 
 backend->eth_api = ETH_API_NONE;
+backend->before_packet_write = NULL;
+backend->write_packet = eth_writer_none;
+backend->after_packet_write = NULL;
 memset(&backend->state, 0, sizeof(backend->state));
 *fd_handle = 0;
 
@@ -2112,12 +2118,15 @@ else if (0 == strncmp("tap:", savname, 4)) {
 #endif /* !defined(__linux) && !defined(HAVE_BSDTUNTAP) */
   if (0 == errbuf[0]) {
     backend->eth_api = ETH_API_TAP;
+    backend->before_packet_write = NULL;
+    backend->write_packet = eth_writer_tap;
+    backend->after_packet_write = NULL;
     /* No additional state recorded in the backend.*/
     }
   }
 else { /* !tap: */
   if (0 == strncmp("vde:", savname, 4)) {
-#if defined(HAVE_VDE_NETWORK)
+#    if defined(HAVE_VDE_NETWORK)
     char vdeswitch_s[CBUFSIZE]; /* VDE switch name */
     char vdeport_s[CBUFSIZE];   /* VDE switch port (optional), numeric */
 
@@ -2144,7 +2153,10 @@ else { /* !tap: */
     if ((backend->state.vde = vde_open((char *)vdeswitch_s, (char *)"simh", &voa)) == NULL)
       strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
     else {
-      backend->eth_api = ETH_API_VDE;
+        backend->eth_api = ETH_API_VDE;
+        backend->before_packet_write = NULL;
+        backend->write_packet = eth_writer_vde;
+        backend->after_packet_write = NULL;
       *fd_handle = (SOCKET) vde_datafd(backend->state.vde);
       }
 #else
@@ -2153,20 +2165,23 @@ else { /* !tap: */
     }
   else { /* !vde: */
     if (0 == strncmp("nat:", savname, 4)) {
-#if defined(HAVE_SLIRP_NETWORK)
+#    if defined(HAVE_SLIRP_NETWORK)
       const char *devname = savname + 4;
 
       while (isspace(*devname))
         ++devname;
       if ((backend->state.slirp = sim_slirp_open(devname, opaque, &_slirp_callback, dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)) != NULL) {
-        backend->eth_api = ETH_API_NAT;
+          backend->eth_api = ETH_API_NAT;
+          backend->before_packet_write = before_slirp_send;
+          backend->write_packet = eth_writer_nat;
+          backend->after_packet_write = after_slirp_send;
         *fd_handle = 0;
       } else {
         strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
       }
 #else
       strlcpy(errbuf, "No support for nat: network devices", PCAP_ERRBUF_SIZE);
-#endif /* defined(HAVE_SLIRP_NETWORK) */
+#    endif /* defined(HAVE_SLIRP_NETWORK) */
       }
     else { /* not nat: */
       if (0 == strncmp("udp:", savname, 4)) {
@@ -2192,6 +2207,9 @@ else { /* !tap: */
         if (INVALID_SOCKET == *fd_handle)
           return SCPE_OPENERR;
         backend->eth_api = ETH_API_UDP;
+        backend->before_packet_write = NULL;
+        backend->write_packet = eth_writer_udp;
+        backend->after_packet_write = NULL;
         }
       else { /* not udp:, so attempt to open the parameter as if it were an explicit device name */
 #if defined(HAVE_PCAP_NETWORK)
@@ -2402,7 +2420,7 @@ if (dev->backend.eth_api != ETH_API_TEST)
   sim_mutex_init (&dev->startup_lock);
   sim_cond_init (&dev->writer_cond);
   sim_cond_init (&dev->startup_cond);
-  r = eth_tailq_init (&dev->write_requests, 0);
+  r = eth_tailq_init (&dev->write_requests, 200);
   if (r != SCPE_OK) {
     _eth_close_port (&dev->backend, dev->fd_handle);
     free(dev->name);
@@ -2882,7 +2900,7 @@ if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
   }
 
     /* dispatch write request (synchronous; no need to save write info to dev) */
-  status = eth_writer_dispatch_table[dev->backend.eth_api](dev, packet);
+  status = dev->backend.write_packet(dev, packet);
 
   ++dev->packets_sent;              /* basic bookkeeping */
   /* On error, correct loopback bookkeeping */
@@ -2944,18 +2962,22 @@ request->packet.crc_len = packet->crc_len;
 memcpy(request->packet.msg, packet->msg, packet->len);
 
 /* Insert buffer at the end of the write queue */
-{
-  int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
+int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
 
-  sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
+sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
 
-  if (write_queue_size > dev->write_queue_peak)
+if (write_queue_size > dev->write_queue_peak) {
     dev->write_queue_peak = write_queue_size;
-  }
+}
 
-/* Awaken writer thread to perform actual write */
-sim_cond_signal (&dev->writer_cond);
-sim_mutex_unlock (&dev->writer_lock);
+/* Awaken writer thread to perform actual write. Don't bang on the condition signal
+ * for every packet -- only if the queue depth is 2 or less (possible previous packet
+ * and the one we just added == 2.) */
+if (write_queue_size <= 2) {
+    sim_cond_signal (&dev->writer_cond);
+}
+
+sim_mutex_unlock(&dev->writer_lock);
 
 /* Return with a status from some prior write */
 if (routine)

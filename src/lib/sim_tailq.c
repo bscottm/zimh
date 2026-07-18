@@ -3,6 +3,8 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+
+#include "sim_defs.h"
 #include "sim_tailq.h"
 #include "sim_threads.h"
 
@@ -57,7 +59,7 @@ void sim_tailq_destroy(sim_tailq_t *tailq, void (*free_item)(sim_tailq_item_t))
 
         sim_atomic_destroy(&p->item_status);
         sim_atomic_ptr_destroy(&p->next);
-        
+
         sim_tailq_elem_t *to_free = p;
         p = next;
         free(to_free);
@@ -88,7 +90,7 @@ sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform
     if (tail_next == head) {
         /* Queue full, add more nodes */
         if (tailq_add_node(tailq) == NULL) {
-            return NULL;  /* Allocation failed */
+            return NULL; /* Allocation failed */
         }
     }
 
@@ -118,7 +120,7 @@ sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq)
      * ACQUIRE: ensures we see producer's writes */
     head = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->head, SIM_ATOMIC_ACQUIRE);
     tail = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->tail, SIM_ATOMIC_ACQUIRE);
-    
+
     if (head == tail)
         return NULL;
 
@@ -171,7 +173,8 @@ sim_tailq_elem_t *tailq_alloc_nodes(sim_tailq_t *tailq, size_t count)
                 sim_tailq_elem_t *p = first;
                 do {
                     sim_tailq_elem_t *next = (sim_tailq_elem_t *)sim_atomic_ptr_get(&p->next);
-                    if (next == first) next = NULL;
+                    if (next == first)
+                        next = NULL;
                     sim_atomic_destroy(&p->item_status);
                     sim_atomic_ptr_destroy(&p->next);
                     free(p);
@@ -183,7 +186,7 @@ sim_tailq_elem_t *tailq_alloc_nodes(sim_tailq_t *tailq, size_t count)
 
         node->item = NULL;
         sim_atomic_init(&node->item_status);
-        sim_atomic_put(&node->item_status, TAILQ_ITEM_BUSY);  /* New nodes start BUSY */
+        sim_atomic_put(&node->item_status, TAILQ_ITEM_BUSY); /* New nodes start BUSY */
         sim_atomic_ptr_init(&node->next);
 
         if (first != NULL) {
@@ -211,7 +214,7 @@ sim_tailq_elem_t *advance_head(sim_tailq_t *tailq)
      * ACQUIRE: see producer's writes to the node */
     old_head = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->head, SIM_ATOMIC_ACQUIRE);
     new_head = (sim_tailq_elem_t *)sim_atomic_ptr_get(&old_head->next);
-    
+
     /* RELEASE: make our consumption visible to producer */
     sim_atomic_ptr_put_explicit(&tailq->head, new_head, SIM_ATOMIC_RELEASE);
 
@@ -227,7 +230,7 @@ sim_tailq_elem_t *advance_tail(sim_tailq_t *tailq)
      * ACQUIRE: see consumer's writes (item = NULL) */
     old_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->tail, SIM_ATOMIC_ACQUIRE);
     new_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&old_tail->next);
-    
+
     /* RELEASE: make tail advance visible to consumer */
     sim_atomic_ptr_put_explicit(&tailq->tail, new_tail, SIM_ATOMIC_RELEASE);
 
@@ -262,12 +265,12 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
         /* Try to update current_tail->next to point to new node */
         expected = tail_next;
         if (sim_atomic_ptr_cas(&current_tail->next, &expected, node)) {
-            break;  /* Success */
+            break; /* Success */
         }
 
         /* CAS failed - check if tail moved */
         if ((sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail) != current_tail) {
-            continue;  /* Tail moved, retry */
+            continue; /* Tail moved, retry */
         }
     } while (1);
 

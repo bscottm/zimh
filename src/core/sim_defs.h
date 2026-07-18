@@ -98,81 +98,82 @@
 */
 
 #ifndef SIM_DEFS_H_
-#define SIM_DEFS_H_    1
+#    define SIM_DEFS_H_ 1
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-#include <math.h>
-#include <setjmp.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#    include <ctype.h>
+#    include <errno.h>
+#    include <limits.h>
+#    include <math.h>
+#    include <setjmp.h>
+#    include <stdbool.h>
+#    include <stdarg.h>
+#    include <stddef.h>
+#    include <stdint.h>
+#    include <stdio.h>
+#    include <stdlib.h>
+#    include <string.h>
 
-#ifndef EXIT_FAILURE
-#define EXIT_FAILURE 1
-#endif
-#ifndef EXIT_SUCCESS
-#define EXIT_SUCCESS 0
-#endif
+#    ifndef EXIT_FAILURE
+#        define EXIT_FAILURE 1
+#    endif
+#    ifndef EXIT_SUCCESS
+#        define EXIT_SUCCESS 0
+#    endif
 
+#    ifdef _WIN32
+#        include <winsdkver.h>
+#        include <sdkddkver.h>
 
-#ifdef _WIN32
-#include <winsdkver.h>
-#include <sdkddkver.h>
+#        if WINVER < 0x0A00 || _WIN32_WINNT < 0x0A00
+#            error ZIMH requires a Windows 10 or newer API target.
+#        endif
 
-#if WINVER < 0x0A00 || _WIN32_WINNT < 0x0A00
-#error ZIMH requires a Windows 10 or newer API target.
-#endif
+#        define WINDOWS_LEAN_AND_MEAN
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <winerror.h>
-#undef PACKED                       /* avoid macro name collision */
-#undef ERROR                        /* avoid macro name collision */
-#undef MEM_MAPPED                   /* avoid macro name collision */
-#include <process.h>
-#endif
+#        include <winsock2.h>
+#        include <ws2tcpip.h>
+#        include <windows.h>
+#        include <winerror.h>
+#        undef PACKED     /* avoid macro name collision */
+#        undef ERROR      /* avoid macro name collision */
+#        undef MEM_MAPPED /* avoid macro name collision */
+#        include <process.h>
+#    endif
 
-#include "c_attrs.h"
-#include "string_compat.h"
+#    include "c_attrs.h"
+#    include "string_compat.h"
 
-#if defined(_WIN32)
-#include "sim_win32_compat.h"
-#endif
+#    if defined(_WIN32)
+#        include "sim_win32_compat.h"
+#    endif
 
 /* avoid macro names collisions */
-#ifdef PMASK
-#undef PMASK
-#endif
-#ifdef RS
-#undef RS
-#endif
-#ifdef PAGESIZE
-#undef PAGESIZE
-#endif
+#    ifdef PMASK
+#        undef PMASK
+#    endif
+#    ifdef RS
+#        undef RS
+#    endif
+#    ifdef PAGESIZE
+#        undef PAGESIZE
+#    endif
 
 /*
  * Prevent inlining where call frame boundaries are useful for debugging,
  * instrumentation, or host-specific behavior.
  */
-#if !defined(SIM_NOINLINE)
-#if defined(_MSC_VER)
-#define SIM_NOINLINE _declspec(noinline)
-#elif defined(__GNUC__) || defined(__clang__)
-#define SIM_NOINLINE __attribute__((noinline))
-#else
-#define SIM_NOINLINE
-#endif
-#endif
+#    if !defined(SIM_NOINLINE)
+#        if defined(_MSC_VER)
+#            define SIM_NOINLINE _declspec(noinline)
+#        elif defined(__GNUC__) || defined(__clang__)
+#            define SIM_NOINLINE __attribute__((noinline))
+#        else
+#            define SIM_NOINLINE
+#        endif
+#    endif
 
 /* Unused argument macro: easier to comprehend than a "(void) var;" statement. */
-#define SIM_UNUSED_ARG(x)(void) x
+#    define SIM_UNUSED_ARG(x) (void)x
 
 /* Unused function attribute: easier to comprehend than a complicated compiler
    attribute */
@@ -187,82 +188,81 @@
 #        endif
 #    endif
 
-#ifndef MAX
-#define MAX(a, b) (((a) >= (b)) ? (a) : (b))
-#endif
-#ifndef MIN
-#define MIN(a, b) (((a) <= (b)) ? (a) : (b))
-#endif
+#    ifndef MAX
+#        define MAX(a, b) (((a) >= (b)) ? (a) : (b))
+#    endif
+#    ifndef MIN
+#        define MIN(a, b) (((a) <= (b)) ? (a) : (b))
+#    endif
 
-typedef int             t_stat;                         /* status */
+typedef int t_stat;                               /* status */
 
-#if defined (USE_INT64)                                 /* 64b data */
-typedef int64_t         t_svalue;                       /* signed value */
-typedef uint64_t        t_value;                        /* value */
-#define T_VALUE_MAX     0xffffffffffffffffuLL
-#define T_SVALUE_MAX    0x7fffffffffffffffLL
-#else                                                   /* 32b data */
-typedef int32_t         t_svalue;
-typedef uint32_t        t_value;
-#define T_VALUE_MAX     0xffffffffUL
-#define T_SVALUE_MAX    0x7fffffffL
-#endif                                                  /* end 64b data */
+#    if defined(USE_INT64)                        /* 64b data */
+typedef int64_t t_svalue;                         /* signed value */
+typedef uint64_t t_value;                         /* value */
+#        define T_VALUE_MAX 0xffffffffffffffffuLL
+#        define T_SVALUE_MAX 0x7fffffffffffffffLL
+#    else                                         /* 32b data */
+typedef int32_t t_svalue;
+typedef uint32_t t_value;
+#        define T_VALUE_MAX 0xffffffffUL
+#        define T_SVALUE_MAX 0x7fffffffL
+#    endif                                        /* end 64b data */
 
-#if defined (USE_INT64) && defined (USE_ADDR64)         /* 64b address */
-typedef uint64_t        t_addr;
-#define T_ADDR_W        64
-#else                                                   /* 32b address */
-typedef uint32_t        t_addr;
-#define T_ADDR_W        32
-#endif                                                  /* end 64b address */
+#    if defined(USE_INT64) && defined(USE_ADDR64) /* 64b address */
+typedef uint64_t t_addr;
+#        define T_ADDR_W 64
+#    else                                         /* 32b address */
+typedef uint32_t t_addr;
+#        define T_ADDR_W 32
+#    endif                                        /* end 64b address */
 
-#define STACKBUFSIZE 2048
+#    define STACKBUFSIZE 2048
 
-#if defined (_WIN32)
-#define NULL_DEVICE "NUL:"
-#else
-#define NULL_DEVICE "/dev/null"
-#endif
+#    if defined(_WIN32)
+#        define NULL_DEVICE "NUL:"
+#    else
+#        define NULL_DEVICE "/dev/null"
+#    endif
 
 /* Packed structure support */
 
-#ifdef _MSC_VER
-# define PACKED_BEGIN __pragma( pack(push, 1) )
-# define PACKED_END __pragma( pack(pop) )
-#else
-# define PACKED_BEGIN
-#if defined(_WIN32)
-# define PACKED_END __attribute__((gcc_struct, packed))
-#else
-# define PACKED_END __attribute__((packed))
-#endif
-#endif
-
+#    ifdef _MSC_VER
+#        define PACKED_BEGIN __pragma(pack(push, 1))
+#        define PACKED_END __pragma(pack(pop))
+#    else
+#        define PACKED_BEGIN
+#        if defined(_WIN32)
+#            define PACKED_END __attribute__((gcc_struct, packed))
+#        else
+#            define PACKED_END __attribute__((packed))
+#        endif
+#    endif
 
 /* System independent definitions */
 
-#define FLIP_SIZE       (1 << 16)                       /* flip buf size */
-#if !defined (PATH_MAX)                                 /* usually in limits */
-#define PATH_MAX        512
-#endif
-#if (PATH_MAX >= 128)
-#define CBUFSIZE        (128 + PATH_MAX)                /* string buf size */
-#else
-#define CBUFSIZE        256
-#endif
+#    define FLIP_SIZE (1 << 16) /* flip buf size */
+#    if !defined(PATH_MAX)      /* usually in limits */
+#        define PATH_MAX 512
+#    endif
+#    if (PATH_MAX >= 128)
+#        define CBUFSIZE (128 + PATH_MAX) /* string buf size */
+#    else
+#        define CBUFSIZE 256
+#    endif
 
 /* Breakpoint spaces definitions */
 
-#define SIM_BKPT_N_SPC  (1 << (32 - SIM_BKPT_V_SPC))    /* max number spaces */
-#define SIM_BKPT_V_SPC  (BRK_TYP_MAX + 1)               /* location in arg */
+#    define SIM_BKPT_N_SPC (1 << (32 - SIM_BKPT_V_SPC)) /* max number spaces */
+#    define SIM_BKPT_V_SPC (BRK_TYP_MAX + 1)            /* location in arg */
 
 /* Extended switch definitions (bits >= 26) */
 
-#define SIM_SW_HIDE     (1u << 26)                      /* enable hiding */
-#define SIM_SW_REST     (1u << 27)                      /* attach/restore */
-#define SIM_SW_REG      (1u << 28)                      /* register value */
-#define SIM_SW_STOP     (1u << 29)                      /* stop message */
-#define SIM_SW_SHUT     (1u << 30)                      /* shutdown */
+#    define SIM_SW_HIDE (1u << 26) /* enable hiding */
+#    define SIM_SW_REST (1u << 27) /* attach/restore */
+#    define SIM_SW_REG (1u << 28)  /* register value */
+#    define SIM_SW_STOP (1u << 29) /* stop message */
+#    define SIM_SW_SHUT (1u << 30) /* shutdown */
 
 /* Simulator status codes
 
@@ -271,90 +271,90 @@ typedef uint32_t        t_addr;
    SCPE_BASE - n        general
 */
 
-#define SCPE_OK         0                               /* normal return */
-#define SCPE_BASE       64                              /* base for messages */
-#define SCPE_NXM        (SCPE_BASE + 0)                 /* nxm */
-#define SCPE_UNATT      (SCPE_BASE + 1)                 /* no file */
-#define SCPE_IOERR      (SCPE_BASE + 2)                 /* I/O error */
-#define SCPE_CSUM       (SCPE_BASE + 3)                 /* loader cksum */
-#define SCPE_FMT        (SCPE_BASE + 4)                 /* loader format */
-#define SCPE_NOATT      (SCPE_BASE + 5)                 /* not attachable */
-#define SCPE_OPENERR    (SCPE_BASE + 6)                 /* open error */
-#define SCPE_MEM        (SCPE_BASE + 7)                 /* alloc error */
-#define SCPE_ARG        (SCPE_BASE + 8)                 /* argument error */
-#define SCPE_STEP       (SCPE_BASE + 9)                 /* step expired */
-#define SCPE_UNK        (SCPE_BASE + 10)                /* unknown command */
-#define SCPE_RO         (SCPE_BASE + 11)                /* read only */
-#define SCPE_INCOMP     (SCPE_BASE + 12)                /* incomplete */
-#define SCPE_STOP       (SCPE_BASE + 13)                /* sim stopped */
-#define SCPE_EXIT       (SCPE_BASE + 14)                /* sim exit */
-#define SCPE_TTIERR     (SCPE_BASE + 15)                /* console tti err */
-#define SCPE_TTOERR     (SCPE_BASE + 16)                /* console tto err */
-#define SCPE_EOF        (SCPE_BASE + 17)                /* end of file */
-#define SCPE_REL        (SCPE_BASE + 18)                /* relocation error */
-#define SCPE_NOPARAM    (SCPE_BASE + 19)                /* no parameters */
-#define SCPE_ALATT      (SCPE_BASE + 20)                /* already attached */
-#define SCPE_TIMER      (SCPE_BASE + 21)                /* hwre timer err */
-#define SCPE_SIGERR     (SCPE_BASE + 22)                /* signal err */
-#define SCPE_TTYERR     (SCPE_BASE + 23)                /* tty setup err */
-#define SCPE_SUB        (SCPE_BASE + 24)                /* subscript err */
-#define SCPE_NOFNC      (SCPE_BASE + 25)                /* func not imp */
-#define SCPE_UDIS       (SCPE_BASE + 26)                /* unit disabled */
-#define SCPE_NORO       (SCPE_BASE + 27)                /* rd only not ok */
-#define SCPE_INVSW      (SCPE_BASE + 28)                /* invalid switch */
-#define SCPE_MISVAL     (SCPE_BASE + 29)                /* missing value */
-#define SCPE_2FARG      (SCPE_BASE + 30)                /* too few arguments */
-#define SCPE_2MARG      (SCPE_BASE + 31)                /* too many arguments */
-#define SCPE_NXDEV      (SCPE_BASE + 32)                /* nx device */
-#define SCPE_NXUN       (SCPE_BASE + 33)                /* nx unit */
-#define SCPE_NXREG      (SCPE_BASE + 34)                /* nx register */
-#define SCPE_NXPAR      (SCPE_BASE + 35)                /* nx parameter */
-#define SCPE_NEST       (SCPE_BASE + 36)                /* nested DO */
-#define SCPE_IERR       (SCPE_BASE + 37)                /* internal error */
-#define SCPE_MTRLNT     (SCPE_BASE + 38)                /* tape rec lnt error */
-#define SCPE_LOST       (SCPE_BASE + 39)                /* Telnet conn lost */
-#define SCPE_TTMO       (SCPE_BASE + 40)                /* Telnet conn timeout */
-#define SCPE_STALL      (SCPE_BASE + 41)                /* Telnet conn stall */
-#define SCPE_AFAIL      (SCPE_BASE + 42)                /* assert failed */
-#define SCPE_INVREM     (SCPE_BASE + 43)                /* invalid remote console command */
-#define SCPE_EXPECT     (SCPE_BASE + 44)                /* expect matched */
-#define SCPE_AMBREG     (SCPE_BASE + 45)                /* ambiguous register */
-#define SCPE_REMOTE     (SCPE_BASE + 46)                /* remote console command */
-#define SCPE_INVEXPR    (SCPE_BASE + 47)                /* invalid expression */
-#define SCPE_SIGTERM    (SCPE_BASE + 48)                /* SIGTERM has been received */
-#define SCPE_FSSIZE     (SCPE_BASE + 49)                /* File System size larger than disk size */
-#define SCPE_RUNTIME    (SCPE_BASE + 50)                /* Run Time Limit Exhausted */
-#define SCPE_INCOMPDSK  (SCPE_BASE + 51)                /* Incompatible Disk Container */
+#    define SCPE_OK 0                       /* normal return */
+#    define SCPE_BASE 64                    /* base for messages */
+#    define SCPE_NXM (SCPE_BASE + 0)        /* nxm */
+#    define SCPE_UNATT (SCPE_BASE + 1)      /* no file */
+#    define SCPE_IOERR (SCPE_BASE + 2)      /* I/O error */
+#    define SCPE_CSUM (SCPE_BASE + 3)       /* loader cksum */
+#    define SCPE_FMT (SCPE_BASE + 4)        /* loader format */
+#    define SCPE_NOATT (SCPE_BASE + 5)      /* not attachable */
+#    define SCPE_OPENERR (SCPE_BASE + 6)    /* open error */
+#    define SCPE_MEM (SCPE_BASE + 7)        /* alloc error */
+#    define SCPE_ARG (SCPE_BASE + 8)        /* argument error */
+#    define SCPE_STEP (SCPE_BASE + 9)       /* step expired */
+#    define SCPE_UNK (SCPE_BASE + 10)       /* unknown command */
+#    define SCPE_RO (SCPE_BASE + 11)        /* read only */
+#    define SCPE_INCOMP (SCPE_BASE + 12)    /* incomplete */
+#    define SCPE_STOP (SCPE_BASE + 13)      /* sim stopped */
+#    define SCPE_EXIT (SCPE_BASE + 14)      /* sim exit */
+#    define SCPE_TTIERR (SCPE_BASE + 15)    /* console tti err */
+#    define SCPE_TTOERR (SCPE_BASE + 16)    /* console tto err */
+#    define SCPE_EOF (SCPE_BASE + 17)       /* end of file */
+#    define SCPE_REL (SCPE_BASE + 18)       /* relocation error */
+#    define SCPE_NOPARAM (SCPE_BASE + 19)   /* no parameters */
+#    define SCPE_ALATT (SCPE_BASE + 20)     /* already attached */
+#    define SCPE_TIMER (SCPE_BASE + 21)     /* hwre timer err */
+#    define SCPE_SIGERR (SCPE_BASE + 22)    /* signal err */
+#    define SCPE_TTYERR (SCPE_BASE + 23)    /* tty setup err */
+#    define SCPE_SUB (SCPE_BASE + 24)       /* subscript err */
+#    define SCPE_NOFNC (SCPE_BASE + 25)     /* func not imp */
+#    define SCPE_UDIS (SCPE_BASE + 26)      /* unit disabled */
+#    define SCPE_NORO (SCPE_BASE + 27)      /* rd only not ok */
+#    define SCPE_INVSW (SCPE_BASE + 28)     /* invalid switch */
+#    define SCPE_MISVAL (SCPE_BASE + 29)    /* missing value */
+#    define SCPE_2FARG (SCPE_BASE + 30)     /* too few arguments */
+#    define SCPE_2MARG (SCPE_BASE + 31)     /* too many arguments */
+#    define SCPE_NXDEV (SCPE_BASE + 32)     /* nx device */
+#    define SCPE_NXUN (SCPE_BASE + 33)      /* nx unit */
+#    define SCPE_NXREG (SCPE_BASE + 34)     /* nx register */
+#    define SCPE_NXPAR (SCPE_BASE + 35)     /* nx parameter */
+#    define SCPE_NEST (SCPE_BASE + 36)      /* nested DO */
+#    define SCPE_IERR (SCPE_BASE + 37)      /* internal error */
+#    define SCPE_MTRLNT (SCPE_BASE + 38)    /* tape rec lnt error */
+#    define SCPE_LOST (SCPE_BASE + 39)      /* Telnet conn lost */
+#    define SCPE_TTMO (SCPE_BASE + 40)      /* Telnet conn timeout */
+#    define SCPE_STALL (SCPE_BASE + 41)     /* Telnet conn stall */
+#    define SCPE_AFAIL (SCPE_BASE + 42)     /* assert failed */
+#    define SCPE_INVREM (SCPE_BASE + 43)    /* invalid remote console command */
+#    define SCPE_EXPECT (SCPE_BASE + 44)    /* expect matched */
+#    define SCPE_AMBREG (SCPE_BASE + 45)    /* ambiguous register */
+#    define SCPE_REMOTE (SCPE_BASE + 46)    /* remote console command */
+#    define SCPE_INVEXPR (SCPE_BASE + 47)   /* invalid expression */
+#    define SCPE_SIGTERM (SCPE_BASE + 48)   /* SIGTERM has been received */
+#    define SCPE_FSSIZE (SCPE_BASE + 49)    /* File System size larger than disk size */
+#    define SCPE_RUNTIME (SCPE_BASE + 50)   /* Run Time Limit Exhausted */
+#    define SCPE_INCOMPDSK (SCPE_BASE + 51) /* Incompatible Disk Container */
 
-#define SCPE_MAX_ERR    (SCPE_BASE + 51)                /* Maximum SCPE Error Value */
-#define SCPE_KFLAG      0x10000000                      /* tti data flag */
-#define SCPE_BREAK      0x20000000                      /* tti break flag */
-#define SCPE_NOMESSAGE  0x40000000                      /* message display suppression flag */
-#define SCPE_BARE_STATUS(stat) ((stat) & ~(SCPE_NOMESSAGE|SCPE_KFLAG|SCPE_BREAK))
+#    define SCPE_MAX_ERR (SCPE_BASE + 51)   /* Maximum SCPE Error Value */
+#    define SCPE_KFLAG 0x10000000           /* tti data flag */
+#    define SCPE_BREAK 0x20000000           /* tti break flag */
+#    define SCPE_NOMESSAGE 0x40000000       /* message display suppression flag */
+#    define SCPE_BARE_STATUS(stat) ((stat) & ~(SCPE_NOMESSAGE | SCPE_KFLAG | SCPE_BREAK))
 
 /* Print value format codes */
 
-#define PV_RZRO         0                               /* right, zero fill */
-#define PV_RSPC         1                               /* right, space fill */
-#define PV_RCOMMA       2                               /* right, space fill. Comma separate every 3 */
-#define PV_LEFT         3                               /* left justify */
-#define PV_RCOMMASIGN   6                               /* right, space fill. Comma separate every 3 treat as signed */
-#define PV_LEFTSIGN     7                               /* left justify treat as signed */
+#    define PV_RZRO 0       /* right, zero fill */
+#    define PV_RSPC 1       /* right, space fill */
+#    define PV_RCOMMA 2     /* right, space fill. Comma separate every 3 */
+#    define PV_LEFT 3       /* left justify */
+#    define PV_RCOMMASIGN 6 /* right, space fill. Comma separate every 3 treat as signed */
+#    define PV_LEFTSIGN 7   /* left justify treat as signed */
 
 /* Default timing parameters */
 
-#define KBD_POLL_WAIT   5000                            /* keyboard poll */
-#define SERIAL_IN_WAIT  100                             /* serial in time */
-#define SERIAL_OUT_WAIT 100                             /* serial output */
-#define NOQUEUE_WAIT    1000000                         /* min check time */
+#    define KBD_POLL_WAIT 5000   /* keyboard poll */
+#    define SERIAL_IN_WAIT 100   /* serial in time */
+#    define SERIAL_OUT_WAIT 100  /* serial output */
+#    define NOQUEUE_WAIT 1000000 /* min check time */
 
 /* Convert switch letter to bit mask */
 
-#define SWMASK(x) (1u << (((int) (x)) - ((int) 'A')))
+#    define SWMASK(x) (1u << (((int)(x)) - ((int)'A')))
 
 /* String match - at least one character required */
 
-#define MATCH_CMD(ptr,cmd) ((NULL == (ptr)) || (!*(ptr)) || strncasecmp ((ptr), (cmd), strlen (ptr)))
+#    define MATCH_CMD(ptr, cmd) ((NULL == (ptr)) || (!*(ptr)) || strncasecmp((ptr), (cmd), strlen(ptr)))
 
 /* End of Linked List/Queue value                           */
 /* Chosen for 2 reasons:                                    */
@@ -362,7 +362,7 @@ typedef uint32_t        t_addr;
 /*         indicate inclusion on a list                     */
 /* and                                                      */
 /*     2 - to not be a valid/possible pointer (alignment)   */
-#define QUEUE_LIST_END ((UNIT *)1)
+#    define QUEUE_LIST_END ((UNIT *)1)
 
 /* Typedefs for principal structures */
 
@@ -389,84 +389,79 @@ typedef t_stat (*ACTIVATE_API)(UNIT *unit, int32_t interval);
 /* Device data structure */
 
 struct DEVICE {
-    const char          *name;                          /* name */
-    UNIT                *units;                         /* units */
-    REG                 *registers;                     /* registers */
-    MTAB                *modifiers;                     /* modifiers */
-    uint32_t            numunits;                       /* #units */
-    uint32_t            aradix;                         /* address radix */
-    uint32_t            awidth;                         /* address width */
-    uint32_t            aincr;                          /* addr increment */
-    uint32_t            dradix;                         /* data radix */
-    uint32_t            dwidth;                         /* data width */
-    t_stat              (*examine)(t_value *v, t_addr a, UNIT *up,
-                            int32_t sw);                /* examine routine */
-    t_stat              (*deposit)(t_value v, t_addr a, UNIT *up,
-                            int32_t sw);                /* deposit routine */
-    t_stat              (*reset)(DEVICE *dp);           /* reset routine */
-    t_stat              (*boot)(int32_t u, DEVICE *dp);
-                                                        /* boot routine */
-    t_stat              (*attach)(UNIT *up, const char *cp);
-                                                        /* attach routine */
-    t_stat              (*detach)(UNIT *up);            /* detach routine */
-    void                *ctxt;                          /* context */
-    uint32_t            flags;                          /* flags */
-    uint32_t            dctrl;                          /* debug control */
-    DEBTAB              *debflags;                      /* debug flags */
-    t_stat              (*msize)(UNIT *up, int32_t v, const char *cp, void *dp);
-                                                        /* mem size routine */
-    char                *lname;                         /* logical name */
-    t_stat              (*help)(FILE *st, DEVICE *dptr,
-                            UNIT *uptr, int32_t flag, const char *cptr);
-                                                        /* help */
-    t_stat              (*attach_help)(FILE *st, DEVICE *dptr,
-                            UNIT *uptr, int32_t flag, const char *cptr);
-                                                        /* attach help */
-    void                *help_ctx;                      /* Context available to help routines */
-    const char          *(*description)(DEVICE *dptr);  /* Device Description */
-    BRKTYPTAB           *brk_types;                     /* Breakpoint types */
-    void                *type_ctx;                      /* Device Type/Library Context */
-    };
+    const char *name;                                              /* name */
+    UNIT *units;                                                   /* units */
+    REG *registers;                                                /* registers */
+    MTAB *modifiers;                                               /* modifiers */
+    uint32_t numunits;                                             /* #units */
+    uint32_t aradix;                                               /* address radix */
+    uint32_t awidth;                                               /* address width */
+    uint32_t aincr;                                                /* addr increment */
+    uint32_t dradix;                                               /* data radix */
+    uint32_t dwidth;                                               /* data width */
+    t_stat (*examine)(t_value *v, t_addr a, UNIT *up, int32_t sw); /* examine routine */
+    t_stat (*deposit)(t_value v, t_addr a, UNIT *up, int32_t sw);  /* deposit routine */
+    t_stat (*reset)(DEVICE *dp);                                   /* reset routine */
+    t_stat (*boot)(int32_t u, DEVICE *dp);
+    /* boot routine */
+    t_stat (*attach)(UNIT *up, const char *cp);
+    /* attach routine */
+    t_stat (*detach)(UNIT *up); /* detach routine */
+    void *ctxt;                 /* context */
+    uint32_t flags;             /* flags */
+    uint32_t dctrl;             /* debug control */
+    DEBTAB *debflags;           /* debug flags */
+    t_stat (*msize)(UNIT *up, int32_t v, const char *cp, void *dp);
+    /* mem size routine */
+    char *lname; /* logical name */
+    t_stat (*help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
+    /* help */
+    t_stat (*attach_help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
+    /* attach help */
+    void *help_ctx;                           /* Context available to help routines */
+    const char *(*description)(DEVICE *dptr); /* Device Description */
+    BRKTYPTAB *brk_types;                     /* Breakpoint types */
+    void *type_ctx;                           /* Device Type/Library Context */
+};
 
 /* Device flags */
 
-#define DEV_V_DIS       0                               /* dev disabled */
-#define DEV_V_DISABLE   1                               /* dev disable-able */
-#define DEV_V_DYNM      2                               /* mem size dynamic */
-#define DEV_V_DEBUG     3                               /* debug capability */
-#define DEV_V_TYPE      4                               /* Attach type */
-#define DEV_S_TYPE      4                               /* Width of Type Field */
-#define DEV_V_SECTORS   8                               /* Unit Capacity is in 512byte sectors */
-#define DEV_V_DONTAUTO  9                               /* Do not auto detach already attached units */
-#define DEV_V_FLATHELP  10                              /* Use traditional (unstructured) help */
-#define DEV_V_NOSAVE    11                              /* Don't save device state */
-#define DEV_V_UF_31     12                              /* user flags, V3.1 */
-#define DEV_V_UF        16                              /* user flags */
-#define DEV_V_RSV       31                              /* reserved */
+#    define DEV_V_DIS 0                        /* dev disabled */
+#    define DEV_V_DISABLE 1                    /* dev disable-able */
+#    define DEV_V_DYNM 2                       /* mem size dynamic */
+#    define DEV_V_DEBUG 3                      /* debug capability */
+#    define DEV_V_TYPE 4                       /* Attach type */
+#    define DEV_S_TYPE 4                       /* Width of Type Field */
+#    define DEV_V_SECTORS 8                    /* Unit Capacity is in 512byte sectors */
+#    define DEV_V_DONTAUTO 9                   /* Do not auto detach already attached units */
+#    define DEV_V_FLATHELP 10                  /* Use traditional (unstructured) help */
+#    define DEV_V_NOSAVE 11                    /* Don't save device state */
+#    define DEV_V_UF_31 12                     /* user flags, V3.1 */
+#    define DEV_V_UF 16                        /* user flags */
+#    define DEV_V_RSV 31                       /* reserved */
 
-#define DEV_DIS         (1 << DEV_V_DIS)                /* device is currently disabled */
-#define DEV_DISABLE     (1 << DEV_V_DISABLE)            /* device can be set enabled or disabled */
-#define DEV_DYNM        (1 << DEV_V_DYNM)               /* device requires call on msize routine to change memory size */
-#define DEV_DEBUG       (1 << DEV_V_DEBUG)              /* device supports SET DEBUG command */
-#define DEV_SECTORS     (1 << DEV_V_SECTORS)            /* capacity is 512 byte sectors */
-#define DEV_DONTAUTO    (1 << DEV_V_DONTAUTO)           /* Do not auto detach already attached units */
-#define DEV_FLATHELP    (1 << DEV_V_FLATHELP)           /* Use traditional (unstructured) help */
-#define DEV_NOSAVE      (1 << DEV_V_NOSAVE)             /* Don't save device state */
-#define DEV_NET         0                               /* Deprecated - meaningless */
+#    define DEV_DIS (1 << DEV_V_DIS)           /* device is currently disabled */
+#    define DEV_DISABLE (1 << DEV_V_DISABLE)   /* device can be set enabled or disabled */
+#    define DEV_DYNM (1 << DEV_V_DYNM)         /* device requires call on msize routine to change memory size */
+#    define DEV_DEBUG (1 << DEV_V_DEBUG)       /* device supports SET DEBUG command */
+#    define DEV_SECTORS (1 << DEV_V_SECTORS)   /* capacity is 512 byte sectors */
+#    define DEV_DONTAUTO (1 << DEV_V_DONTAUTO) /* Do not auto detach already attached units */
+#    define DEV_FLATHELP (1 << DEV_V_FLATHELP) /* Use traditional (unstructured) help */
+#    define DEV_NOSAVE (1 << DEV_V_NOSAVE)     /* Don't save device state */
+#    define DEV_NET 0                          /* Deprecated - meaningless */
 
+#    define DEV_TYPEMASK (((1 << DEV_S_TYPE) - 1) << DEV_V_TYPE)
+#    define DEV_DISK (1 << DEV_V_TYPE)         /* sim_disk Attach */
+#    define DEV_TAPE (2 << DEV_V_TYPE)         /* sim_tape Attach */
+#    define DEV_MUX (3 << DEV_V_TYPE)          /* sim_tmxr Attach */
+#    define DEV_CARD (4 << DEV_V_TYPE)         /* sim_card Attach */
+#    define DEV_ETHER (5 << DEV_V_TYPE)        /* Ethernet Device */
+#    define DEV_DISPLAY (6 << DEV_V_TYPE)      /* Display Device */
+#    define DEV_TYPE(dptr) ((dptr)->flags & DEV_TYPEMASK)
 
-#define DEV_TYPEMASK    (((1 << DEV_S_TYPE) - 1) << DEV_V_TYPE)
-#define DEV_DISK        (1 << DEV_V_TYPE)               /* sim_disk Attach */
-#define DEV_TAPE        (2 << DEV_V_TYPE)               /* sim_tape Attach */
-#define DEV_MUX         (3 << DEV_V_TYPE)               /* sim_tmxr Attach */
-#define DEV_CARD        (4 << DEV_V_TYPE)               /* sim_card Attach */
-#define DEV_ETHER       (5 << DEV_V_TYPE)               /* Ethernet Device */
-#define DEV_DISPLAY     (6 << DEV_V_TYPE)               /* Display Device */
-#define DEV_TYPE(dptr)  ((dptr)->flags & DEV_TYPEMASK)
-
-#define DEV_UFMASK_31   (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF_31) - 1))
-#define DEV_UFMASK      (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF) - 1))
-#define DEV_RFLAGS      (DEV_UFMASK|DEV_DIS)            /* restored flags */
+#    define DEV_UFMASK_31 (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF_31) - 1))
+#    define DEV_UFMASK (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF) - 1))
+#    define DEV_RFLAGS (DEV_UFMASK | DEV_DIS) /* restored flags */
 
 /* Unit data structure
 
@@ -478,108 +473,108 @@ struct DEVICE {
 */
 
 struct UNIT {
-    UNIT                *next;                          /* next active */
-    t_stat              (*action)(UNIT *up);            /* action routine */
-    char                *filename;                      /* open file name */
-    FILE                *fileref;                       /* file reference */
-    void                *filebuf;                       /* memory buffer */
-    void                *filebuf2;                      /* copy of initial memory buffer */
-    uint32_t            hwmark;                         /* high water mark */
-    int32_t             time;                           /* time out */
-    uint32_t            flags;                          /* flags */
-    uint32_t            dynflags;                       /* dynamic flags */
-    t_addr              capac;                          /* capacity */
-    t_addr              pos;                            /* file position */
-    void                (*io_flush)(UNIT *up);          /* io flush routine */
-    uint32_t            iostarttime;                    /* I/O start time */
-    int32_t             buf;                            /* buffer */
-    int32_t             wait;                           /* wait */
-    int32_t             u3;                             /* device specific */
-    int32_t             u4;                             /* device specific */
-    int32_t             u5;                             /* device specific */
-    int32_t             u6;                             /* device specific */
-    void                *up7;                           /* device specific */
-    void                *up8;                           /* device specific */
-    uint16_t            us9;                            /* device specific */
-    uint16_t            us10;                           /* device specific */
-    uint32_t            disk_type;                      /* Disk specific info */
-    void                *tmxr;                          /* TMXR linkage */
-    size_t              recsize;                        /* Tape specific info */
-    t_addr              tape_eom;                       /* Tape specific info */
-    bool                (*cancel)(UNIT *);
-    double              usecs_remaining;                /* time balance for long delays */
-    char                *uname;                         /* Unit name */
-    DEVICE              *dptr;                          /* DEVICE linkage (backpointer) */
-    uint32_t            dctrl;                          /* debug control */
-#ifdef SIM_ASYNCH_IO
-    void                (*a_check_completion)(UNIT *);
-    bool                (*a_is_active)(UNIT *);
-    UNIT                *a_next;                        /* next asynch active */
-    int32_t             a_event_time;
-    ACTIVATE_API        a_activate_call;
+    UNIT *next;                 /* next active */
+    t_stat (*action)(UNIT *up); /* action routine */
+    char *filename;             /* open file name */
+    FILE *fileref;              /* file reference */
+    void *filebuf;              /* memory buffer */
+    void *filebuf2;             /* copy of initial memory buffer */
+    uint32_t hwmark;            /* high water mark */
+    int32_t time;               /* time out */
+    uint32_t flags;             /* flags */
+    uint32_t dynflags;          /* dynamic flags */
+    t_addr capac;               /* capacity */
+    t_addr pos;                 /* file position */
+    void (*io_flush)(UNIT *up); /* io flush routine */
+    uint32_t iostarttime;       /* I/O start time */
+    int32_t buf;                /* buffer */
+    int32_t wait;               /* wait */
+    int32_t u3;                 /* device specific */
+    int32_t u4;                 /* device specific */
+    int32_t u5;                 /* device specific */
+    int32_t u6;                 /* device specific */
+    void *up7;                  /* device specific */
+    void *up8;                  /* device specific */
+    uint16_t us9;               /* device specific */
+    uint16_t us10;              /* device specific */
+    uint32_t disk_type;         /* Disk specific info */
+    void *tmxr;                 /* TMXR linkage */
+    size_t recsize;             /* Tape specific info */
+    t_addr tape_eom;            /* Tape specific info */
+    bool (*cancel)(UNIT *);
+    double usecs_remaining;     /* time balance for long delays */
+    char *uname;                /* Unit name */
+    DEVICE *dptr;               /* DEVICE linkage (backpointer) */
+    uint32_t dctrl;             /* debug control */
+#    ifdef SIM_ASYNCH_IO
+    void (*a_check_completion)(UNIT *);
+    bool (*a_is_active)(UNIT *);
+    UNIT *a_next; /* next asynch active */
+    int32_t a_event_time;
+    ACTIVATE_API a_activate_call;
     /* Asynchronous Polling control */
     /* These fields should only be referenced when holding the sim_tmxr_poll_lock */
-    bool                a_polling_now;                  /* polling active flag */
-    int32_t             a_poll_waiter_count;            /* count of polling threads */
-                                                        /* waiting for this unit */
+    bool a_polling_now;          /* polling active flag */
+    int32_t a_poll_waiter_count; /* count of polling threads */
+                                 /* waiting for this unit */
     /* Asynchronous Timer control */
-    double              a_due_time;                     /* due time for timer event */
-    double              a_due_gtime;                    /* due time (in instructions) for timer event */
-    double              a_usec_delay;                   /* time delay for timer event */
-#endif
-    };
+    double a_due_time;   /* due time for timer event */
+    double a_due_gtime;  /* due time (in instructions) for timer event */
+    double a_usec_delay; /* time delay for timer event */
+#    endif
+};
 
 /* Unit flags */
 
-#define UNIT_V_UF_31    12              /* dev spec, V3.1 */
-#define UNIT_V_UF       16              /* device specific */
-#define UNIT_V_RSV      31              /* reserved!! */
+#    define UNIT_V_UF_31 12                /* dev spec, V3.1 */
+#    define UNIT_V_UF 16                   /* device specific */
+#    define UNIT_V_RSV 31                  /* reserved!! */
 
-#define UNIT_ATTABLE    0000001         /* attachable */
-#define UNIT_RO         0000002         /* read only */
-#define UNIT_FIX        0000004         /* fixed capacity */
-#define UNIT_SEQ        0000010         /* sequential */
-#define UNIT_ATT        0000020         /* attached */
-#define UNIT_BINK       0000040         /* K = power of 2 */
-#define UNIT_BUFABLE    0000100         /* bufferable */
-#define UNIT_MUSTBUF    0000200         /* must buffer */
-#define UNIT_BUF        0000400         /* buffered */
-#define UNIT_ROABLE     0001000         /* read only ok */
-#define UNIT_DISABLE    0002000         /* disable-able */
-#define UNIT_DIS        0004000         /* disabled */
-#define UNIT_IDLE       0040000         /* idle eligible */
-#define UNIT_WLK        0100000         /* hardware write lock */
-#define UNIT_WPRT     (UNIT_WLK|UNIT_RO)/* write protect */
+#    define UNIT_ATTABLE 0000001           /* attachable */
+#    define UNIT_RO 0000002                /* read only */
+#    define UNIT_FIX 0000004               /* fixed capacity */
+#    define UNIT_SEQ 0000010               /* sequential */
+#    define UNIT_ATT 0000020               /* attached */
+#    define UNIT_BINK 0000040              /* K = power of 2 */
+#    define UNIT_BUFABLE 0000100           /* bufferable */
+#    define UNIT_MUSTBUF 0000200           /* must buffer */
+#    define UNIT_BUF 0000400               /* buffered */
+#    define UNIT_ROABLE 0001000            /* read only ok */
+#    define UNIT_DISABLE 0002000           /* disable-able */
+#    define UNIT_DIS 0004000               /* disabled */
+#    define UNIT_IDLE 0040000              /* idle eligible */
+#    define UNIT_WLK 0100000               /* hardware write lock */
+#    define UNIT_WPRT (UNIT_WLK | UNIT_RO) /* write protect */
 
 /* Deleted or deprecated */
 
 // #define UNIT_RAW        000000                          /* raw mode */
-#define UNIT_TEXT       000000                          /* text mode */
+#    define UNIT_TEXT 000000 /* text mode */
 
-#define UNIT_UFMASK_31  (((1u << UNIT_V_RSV) - 1) & ~((1u << UNIT_V_UF_31) - 1))
-#define UNIT_UFMASK     (((1u << UNIT_V_RSV) - 1) & ~((1u << UNIT_V_UF) - 1))
-#define UNIT_RFLAGS     (UNIT_UFMASK|UNIT_DIS)          /* restored flags */
+#    define UNIT_UFMASK_31 (((1u << UNIT_V_RSV) - 1) & ~((1u << UNIT_V_UF_31) - 1))
+#    define UNIT_UFMASK (((1u << UNIT_V_RSV) - 1) & ~((1u << UNIT_V_UF) - 1))
+#    define UNIT_RFLAGS (UNIT_UFMASK | UNIT_DIS) /* restored flags */
 
 /* Unit dynamic flags (dynflags) */
 
 /* These flags are only set dynamically */
 
-#define UNIT_ATTMULT        0000001         /* Allow multiple attach commands */
-#define UNIT_TM_POLL        0000002         /* TMXR Polling unit */
-#define UNIT_NO_FIO         0000004         /* fileref is NOT a FILE * */
-#define UNIT_DISK_CHK       0000010         /* disk data debug checking (sim_disk) */
-#define UNIT_VOLATILE       0000020         /* attachment storage is volatile */
-#define UNIT_TMR_UNIT       0000200         /* Unit registered as a calibrated timer */
-#define UNIT_TAPE_MRK       0000400         /* Tape Unit Tapemark */
-#define UNIT_TAPE_PNU       0001000         /* Tape Unit Position Not Updated */
-#define UNIT_V_DF_TAPE      10              /* Bit offset for Tape Density reservation */
-#define UNIT_S_DF_TAPE      3               /* Bits Reserved for Tape Density */
-#define UNIT_V_TAPE_FMT     13              /* Bit offset for Tape Format */
-#define UNIT_S_TAPE_FMT     4               /* Bits Reserved for Tape Format */
-#define UNIT_M_TAPE_FMT     (((1 << UNIT_S_TAPE_FMT) - 1) << UNIT_V_TAPE_FMT)
-#define UNIT_V_TAPE_ANSI    17              /* Bit offset for ANSI Tape Type */
-#define UNIT_S_TAPE_ANSI    4               /* Bits Reserved for ANSI Tape Type */
-#define UNIT_M_TAPE_ANSI    (((1 << UNIT_S_TAPE_ANSI) - 1) << UNIT_V_TAPE_ANSI)
+#    define UNIT_ATTMULT 0000001  /* Allow multiple attach commands */
+#    define UNIT_TM_POLL 0000002  /* TMXR Polling unit */
+#    define UNIT_NO_FIO 0000004   /* fileref is NOT a FILE * */
+#    define UNIT_DISK_CHK 0000010 /* disk data debug checking (sim_disk) */
+#    define UNIT_VOLATILE 0000020 /* attachment storage is volatile */
+#    define UNIT_TMR_UNIT 0000200 /* Unit registered as a calibrated timer */
+#    define UNIT_TAPE_MRK 0000400 /* Tape Unit Tapemark */
+#    define UNIT_TAPE_PNU 0001000 /* Tape Unit Position Not Updated */
+#    define UNIT_V_DF_TAPE 10     /* Bit offset for Tape Density reservation */
+#    define UNIT_S_DF_TAPE 3      /* Bits Reserved for Tape Density */
+#    define UNIT_V_TAPE_FMT 13    /* Bit offset for Tape Format */
+#    define UNIT_S_TAPE_FMT 4     /* Bits Reserved for Tape Format */
+#    define UNIT_M_TAPE_FMT (((1 << UNIT_S_TAPE_FMT) - 1) << UNIT_V_TAPE_FMT)
+#    define UNIT_V_TAPE_ANSI 17   /* Bit offset for ANSI Tape Type */
+#    define UNIT_S_TAPE_ANSI 4    /* Bits Reserved for ANSI Tape Type */
+#    define UNIT_M_TAPE_ANSI (((1 << UNIT_S_TAPE_ANSI) - 1) << UNIT_V_TAPE_ANSI)
 
 typedef enum {
     BITF_FMT_DEFAULT,
@@ -595,223 +590,223 @@ typedef enum {
 } BITF_FMT;
 
 struct BITFIELD {
-    const char      *name;                              /* field name */
-    uint32_t        offset;                             /* starting bit */
-    uint32_t        width;                              /* width */
-    const char      **valuenames;                       /* map of values to strings */
-    BITF_FMT        format;                             /* value display format */
-    };
+    const char *name;        /* field name */
+    uint32_t offset;         /* starting bit */
+    uint32_t width;          /* width */
+    const char **valuenames; /* map of values to strings */
+    BITF_FMT format;         /* value display format */
+};
 
 /* Register data structure */
 
 struct REG {
-    const char          *name;                          /* name */
-    void                *loc;                           /* location */
-    uint32_t            radix;                          /* radix */
-    uint32_t            width;                          /* width */
-    uint32_t            offset;                         /* starting bit */
-    uint32_t            depth;                          /* save depth */
-    const char          *desc;                          /* description */
-    BITFIELD            *fields;                        /* bit fields */
-    uint32_t            qptr;                           /* circ q ptr */
-    size_t              stride;                         /* structure/object size (for indexing) */
-    size_t              obj_size;                       /* sizeof(*loc) */
-    size_t              size;                           /* sizeof(**loc) or sizeof(*loc) if depth == 1 */
-    const char          *macro;                         /* Initializer Macro Name */
+    const char *name;  /* name */
+    void *loc;         /* location */
+    uint32_t radix;    /* radix */
+    uint32_t width;    /* width */
+    uint32_t offset;   /* starting bit */
+    uint32_t depth;    /* save depth */
+    const char *desc;  /* description */
+    BITFIELD *fields;  /* bit fields */
+    uint32_t qptr;     /* circ q ptr */
+    size_t stride;     /* structure/object size (for indexing) */
+    size_t obj_size;   /* sizeof(*loc) */
+    size_t size;       /* sizeof(**loc) or sizeof(*loc) if depth == 1 */
+    const char *macro; /* Initializer Macro Name */
     /* NOTE: Flags and maxval MUST always be last since they are initialized outside of macro definitions */
-    uint32_t            flags;                          /* flags */
-    t_value             maxval;                         /* maximum value */
-    };
+    uint32_t flags; /* flags */
+    t_value maxval; /* maximum value */
+};
 
 /* Register flags */
 
-#define REG_FMT         00003                           /* see PV_x */
-#define REG_RO          00004                           /* read only */
-#define REG_HIDDEN      00010                           /* hidden */
-#define REG_NZ          00020                           /* must be non-zero */
-#define REG_CIRC        00200                           /* circular array */
-#define REG_VMIO        00400                           /* use VM data print/parse */
-#define REG_VMAD        01000                           /* use VM addr print/parse */
-#define REG_FIT         00000                           /* fit access to size (obsolete) */
-#define REG_DEPOSIT     04000                           /* call VM routine after update */
-#define REG_HRO         (REG_RO | REG_HIDDEN)           /* hidden, read only */
+#    define REG_FMT 00003                        /* see PV_x */
+#    define REG_RO 00004                         /* read only */
+#    define REG_HIDDEN 00010                     /* hidden */
+#    define REG_NZ 00020                         /* must be non-zero */
+#    define REG_CIRC 00200                       /* circular array */
+#    define REG_VMIO 00400                       /* use VM data print/parse */
+#    define REG_VMAD 01000                       /* use VM addr print/parse */
+#    define REG_FIT 00000                        /* fit access to size (obsolete) */
+#    define REG_DEPOSIT 04000                    /* call VM routine after update */
+#    define REG_HRO (REG_RO | REG_HIDDEN)        /* hidden, read only */
 
-#define REG_V_UF        16                              /* device specific */
-#define REG_UFMASK      (~((1u << REG_V_UF) - 1))       /* user flags mask */
-#define REG_VMFLAGS     (REG_VMIO | REG_UFMASK)         /* call VM routine if any of these are set */
+#    define REG_V_UF 16                          /* device specific */
+#    define REG_UFMASK (~((1u << REG_V_UF) - 1)) /* user flags mask */
+#    define REG_VMFLAGS (REG_VMIO | REG_UFMASK)  /* call VM routine if any of these are set */
 
 /* Command tables, base and alternate formats */
 
 struct CTAB {
-    const char          *name;                          /* name */
-    t_stat              (*action)(int32_t flag, const char *cptr);
-                                                        /* action routine */
-    int32_t             arg;                            /* argument */
-    const char          *help;                          /* help string/structured locator */
-    const char          *help_base;                     /* structured help base*/
-    void                (*message)(const char *unechoed_cmdline, t_stat stat);
-                                                        /* message printing routine */
-    };
+    const char *name; /* name */
+    t_stat (*action)(int32_t flag, const char *cptr);
+    /* action routine */
+    int32_t arg;           /* argument */
+    const char *help;      /* help string/structured locator */
+    const char *help_base; /* structured help base*/
+    void (*message)(const char *unechoed_cmdline, t_stat stat);
+    /* message printing routine */
+};
 
 struct C1TAB {
-    const char          *name;                          /* name */
-    t_stat              (*action)(DEVICE *dptr, UNIT *uptr,
-                            int32_t flag, const char *cptr);/* action routine */
-    int32_t             arg;                            /* argument */
-    const char          *help;                          /* help string */
-    };
+    const char *name;                                                           /* name */
+    t_stat (*action)(DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr); /* action routine */
+    int32_t arg;                                                                /* argument */
+    const char *help;                                                           /* help string */
+};
 
 struct SHTAB {
-    const char          *name;                          /* name */
-    t_stat              (*action)(FILE *st, DEVICE *dptr,
-                            UNIT *uptr, int32_t flag, const char *cptr);
-    int32_t             arg;                            /* argument */
-    const char          *help;                          /* help string */
-    };
+    const char *name; /* name */
+    t_stat (*action)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
+    int32_t arg;      /* argument */
+    const char *help; /* help string */
+};
 
 /* Modifier table - only extended entries have disp, reg, or flags */
 
 struct MTAB {
-    uint32_t            mask;                           /* mask */
-    uint32_t            match;                          /* match */
-    const char          *pstring;                       /* print string */
-    const char          *mstring;                       /* match string */
-    t_stat              (*valid)(UNIT *up, int32_t v, const char *cp, void *dp);
-                                                        /* validation routine */
-    t_stat              (*disp)(FILE *st, UNIT *up, int32_t v, const void *dp);
-                                                        /* display routine */
-    void                *desc;                          /* value descriptor */
-                                                        /* pointer to something needed by */
-                                                        /* the validation and/or display routines */
-    const char          *help;                          /* help string */
-    };
-
+    uint32_t mask;       /* mask */
+    uint32_t match;      /* match */
+    const char *pstring; /* print string */
+    const char *mstring; /* match string */
+    t_stat (*valid)(UNIT *up, int32_t v, const char *cp, void *dp);
+    /* validation routine */
+    t_stat (*disp)(FILE *st, UNIT *up, int32_t v, const void *dp);
+    /* display routine */
+    void *desc;       /* value descriptor */
+                      /* pointer to something needed by */
+                      /* the validation and/or display routines */
+    const char *help; /* help string */
+};
 
 /* mtab mask flag bits */
 /* NOTE: MTAB_VALR and MTAB_VALO are only used to display help */
-#define MTAB_XTD        (1u << UNIT_V_RSV)              /* ext entry flag */
-#define MTAB_VDV        (0001 | MTAB_XTD)               /* valid for dev */
-#define MTAB_VUN        (0002 | MTAB_XTD)               /* valid for unit */
-#define MTAB_VALR       (0004 | MTAB_XTD)               /* takes a value (required) */
-#define MTAB_VALO       (0010 | MTAB_XTD)               /* takes a value (optional) */
-#define MTAB_NMO        (0020 | MTAB_XTD)               /* only if named */
-#define MTAB_NC         (0040 | MTAB_XTD)               /* no UC conversion */
-#define MTAB_QUOTE      (0100 | MTAB_XTD)               /* quoted string */
-#define MTAB_SHP        (0200 | MTAB_XTD)               /* show takes parameter */
-#define MODMASK(mptr,flag) (((mptr)->mask & (uint32_t)(flag)) == (uint32_t)(flag))/* flag mask test */
+#    define MTAB_XTD (1u << UNIT_V_RSV)                                                 /* ext entry flag */
+#    define MTAB_VDV (0001 | MTAB_XTD)                                                  /* valid for dev */
+#    define MTAB_VUN (0002 | MTAB_XTD)                                                  /* valid for unit */
+#    define MTAB_VALR (0004 | MTAB_XTD)                                                 /* takes a value (required) */
+#    define MTAB_VALO (0010 | MTAB_XTD)                                                 /* takes a value (optional) */
+#    define MTAB_NMO (0020 | MTAB_XTD)                                                  /* only if named */
+#    define MTAB_NC (0040 | MTAB_XTD)                                                   /* no UC conversion */
+#    define MTAB_QUOTE (0100 | MTAB_XTD)                                                /* quoted string */
+#    define MTAB_SHP (0200 | MTAB_XTD)                                                  /* show takes parameter */
+#    define MODMASK(mptr, flag) (((mptr)->mask & (uint32_t)(flag)) == (uint32_t)(flag)) /* flag mask test */
 
 /* Search table */
 
 struct SCHTAB {
-    int                 logic;                          /* logical operator */
-    int                 boolop;                         /* boolean operator */
-    uint32_t            count;                          /* value count in mask and comp arrays */
-    t_value             *mask;                          /* mask for logical */
-    t_value             *comp;                          /* comparison for boolean */
-    };
+    int logic;      /* logical operator */
+    int boolop;     /* boolean operator */
+    uint32_t count; /* value count in mask and comp arrays */
+    t_value *mask;  /* mask for logical */
+    t_value *comp;  /* comparison for boolean */
+};
 
 /* Breakpoint table */
 
 struct BRKTAB {
-    t_addr              addr;                           /* address */
-    uint32_t            typ;                            /* mask of types */
-#define BRK_TYP_USR_TYPES       ((1 << ('Z'-'A'+1)) - 1)/* all types A-Z */
-#define BRK_TYP_DYN_STEPOVER    (SWMASK ('Z'+1))
-#define BRK_TYP_DYN_USR         (SWMASK ('Z'+2))
-#define BRK_TYP_DYN_ALL         (BRK_TYP_DYN_USR|BRK_TYP_DYN_STEPOVER) /* Mask of All Dynamic types */
-#define BRK_TYP_TEMP            (SWMASK ('Z'+3))        /* Temporary (one-shot) */
-#define BRK_TYP_MAX             (('Z'-'A')+3)           /* Maximum breakpoint type */
-    int32_t             cnt;                            /* proceed count */
-    char                *act;                           /* action string */
-    double              time_fired[SIM_BKPT_N_SPC];     /* instruction count when match occurred */
-    BRKTAB *next;                                       /* list with same address value */
-    };
+    t_addr addr;                                                     /* address */
+    uint32_t typ;                                                    /* mask of types */
+#    define BRK_TYP_USR_TYPES ((1 << ('Z' - 'A' + 1)) - 1)           /* all types A-Z */
+#    define BRK_TYP_DYN_STEPOVER (SWMASK('Z' + 1))
+#    define BRK_TYP_DYN_USR (SWMASK('Z' + 2))
+#    define BRK_TYP_DYN_ALL (BRK_TYP_DYN_USR | BRK_TYP_DYN_STEPOVER) /* Mask of All Dynamic types */
+#    define BRK_TYP_TEMP (SWMASK('Z' + 3))                           /* Temporary (one-shot) */
+#    define BRK_TYP_MAX (('Z' - 'A') + 3)                            /* Maximum breakpoint type */
+    int32_t cnt;                                                     /* proceed count */
+    char *act;                                                       /* action string */
+    double time_fired[SIM_BKPT_N_SPC];                               /* instruction count when match occurred */
+    BRKTAB *next;                                                    /* list with same address value */
+};
 
 /* Breakpoint table */
 
 struct BRKTYPTAB {
-    uint32_t    btyp;                                   /* type mask */
-    const char *desc;                                   /* description */
-    };
-#define BRKTYPE(typ,descrip) {SWMASK(typ), descrip}
+    uint32_t btyp;    /* type mask */
+    const char *desc; /* description */
+};
+#    define BRKTYPE(typ, descrip) {SWMASK(typ), descrip}
 
 /* Expect rule */
 
 struct EXPTAB {
-    uint8_t             *match;                         /* match string */
-    size_t              size;                           /* match string size */
-    char                *match_pattern;                 /* match pattern for format */
-    int32_t             cnt;                            /* proceed count */
-    uint32_t            after;                          /* delay before halting */
-    int32_t             switches;                       /* flags */
-#define EXP_TYP_PERSIST         (SWMASK ('P'))      /* rule persists after match, default is once a rule matches, it is removed */
-#define EXP_TYP_CLEARALL        (SWMASK ('C'))      /* clear all rules after matching this rule, default is to once a rule matches, it is removed */
-#define EXP_TYP_REGEX           (SWMASK ('R'))      /* rule pattern is a regular expression */
-#define EXP_TYP_REGEX_I         (SWMASK ('I'))      /* regular expression pattern matching should be case independent */
-#define EXP_TYP_TIME            (SWMASK ('T'))      /* halt delay is in microseconds instead of instructions */
-    void                *regex;                         /* compiled regular expression */
-    int                 re_nsub;                        /* regular expression sub expression count */
-    char                *act;                           /* action string */
-    };
+    uint8_t *match;      /* match string */
+    size_t size;         /* match string size */
+    char *match_pattern; /* match pattern for format */
+    int32_t cnt;         /* proceed count */
+    uint32_t after;      /* delay before halting */
+    int32_t switches;    /* flags */
+#    define EXP_TYP_PERSIST                                                                                            \
+        (SWMASK('P'))    /* rule persists after match, default is once a rule matches, it is removed                   \
+                          */
+#    define EXP_TYP_CLEARALL                                                                                           \
+        (SWMASK('C')) /* clear all rules after matching this rule, default is to once a rule matches, it is removed */
+#    define EXP_TYP_REGEX (SWMASK('R'))   /* rule pattern is a regular expression */
+#    define EXP_TYP_REGEX_I (SWMASK('I')) /* regular expression pattern matching should be case independent */
+#    define EXP_TYP_TIME (SWMASK('T'))    /* halt delay is in microseconds instead of instructions */
+    void *regex;                          /* compiled regular expression */
+    int re_nsub;                          /* regular expression sub expression count */
+    char *act;                            /* action string */
+};
 
 /* Expect Context */
 
 struct EXPECT {
-    DEVICE              *dptr;                          /* Device (for Debug) */
-    uint32_t            dbit;                           /* Debugging Bit */
-    EXPTAB              *rules;                         /* match rules */
-    size_t              size;                           /* count of match rules */
-    uint8_t             *buf;                           /* buffer of output data which has produced */
-    size_t              buf_ins;                        /* buffer insertion point for the next output data */
-    size_t              buf_size;                       /* buffer size */
-    size_t              buf_data;                       /* count of data in buffer */
-    uint32_t            default_haltafter;              /* default halt delay */
-    };
+    DEVICE *dptr;               /* Device (for Debug) */
+    uint32_t dbit;              /* Debugging Bit */
+    EXPTAB *rules;              /* match rules */
+    size_t size;                /* count of match rules */
+    uint8_t *buf;               /* buffer of output data which has produced */
+    size_t buf_ins;             /* buffer insertion point for the next output data */
+    size_t buf_size;            /* buffer size */
+    size_t buf_data;            /* count of data in buffer */
+    uint32_t default_haltafter; /* default halt delay */
+};
 
 /* Send Context */
 
 struct SEND {
-    uint32_t            delay;                          /* instruction delay between sent data */
-#define SEND_DEFAULT_DELAY  1000                        /* default delay instruction count */
-    DEVICE              *dptr;                          /* Device (for Debug) */
-    uint32_t            dbit;                           /* Debugging Bit */
-    uint32_t            after;                          /* instruction delay before sending any data */
-    double              next_time;                      /* execution time when next data can be sent */
-    uint8_t             *buffer;                        /* buffer */
-    size_t              bufsize;                        /* buffer size */
-    size_t              insoff;                         /* insert offset */
-    size_t              extoff;                         /* extra offset */
-    uint32_t            default_delay;                  /* default character delay */
-    uint32_t            default_after;                  /* default initial delay */
-    };
+    uint32_t delay;                 /* instruction delay between sent data */
+#    define SEND_DEFAULT_DELAY 1000 /* default delay instruction count */
+    DEVICE *dptr;                   /* Device (for Debug) */
+    uint32_t dbit;                  /* Debugging Bit */
+    uint32_t after;                 /* instruction delay before sending any data */
+    double next_time;               /* execution time when next data can be sent */
+    uint8_t *buffer;                /* buffer */
+    size_t bufsize;                 /* buffer size */
+    size_t insoff;                  /* insert offset */
+    size_t extoff;                  /* extra offset */
+    uint32_t default_delay;         /* default character delay */
+    uint32_t default_after;         /* default initial delay */
+};
 
 /* Debug table */
 
 struct DEBTAB {
-    const char          *name;                          /* control name */
-    uint32_t            mask;                           /* control bit */
-    const char          *desc;                          /* description */
-    };
+    const char *name; /* control name */
+    uint32_t mask;    /* control bit */
+    const char *desc; /* description */
+};
 
 /* Deprecated Debug macros.  Use sim_debug() */
 
-#define DEBUG_PRS(d)    (sim_deb && d.dctrl)
-#define DEBUG_PRD(d)    (sim_deb && d->dctrl)
-#define DEBUG_PRI(d,m)  (sim_deb && (d.dctrl & (m)))
-#define DEBUG_PRJ(d,m)  (sim_deb && ((d)->dctrl & (m)))
+#    define DEBUG_PRS(d) (sim_deb && d.dctrl)
+#    define DEBUG_PRD(d) (sim_deb && d->dctrl)
+#    define DEBUG_PRI(d, m) (sim_deb && (d.dctrl & (m)))
+#    define DEBUG_PRJ(d, m) (sim_deb && ((d)->dctrl & (m)))
 
 /* Open File Reference */
 struct FILEREF {
-    char                name[CBUFSIZE];                 /* file name */
-    FILE                *file;                          /* file handle */
-    int32_t             refcount;                       /* reference count */
-    };
+    char name[CBUFSIZE]; /* file name */
+    FILE *file;          /* file handle */
+    int32_t refcount;    /* reference count */
+};
 
 struct MEMFILE {
-    char                *buf;                           /* buffered data */
-    size_t              size;                        /* size */
-    size_t              pos;                         /* data used */
-    };
+    char *buf;   /* buffered data */
+    size_t size; /* size */
+    size_t pos;  /* data used */
+};
 
 /*
    The following macros exist to help populate structure contents
@@ -821,7 +816,7 @@ struct MEMFILE {
 
  */
 
-#define UDATA(act,fl,cap) NULL,act,NULL,NULL,NULL,NULL,0,0,(fl),0,(cap),0,NULL,0,0
+#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
 
 /* Register initialization macros.
 
@@ -932,188 +927,163 @@ struct MEMFILE {
 */
 
 /* Internal use ONLY (see below) Generic Register declaration for all fields */
-#define _RegCheck(nm,loc,rdx,wd,off,dep,desc,flds,qptr,siz,elesiz,macro) \
-    nm, (loc), (rdx), (wd), (off), (dep), (desc), (flds), (qptr), (siz), sizeof(*(loc)), (elesiz), #macro
+#    define _RegCheck(nm, loc, rdx, wd, off, dep, desc, flds, qptr, siz, elesiz, macro)                                \
+        nm, (loc), (rdx), (wd), (off), (dep), (desc), (flds), (qptr), (siz), sizeof(*(loc)), (elesiz), #macro
 
 /* Generic Register declaration for all fields.
    If the register structure is extended, this macro will be retained and a
    new internal macro will be provided that populates the new register structure */
-#define REGDATA(nm,loc,rdx,wd,off,dep,desc,flds,fl,qptr,siz) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,desc,flds,qptr,siz,sizeof((loc)),REGDATA),(fl)
+#    define REGDATA(nm, loc, rdx, wd, off, dep, desc, flds, fl, qptr, siz)                                             \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, desc, flds, qptr, siz, sizeof((loc)), REGDATA), (fl)
 /* v3 compatible macro */
-#define XRDATA(nm,loc,rdx,wd,off,dep,siz,str) \
-    _RegCheck(#nm,loc,rdx,wd,off,dep,NULL,NULL,0,siz,sizeof((loc)),XRDATA),(fl)
+#    define XRDATA(nm, loc, rdx, wd, off, dep, siz, str)                                                               \
+        _RegCheck(#nm, loc, rdx, wd, off, dep, NULL, NULL, 0, siz, sizeof((loc)), XRDATA), (fl)
 
 /* Right Justified Octal Register Data */
-#define ORDATA(nm,loc,wd) \
-    _RegCheck(#nm,&(loc),8,wd,0,1,NULL,NULL,0,0,sizeof((loc)),ORDATA)
-#define ORDATAD(nm,loc,wd,desc) \
-    _RegCheck(#nm,&(loc),8,wd,0,1,desc,NULL,0,0,sizeof((loc)),ORDATAD)
-#define ORDATADF(nm,loc,wd,desc,flds) \
-    _RegCheck(#nm,&(loc),8,wd,0,1,desc,flds,0,0,sizeof((loc)),ORDATADF)
+#    define ORDATA(nm, loc, wd) _RegCheck(#nm, &(loc), 8, wd, 0, 1, NULL, NULL, 0, 0, sizeof((loc)), ORDATA)
+#    define ORDATAD(nm, loc, wd, desc) _RegCheck(#nm, &(loc), 8, wd, 0, 1, desc, NULL, 0, 0, sizeof((loc)), ORDATAD)
+#    define ORDATADF(nm, loc, wd, desc, flds)                                                                          \
+        _RegCheck(#nm, &(loc), 8, wd, 0, 1, desc, flds, 0, 0, sizeof((loc)), ORDATADF)
 /* Right Justified Decimal Register Data */
-#define DRDATA(nm,loc,wd) \
-    _RegCheck(#nm,&(loc),10,wd,0,1,NULL,NULL,0,0,sizeof((loc)),DRDATA)
-#define DRDATAD(nm,loc,wd,desc) \
-    _RegCheck(#nm,&(loc),10,wd,0,1,desc,NULL,0,0,sizeof((loc)),DRDATAD)
-#define DRDATADF(nm,loc,wd,desc,flds) \
-    _RegCheck(#nm,&(loc),10,wd,0,1,desc,flds,0,0,sizeof((loc)),DRDATADF)
+#    define DRDATA(nm, loc, wd) _RegCheck(#nm, &(loc), 10, wd, 0, 1, NULL, NULL, 0, 0, sizeof((loc)), DRDATA)
+#    define DRDATAD(nm, loc, wd, desc) _RegCheck(#nm, &(loc), 10, wd, 0, 1, desc, NULL, 0, 0, sizeof((loc)), DRDATAD)
+#    define DRDATADF(nm, loc, wd, desc, flds)                                                                          \
+        _RegCheck(#nm, &(loc), 10, wd, 0, 1, desc, flds, 0, 0, sizeof((loc)), DRDATADF)
 /* Right Justified Hexadecimal Register Data */
-#define HRDATA(nm,loc,wd) \
-    _RegCheck(#nm,&(loc),16,wd,0,1,NULL,NULL,0,0,sizeof((loc)),HRDATA)
-#define HRDATAD(nm,loc,wd,desc) \
-    _RegCheck(#nm,&(loc),16,wd,0,1,desc,NULL,0,0,sizeof((loc)),HRDATAD)
-#define HRDATADF(nm,loc,wd,desc,flds) \
-    _RegCheck(#nm,&(loc),16,wd,0,1,desc,flds,0,0,sizeof((loc)),HRDATADF)
+#    define HRDATA(nm, loc, wd) _RegCheck(#nm, &(loc), 16, wd, 0, 1, NULL, NULL, 0, 0, sizeof((loc)), HRDATA)
+#    define HRDATAD(nm, loc, wd, desc) _RegCheck(#nm, &(loc), 16, wd, 0, 1, desc, NULL, 0, 0, sizeof((loc)), HRDATAD)
+#    define HRDATADF(nm, loc, wd, desc, flds)                                                                          \
+        _RegCheck(#nm, &(loc), 16, wd, 0, 1, desc, flds, 0, 0, sizeof((loc)), HRDATADF)
 /* Right Justified Binary Register Data */
-#define BINRDATA(nm,loc,wd) \
-    _RegCheck(#nm,&(loc),2,wd,0,1,NULL,NULL,0,0,sizeof((loc)),BINRDATA)
-#define BINRDATAD(nm,loc,wd,desc) \
-    _RegCheck(#nm,&(loc),2,wd,0,1,desc,NULL,0,0,sizeof((loc)),BINRDATAD)
-#define BINRDATADF(nm,loc,wd,desc,flds) \
-    _RegCheck(#nm,&(loc),2,wd,0,1,desc,flds,0,0,sizeof((loc)),BINRDATADF)
+#    define BINRDATA(nm, loc, wd) _RegCheck(#nm, &(loc), 2, wd, 0, 1, NULL, NULL, 0, 0, sizeof((loc)), BINRDATA)
+#    define BINRDATAD(nm, loc, wd, desc) _RegCheck(#nm, &(loc), 2, wd, 0, 1, desc, NULL, 0, 0, sizeof((loc)), BINRDATAD)
+#    define BINRDATADF(nm, loc, wd, desc, flds)                                                                        \
+        _RegCheck(#nm, &(loc), 2, wd, 0, 1, desc, flds, 0, 0, sizeof((loc)), BINRDATADF)
 /* One-bit binary flag at an arbitrary offset in a 32-bit word Register */
-#define FLDATA(nm,loc,pos) \
-    _RegCheck(#nm,&(loc),2,1,pos,1,NULL,NULL,0,0,sizeof((loc)),FLDATA)
-#define FLDATAD(nm,loc,pos,desc) \
-    _RegCheck(#nm,&(loc),2,1,pos,1,desc,NULL,0,0,sizeof((loc)),FLDATAD)
-#define FLDATADF(nm,loc,pos,desc,flds) \
-    _RegCheck(#nm,&(loc),2,1,pos,1,desc,flds,0,0,sizeof((loc)),FLDATADF)
+#    define FLDATA(nm, loc, pos) _RegCheck(#nm, &(loc), 2, 1, pos, 1, NULL, NULL, 0, 0, sizeof((loc)), FLDATA)
+#    define FLDATAD(nm, loc, pos, desc) _RegCheck(#nm, &(loc), 2, 1, pos, 1, desc, NULL, 0, 0, sizeof((loc)), FLDATAD)
+#    define FLDATADF(nm, loc, pos, desc, flds)                                                                         \
+        _RegCheck(#nm, &(loc), 2, 1, pos, 1, desc, flds, 0, 0, sizeof((loc)), FLDATADF)
 /* Arbitrary location and Radix Register */
-#define GRDATA(nm,loc,rdx,wd,pos) \
-    _RegCheck(#nm,&(loc),rdx,wd,pos,1,NULL,NULL,0,0,sizeof((loc)),GRDATA)
-#define GRDATAD(nm,loc,rdx,wd,pos,desc) \
-    _RegCheck(#nm,&(loc),rdx,wd,pos,1,desc,NULL,0,0,sizeof((loc)),GRDATAD)
-#define GRDATADF(nm,loc,rdx,wd,pos,desc,flds) \
-    _RegCheck(#nm,&(loc),rdx,wd,pos,1,desc,flds,0,0,sizeof((loc)),GRDATADF)
+#    define GRDATA(nm, loc, rdx, wd, pos)                                                                              \
+        _RegCheck(#nm, &(loc), rdx, wd, pos, 1, NULL, NULL, 0, 0, sizeof((loc)), GRDATA)
+#    define GRDATAD(nm, loc, rdx, wd, pos, desc)                                                                       \
+        _RegCheck(#nm, &(loc), rdx, wd, pos, 1, desc, NULL, 0, 0, sizeof((loc)), GRDATAD)
+#    define GRDATADF(nm, loc, rdx, wd, pos, desc, flds)                                                                \
+        _RegCheck(#nm, &(loc), rdx, wd, pos, 1, desc, flds, 0, 0, sizeof((loc)), GRDATADF)
 /* Arrayed register whose data is kept in a standard C array Register */
-#define BRDATA(nm,aloc,rdx,wd,dep) \
-    _RegCheck(#nm,aloc,rdx,wd,0,dep,NULL,NULL,0,sizeof(*(aloc)),sizeof(*(aloc)),BRDATA)
-#define BRDATAD(nm,aloc,rdx,wd,dep,desc) \
-    _RegCheck(#nm,aloc,rdx,wd,0,dep,desc,NULL,0,sizeof(*(aloc)),sizeof(*(aloc)),BRDATAD)
-#define BRDATADF(nm,aloc,rdx,wd,dep,desc,flds) \
-    _RegCheck(#nm,aloc,rdx,wd,0,dep,desc,flds,0,sizeof(*(aloc)),sizeof(*(aloc)),BRDATADF)
+#    define BRDATA(nm, aloc, rdx, wd, dep)                                                                             \
+        _RegCheck(#nm, aloc, rdx, wd, 0, dep, NULL, NULL, 0, sizeof(*(aloc)), sizeof(*(aloc)), BRDATA)
+#    define BRDATAD(nm, aloc, rdx, wd, dep, desc)                                                                      \
+        _RegCheck(#nm, aloc, rdx, wd, 0, dep, desc, NULL, 0, sizeof(*(aloc)), sizeof(*(aloc)), BRDATAD)
+#    define BRDATADF(nm, aloc, rdx, wd, dep, desc, flds)                                                               \
+        _RegCheck(#nm, aloc, rdx, wd, 0, dep, desc, flds, 0, sizeof(*(aloc)), sizeof(*(aloc)), BRDATADF)
 /* Arrayed register whose data is kept in a standard C two dimensional array Register */
-#define CRDATA(nm,aloc,rdx,wd,dep) \
-    _RegCheck(#nm,&(aloc),rdx,wd,0,dep,NULL,NULL,0,sizeof(**(aloc)),sizeof(**(aloc)),CRDATA)
-#define CRDATAD(nm,aloc,rdx,wd,dep,desc) \
-    _RegCheck(#nm,&(aloc),rdx,wd,0,dep,desc,NULL,0,sizeof(**(aloc)),sizeof(**(aloc)),CRDATAD)
-#define CRDATADF(nm,aloc,rdx,wd,dep,desc,flds) \
-    _RegCheck(#nm,&(aloc),rdx,wd,0,dep,desc,flds,0,sizeof(**(aloc)),sizeof(**(aloc)),CRDATADF)
+#    define CRDATA(nm, aloc, rdx, wd, dep)                                                                             \
+        _RegCheck(#nm, &(aloc), rdx, wd, 0, dep, NULL, NULL, 0, sizeof(**(aloc)), sizeof(**(aloc)), CRDATA)
+#    define CRDATAD(nm, aloc, rdx, wd, dep, desc)                                                                      \
+        _RegCheck(#nm, &(aloc), rdx, wd, 0, dep, desc, NULL, 0, sizeof(**(aloc)), sizeof(**(aloc)), CRDATAD)
+#    define CRDATADF(nm, aloc, rdx, wd, dep, desc, flds)                                                               \
+        _RegCheck(#nm, &(aloc), rdx, wd, 0, dep, desc, flds, 0, sizeof(**(aloc)), sizeof(**(aloc)), CRDATADF)
 
 /* Range of memory whose data is successive scalar values accessed like an array Register */
-#define VBRDATA(nm,loc,rdx,wd,dep) \
-    _RegCheck(#nm,&(loc),rdx,wd,0,dep,NULL,NULL,0,wd/8,sizeof(loc),VBRDATA)
-#define VBRDATAD(nm,loc,rdx,wd,dep,desc) \
-    _RegCheck(#nm,&(loc),rdx,wd,0,dep,desc,NULL,0,wd/8,sizeof(loc),VBRDATAD)
-#define VBRDATADF(nm,loc,rdx,wd,dep,desc,flds) \
-    _RegCheck(#nm,&(loc),rdx,wd,0,dep,desc,flds,0,wd/8,sizeof(loc),VBRDATADF)
+#    define VBRDATA(nm, loc, rdx, wd, dep)                                                                             \
+        _RegCheck(#nm, &(loc), rdx, wd, 0, dep, NULL, NULL, 0, wd / 8, sizeof(loc), VBRDATA)
+#    define VBRDATAD(nm, loc, rdx, wd, dep, desc)                                                                      \
+        _RegCheck(#nm, &(loc), rdx, wd, 0, dep, desc, NULL, 0, wd / 8, sizeof(loc), VBRDATAD)
+#    define VBRDATADF(nm, loc, rdx, wd, dep, desc, flds)                                                               \
+        _RegCheck(#nm, &(loc), rdx, wd, 0, dep, desc, flds, 0, wd / 8, sizeof(loc), VBRDATADF)
 /* Arrayed register whose data is part of the UNIT structure */
-#define URDATA(nm,loc,rdx,wd,off,dep,fl) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,NULL,NULL,0,sizeof(UNIT),sizeof((loc)),URDATA),(fl)
-#define URDATAD(nm,loc,rdx,wd,off,dep,fl,desc) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,desc,NULL,0,sizeof(UNIT),sizeof((loc)),URDATAD),(fl)
-#define URDATADF(nm,loc,rdx,wd,off,dep,fl,desc,flds) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,desc,flds,0,sizeof(UNIT),sizeof((loc)),URDATADF),(fl)
+#    define URDATA(nm, loc, rdx, wd, off, dep, fl)                                                                     \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, NULL, NULL, 0, sizeof(UNIT), sizeof((loc)), URDATA), (fl)
+#    define URDATAD(nm, loc, rdx, wd, off, dep, fl, desc)                                                              \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, desc, NULL, 0, sizeof(UNIT), sizeof((loc)), URDATAD), (fl)
+#    define URDATADF(nm, loc, rdx, wd, off, dep, fl, desc, flds)                                                       \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, desc, flds, 0, sizeof(UNIT), sizeof((loc)), URDATADF), (fl)
 /* Arrayed register whose data is part of an arbitrary structure */
-#define STRDATA(nm,loc,rdx,wd,off,dep,siz,fl) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,NULL,NULL,0,siz,sizeof((loc)),STRDATA),(fl)
-#define STRDATAD(nm,loc,rdx,wd,off,dep,siz,fl,desc) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,desc,NULL,0,siz,sizeof((loc)),STRDATAD),(fl)
-#define STRDATADF(nm,loc,rdx,wd,off,dep,siz,fl,desc,flds) \
-    _RegCheck(#nm,&(loc),rdx,wd,off,dep,desc,flds,0,siz,sizeof((loc)),STRDATADF),(fl)
+#    define STRDATA(nm, loc, rdx, wd, off, dep, siz, fl)                                                               \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, NULL, NULL, 0, siz, sizeof((loc)), STRDATA), (fl)
+#    define STRDATAD(nm, loc, rdx, wd, off, dep, siz, fl, desc)                                                        \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, desc, NULL, 0, siz, sizeof((loc)), STRDATAD), (fl)
+#    define STRDATADF(nm, loc, rdx, wd, off, dep, siz, fl, desc, flds)                                                 \
+        _RegCheck(#nm, &(loc), rdx, wd, off, dep, desc, flds, 0, siz, sizeof((loc)), STRDATADF), (fl)
 /* Hidden Blob of Data - Only used for SAVE/RESTORE */
-#define SAVEDATA(nm,loc) \
-    _RegCheck(#nm,&(loc),0,8,0,1,NULL,NULL,0,sizeof(loc),sizeof(loc),SAVEDATA),(REG_HRO)
-#define BITF_INIT(nm,off,sz,names,fmt) \
-    {nm, off, sz, names, fmt}
+#    define SAVEDATA(nm, loc)                                                                                          \
+        _RegCheck(#nm, &(loc), 0, 8, 0, 1, NULL, NULL, 0, sizeof(loc), sizeof(loc), SAVEDATA), (REG_HRO)
+#    define BITF_INIT(nm, off, sz, names, fmt) {nm, off, sz, names, fmt}
 
 /* Start at beginning bit */
-#define STARTBIT \
-    BITF_INIT ("", 0x00000000, 0, NULL, BITF_FMT_DEFAULT)
+#    define STARTBIT BITF_INIT("", 0x00000000, 0, NULL, BITF_FMT_DEFAULT)
 
 /* Single Bit definition */
-#define BIT(nm) \
-    BITF_INIT (#nm, 0xffffffff, 1, NULL, BITF_FMT_DEFAULT)
+#    define BIT(nm) BITF_INIT(#nm, 0xffffffff, 1, NULL, BITF_FMT_DEFAULT)
 
 /* Don't care Bit definition */
-#define BITNC \
-    BITF_INIT ("", 0xffffffff, 1, NULL, BITF_FMT_DEFAULT)
+#    define BITNC BITF_INIT("", 0xffffffff, 1, NULL, BITF_FMT_DEFAULT)
 
 /* Bit Field definition */
-#define BITF(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_DEFAULT)
+#    define BITF(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_DEFAULT)
 
 /* Don't care Bit Field definition */
-#define BITNCF(sz) \
-    BITF_INIT ("", 0xffffffff, sz, NULL, BITF_FMT_DEFAULT)
+#    define BITNCF(sz) BITF_INIT("", 0xffffffff, sz, NULL, BITF_FMT_DEFAULT)
 
 /* Bit field definitions with non-default value display styles. */
 /* Display the value as signed decimal, as in NAME=-1. */
-#define BITF_SIGNED(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_SIGNED)
+#    define BITF_SIGNED(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_SIGNED)
 /* Display the value as unsigned decimal, as in NAME=255. */
-#define BITF_UNSIGNED(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_UNSIGNED)
+#    define BITF_UNSIGNED(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_UNSIGNED)
 /* Display the value as two-digit uppercase hexadecimal, as in NAME=FF. */
-#define BITF_HEX2(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX2)
+#    define BITF_HEX2(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX2)
 /* Display the value as 0x-prefixed two-digit hex, as in NAME=0xFF. */
-#define BITF_HEX2P(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX2_PREFIX)
+#    define BITF_HEX2P(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX2_PREFIX)
 /* Display the value as 0x-prefixed four-digit hex, as in NAME=0x00FF. */
-#define BITF_HEX4P(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX4_PREFIX)
+#    define BITF_HEX4P(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_HEX4_PREFIX)
 /* Display the value as quoted two-digit hex, as in NAME="FF". */
-#define BITF_QHEX2(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_HEX2)
+#    define BITF_QHEX2(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_HEX2)
 /* Display the value as quoted octal, as in NAME="377". */
-#define BITF_QOCTAL(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_OCTAL)
+#    define BITF_QOCTAL(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_OCTAL)
 /* Display the value as quoted unsigned decimal, as in NAME="255". */
-#define BITF_QUNSIGNED(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_UNSIGNED)
+#    define BITF_QUNSIGNED(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_UNSIGNED)
 /* Display the value as quoted 0x-prefixed hex, as in NAME="0xFF". */
-#define BITF_QHEXP(nm,sz) \
-    BITF_INIT (#nm, 0xffffffff, sz, NULL, \
-               BITF_FMT_QUOTED_HEX_PREFIX)
+#    define BITF_QHEXP(nm, sz) BITF_INIT(#nm, 0xffffffff, sz, NULL, BITF_FMT_QUOTED_HEX_PREFIX)
 
 /* Bit Field definition with value->name map */
-#define BITFNAM(nm,sz,names) \
-    BITF_INIT (#nm, 0xffffffff, sz, names, BITF_FMT_DEFAULT)
-#define ENDBITS {NULL}  /* end of bitfield list */
-
+#    define BITFNAM(nm, sz, names) BITF_INIT(#nm, 0xffffffff, sz, names, BITF_FMT_DEFAULT)
+#    define ENDBITS {NULL} /* end of bitfield list */
 
 /* Function prototypes */
 
-#include "scp.h"
-#include "sim_console.h"
-#include "sim_timer.h"
-#include "sim_fio.h"
-#include "sim_printf_fmts.h"
+#    include "scp.h"
+#    include "sim_console.h"
+#    include "sim_timer.h"
+#    include "sim_fio.h"
+#    include "sim_printf_fmts.h"
 
 /* General-purpose error value for size_t types; check using
    equality.*/
 
-#define GENERIC_SIZE_T_ERROR ((size_t) -1)
+#    define GENERIC_SIZE_T_ERROR ((size_t)-1)
 
-#define SIZE_T_IO_ERROR      GENERIC_SIZE_T_ERROR
-#define IS_SIZE_T_IO_ERROR(thing)  ((thing) == GENERIC_SIZE_T_ERROR)
+#    define SIZE_T_IO_ERROR GENERIC_SIZE_T_ERROR
+#    define IS_SIZE_T_IO_ERROR(thing) ((thing) == GENERIC_SIZE_T_ERROR)
 
 /* Macro to ALWAYS execute the specified expression and fail if it evaluates to false. */
 /* This replaces any references to "assert()" which should never be invoked */
 /* with an expression which causes side effects (i.e. must be executed for */
 /* the program to work correctly) */
-#define ASSURE(_Expression) while (!(_Expression)) {fprintf(stderr, "%s failed at %s line %d\n", #_Expression, __FILE__, __LINE__);  \
-                                                    sim_printf("%s failed at %s line %d\n", #_Expression, __FILE__, __LINE__);       \
-                                                    abort();}
+#    define ASSURE(_Expression)                                                                                        \
+        while (!(_Expression)) {                                                                                       \
+            fprintf(stderr, "%s failed at %s line %d\n", #_Expression, __FILE__, __LINE__);                            \
+            sim_printf("%s failed at %s line %d\n", #_Expression, __FILE__, __LINE__);                                 \
+            abort();                                                                                                   \
+        }
 
 /* Asynch/Threaded I/O support */
 
-#if defined (SIM_ASYNCH_IO)
-#include <pthread.h>
+#    if defined(SIM_ASYNCH_IO)
+#        include <pthread.h>
 
-#define SIM_ASYNCH_CLOCKS 1
+#        define SIM_ASYNCH_CLOCKS 1
 
 extern pthread_mutex_t sim_asynch_lock;
 extern pthread_cond_t sim_asynch_wake;
@@ -1124,7 +1094,7 @@ extern int32_t sim_tmxr_poll_count;
 extern pthread_cond_t sim_tmxr_poll_cond;
 extern pthread_mutex_t sim_tmxr_poll_lock;
 extern pthread_t sim_asynch_main_threadid;
-extern UNIT * volatile sim_asynch_queue;
+extern UNIT *volatile sim_asynch_queue;
 extern volatile bool sim_idle_wait;
 extern int32_t sim_asynch_check;
 extern int32_t sim_asynch_latency;
@@ -1139,205 +1109,213 @@ extern int32_t sim_asynch_inst_latency;
 
    This branch should be removable once our supported Windows C toolchain has
    portable `_Thread_local` support in C mode. */
-#if defined(_MSC_VER)
-#define AIO_TLS __declspec(thread)
-#else
-#define AIO_TLS _Thread_local
-#endif
-#define AIO_QUEUE_CHECK(que, lock)                              \
-    do {                                                        \
-        UNIT *_cptr;                                            \
-        if (lock)                                               \
-            pthread_mutex_lock (lock);                          \
-        for (_cptr = que;                                       \
-            (_cptr != QUEUE_LIST_END);                          \
-            _cptr = _cptr->next)                                \
-            if (!_cptr->next) {                                 \
-                if (sim_deb) {                                  \
-                    sim_debug (SIM_DBG_EVENT, sim_dflt_dev, "Queue Corruption detected\n");\
-                    fclose(sim_deb);                            \
-                    }                                           \
-                sim_printf("Queue Corruption detected in %s line %d\n",\
-                           __FILE__, __LINE);                   \
-                abort();                                        \
-                }                                               \
-        if (lock)                                               \
-            pthread_mutex_unlock (lock);                        \
-        } while (0)
-#define AIO_MAIN_THREAD (pthread_equal ( pthread_self(), sim_asynch_main_threadid ))
-#define AIO_LOCK                                                  \
-    pthread_mutex_lock(&sim_asynch_lock)
-#define AIO_UNLOCK                                                \
-    pthread_mutex_unlock(&sim_asynch_lock)
-#define AIO_IS_ACTIVE(uptr) (((uptr)->a_is_active ? (uptr)->a_is_active (uptr) : false) || ((uptr)->a_next))
-#if defined(SIM_ASYNCH_MUX)
-#define AIO_CANCEL(uptr)                                      \
-    if (((uptr)->dynflags & UNIT_TM_POLL) &&                  \
-        !((uptr)->next) && !((uptr)->a_next)) {               \
-        (uptr)->a_polling_now = false;                        \
-        sim_tmxr_poll_count -= (uptr)->a_poll_waiter_count;   \
-        (uptr)->a_poll_waiter_count = 0;                      \
-        }
-#endif /* defined(SIM_ASYNCH_MUX) */
-#if !defined(AIO_CANCEL)
-#define AIO_CANCEL(uptr)
-#endif /* !defined(AIO_CANCEL) */
-#define AIO_EVENT_BEGIN(uptr)                                     \
-    do {                                                          \
-        int __was_poll = uptr->dynflags & UNIT_TM_POLL
-#define AIO_EVENT_COMPLETE(uptr, reason)                          \
-        if (__was_poll) {                                         \
-            pthread_mutex_lock (&sim_tmxr_poll_lock);             \
-            uptr->a_polling_now = false;                          \
-            if (uptr->a_poll_waiter_count) {                      \
-                sim_tmxr_poll_count -= uptr->a_poll_waiter_count; \
-                uptr->a_poll_waiter_count = 0;                    \
-                if (0 == sim_tmxr_poll_count)                     \
-                    pthread_cond_broadcast (&sim_tmxr_poll_cond); \
-                }                                                 \
-            pthread_mutex_unlock (&sim_tmxr_poll_lock);           \
-            }                                                     \
-        AIO_UPDATE_QUEUE;                                         \
-        } while (0)
+#        if defined(_MSC_VER)
+#            define AIO_TLS __declspec(thread)
+#        else
+#            define AIO_TLS _Thread_local
+#        endif
+#        define AIO_QUEUE_CHECK(que, lock)                                                                             \
+            do {                                                                                                       \
+                UNIT *_cptr;                                                                                           \
+                if (lock)                                                                                              \
+                    pthread_mutex_lock(lock);                                                                          \
+                for (_cptr = que; (_cptr != QUEUE_LIST_END); _cptr = _cptr->next)                                      \
+                    if (!_cptr->next) {                                                                                \
+                        if (sim_deb) {                                                                                 \
+                            sim_debug(SIM_DBG_EVENT, sim_dflt_dev, "Queue Corruption detected\n");                     \
+                            fclose(sim_deb);                                                                           \
+                        }                                                                                              \
+                        sim_printf("Queue Corruption detected in %s line %d\n", __FILE__, __LINE);                     \
+                        abort();                                                                                       \
+                    }                                                                                                  \
+                if (lock)                                                                                              \
+                    pthread_mutex_unlock(lock);                                                                        \
+            } while (0)
+#        define AIO_MAIN_THREAD (pthread_equal(pthread_self(), sim_asynch_main_threadid))
+#        define AIO_LOCK pthread_mutex_lock(&sim_asynch_lock)
+#        define AIO_UNLOCK pthread_mutex_unlock(&sim_asynch_lock)
+#        define AIO_IS_ACTIVE(uptr) (((uptr)->a_is_active ? (uptr)->a_is_active(uptr) : false) || ((uptr)->a_next))
+#        if defined(SIM_ASYNCH_MUX)
+#            define AIO_CANCEL(uptr)                                                                                   \
+                if (((uptr)->dynflags & UNIT_TM_POLL) && !((uptr)->next) && !((uptr)->a_next)) {                       \
+                    (uptr)->a_polling_now = false;                                                                     \
+                    sim_tmxr_poll_count -= (uptr)->a_poll_waiter_count;                                                \
+                    (uptr)->a_poll_waiter_count = 0;                                                                   \
+                }
+#        endif /* defined(SIM_ASYNCH_MUX) */
+#        if !defined(AIO_CANCEL)
+#            define AIO_CANCEL(uptr)
+#        endif /* !defined(AIO_CANCEL) */
+#        define AIO_EVENT_BEGIN(uptr)                                                                                  \
+            do {                                                                                                       \
+            int __was_poll = uptr->dynflags & UNIT_TM_POLL
+#        define AIO_EVENT_COMPLETE(uptr, reason)                                                                       \
+            if (__was_poll) {                                                                                          \
+                pthread_mutex_lock(&sim_tmxr_poll_lock);                                                               \
+                uptr->a_polling_now = false;                                                                           \
+                if (uptr->a_poll_waiter_count) {                                                                       \
+                    sim_tmxr_poll_count -= uptr->a_poll_waiter_count;                                                  \
+                    uptr->a_poll_waiter_count = 0;                                                                     \
+                    if (0 == sim_tmxr_poll_count)                                                                      \
+                        pthread_cond_broadcast(&sim_tmxr_poll_cond);                                                   \
+                }                                                                                                      \
+                pthread_mutex_unlock(&sim_tmxr_poll_lock);                                                             \
+            }                                                                                                          \
+            AIO_UPDATE_QUEUE;                                                                                          \
+            }                                                                                                          \
+            while (0)
 
-#if defined(_WIN32) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
-#define USE_AIO_INTRINSICS 1
-#endif
+#        if defined(_WIN32) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) ||                                          \
+            defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
+#            define USE_AIO_INTRINSICS 1
+#        endif
 /* Provide a way to test both Intrinsic and Lock based queue manipulations  */
 /* when both are available on a particular platform                         */
-#if defined(DONT_USE_AIO_INTRINSICS) && defined(USE_AIO_INTRINSICS)
-#undef USE_AIO_INTRINSICS
-#endif
-#ifdef USE_AIO_INTRINSICS
+#        if defined(DONT_USE_AIO_INTRINSICS) && defined(USE_AIO_INTRINSICS)
+#            undef USE_AIO_INTRINSICS
+#        endif
+#        ifdef USE_AIO_INTRINSICS
 /* This approach uses intrinsics to manage access to the link list head     */
 /* sim_asynch_queue.  This implementation is a completely lock free design  */
 /* which avoids the potential ABA issues.                                   */
-#define AIO_QUEUE_MODE "Lock free asynchronous event queue"
-#define AIO_INIT                                                  \
-    do {                                                          \
-      sim_asynch_main_threadid = pthread_self();                  \
-      /* Empty list/list end uses the point value (void *)1.      \
-         This allows NULL in an entry's a_next pointer to         \
-         indicate that the entry is not currently in any list */  \
-      sim_asynch_queue = QUEUE_LIST_END;                          \
-      } while (0)
-#define AIO_CLEANUP                                               \
-    do {                                                          \
-      pthread_mutex_destroy(&sim_asynch_lock);                    \
-      pthread_cond_destroy(&sim_asynch_wake);                     \
-      pthread_mutex_destroy(&sim_timer_lock);                     \
-      pthread_cond_destroy(&sim_timer_wake);                      \
-      pthread_mutex_destroy(&sim_tmxr_poll_lock);                 \
-      pthread_cond_destroy(&sim_tmxr_poll_cond);                  \
-      } while (0)
-#ifdef _WIN32
-#elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
-#define InterlockedCompareExchangePointer(Destination, Exchange, Comparand) __sync_val_compare_and_swap(Destination, Comparand, Exchange)
-#else
-#error "Implementation of function InterlockedCompareExchangePointer() is needed to build with USE_AIO_INTRINSICS"
-#endif
-#define AIO_ILOCK AIO_LOCK
-#define AIO_IUNLOCK AIO_UNLOCK
-#define AIO_QUEUE_VAL (UNIT *)(InterlockedCompareExchangePointer((void * volatile *)&sim_asynch_queue, (void *)sim_asynch_queue, NULL))
-#define AIO_QUEUE_SET(newval, oldval) (UNIT *)(InterlockedCompareExchangePointer((void * volatile *)&sim_asynch_queue, (void *)newval, oldval))
-#define AIO_UPDATE_QUEUE sim_aio_update_queue ()
-#define AIO_ACTIVATE(caller, uptr, event_time)                                   \
-    if (!pthread_equal ( pthread_self(), sim_asynch_main_threadid )) {           \
-      sim_aio_activate ((ACTIVATE_API)caller, uptr, event_time);                 \
-      return SCPE_OK;                                                            \
-    } else (void)0
-#else /* !USE_AIO_INTRINSICS */
+#            define AIO_QUEUE_MODE "Lock free asynchronous event queue"
+#            define AIO_INIT                                                                                           \
+                do {                                                                                                   \
+                    sim_asynch_main_threadid = pthread_self();                                                         \
+                    /* Empty list/list end uses the point value (void *)1.                                             \
+                       This allows NULL in an entry's a_next pointer to                                                \
+                       indicate that the entry is not currently in any list */                                         \
+                    sim_asynch_queue = QUEUE_LIST_END;                                                                 \
+                } while (0)
+#            define AIO_CLEANUP                                                                                        \
+                do {                                                                                                   \
+                    pthread_mutex_destroy(&sim_asynch_lock);                                                           \
+                    pthread_cond_destroy(&sim_asynch_wake);                                                            \
+                    pthread_mutex_destroy(&sim_timer_lock);                                                            \
+                    pthread_cond_destroy(&sim_timer_wake);                                                             \
+                    pthread_mutex_destroy(&sim_tmxr_poll_lock);                                                        \
+                    pthread_cond_destroy(&sim_tmxr_poll_cond);                                                         \
+                } while (0)
+#            ifdef _WIN32
+#            elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
+#                define InterlockedCompareExchangePointer(Destination, Exchange, Comparand)                            \
+                    __sync_val_compare_and_swap(Destination, Comparand, Exchange)
+#            else
+#                error                                                                                                 \
+                    "Implementation of function InterlockedCompareExchangePointer() is needed to build with USE_AIO_INTRINSICS"
+#            endif
+#            define AIO_ILOCK AIO_LOCK
+#            define AIO_IUNLOCK AIO_UNLOCK
+#            define AIO_QUEUE_VAL                                                                                      \
+                (UNIT *)(InterlockedCompareExchangePointer((void *volatile *)&sim_asynch_queue,                        \
+                                                           (void *)sim_asynch_queue, NULL))
+#            define AIO_QUEUE_SET(newval, oldval)                                                                      \
+                (UNIT *)(InterlockedCompareExchangePointer((void *volatile *)&sim_asynch_queue, (void *)newval, oldval))
+#            define AIO_UPDATE_QUEUE sim_aio_update_queue()
+#            define AIO_ACTIVATE(caller, uptr, event_time)                                                             \
+                if (!pthread_equal(pthread_self(), sim_asynch_main_threadid)) {                                        \
+                    sim_aio_activate((ACTIVATE_API)caller, uptr, event_time);                                          \
+                    return SCPE_OK;                                                                                    \
+                } else                                                                                                 \
+                    (void)0
+#        else /* !USE_AIO_INTRINSICS */
 /* This approach uses a pthread mutex to manage access to the link list     */
 /* head sim_asynch_queue.  It will always work, but may be slower than the  */
 /* lock free approach when using USE_AIO_INTRINSICS                         */
-#define AIO_QUEUE_MODE "Lock based asynchronous event queue"
-#define AIO_INIT                                                  \
-    do {                                                          \
-      pthread_mutexattr_t attr;                                   \
-                                                                  \
-      pthread_mutexattr_init (&attr);                             \
-      pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);  \
-      pthread_mutex_init (&sim_asynch_lock, &attr);               \
-      pthread_mutexattr_destroy (&attr);                          \
-      sim_asynch_main_threadid = pthread_self();                  \
-      /* Empty list/list end uses the point value (void *)1.      \
-         This allows NULL in an entry's a_next pointer to         \
-         indicate that the entry is not currently in any list */  \
-      sim_asynch_queue = QUEUE_LIST_END;                          \
-      } while (0)
-#define AIO_CLEANUP                                               \
-    do {                                                          \
-      pthread_mutex_destroy(&sim_asynch_lock);                    \
-      pthread_cond_destroy(&sim_asynch_wake);                     \
-      pthread_mutex_destroy(&sim_timer_lock);                     \
-      pthread_cond_destroy(&sim_timer_wake);                      \
-      pthread_mutex_destroy(&sim_tmxr_poll_lock);                 \
-      pthread_cond_destroy(&sim_tmxr_poll_cond);                  \
-      } while (0)
-#define AIO_ILOCK AIO_LOCK
-#define AIO_IUNLOCK AIO_UNLOCK
-#define AIO_QUEUE_VAL sim_asynch_queue
-#define AIO_QUEUE_SET(newval, oldval) ((sim_asynch_queue = newval),oldval)
-#define AIO_UPDATE_QUEUE sim_aio_update_queue ()
-#define AIO_ACTIVATE(caller, uptr, event_time)                         \
-    if (!pthread_equal ( pthread_self(), sim_asynch_main_threadid )) { \
-      sim_debug (SIM_DBG_AIO_QUEUE, sim_dflt_dev, "Queueing Asynch event for %s after %d instructions\n", sim_uname(uptr), event_time);\
-      AIO_LOCK;                                                        \
-      if (uptr->a_next) {                       /* already queued? */  \
-        uptr->a_activate_call = sim_activate_abs;                      \
-      } else {                                                         \
-        uptr->a_next = sim_asynch_queue;                               \
-        uptr->a_event_time = event_time;                               \
-        uptr->a_activate_call = (ACTIVATE_API)&caller;                 \
-        sim_asynch_queue = uptr;                                       \
-      }                                                                \
-      sim_asynch_check = 0;                                            \
-      if (sim_idle_wait) {                                             \
-        if (sim_deb) {  /* only while debug do lock/unlock overhead */ \
-          AIO_UNLOCK;                                                  \
-          sim_debug (TIMER_DBG_IDLE, &sim_timer_dev, "waking due to event on %s after %d instructions\n", sim_uname(uptr), event_time);\
-          AIO_LOCK;                                                    \
-          }                                                            \
-        pthread_cond_signal (&sim_asynch_wake);                        \
-        }                                                              \
-      AIO_UNLOCK;                                                      \
-      return SCPE_OK;                                                  \
-    } else (void)0
-#endif /* USE_AIO_INTRINSICS */
-#define AIO_VALIDATE(uptr)                                             \
-    if (!pthread_equal ( pthread_self(), sim_asynch_main_threadid )) { \
-      sim_printf("Improper thread context for operation on %s in %s line %d\n", \
-                   sim_uname(uptr), __FILE__, __LINE__);               \
-      abort();                                                         \
-      } else (void)0
-#define AIO_CHECK_EVENT                                                \
-    if (0 > --sim_asynch_check) {                                      \
-      AIO_UPDATE_QUEUE;                                                \
-      sim_asynch_check = sim_asynch_inst_latency;                      \
-      } else (void)0
-#define AIO_SET_INTERRUPT_LATENCY(instpersec)                                                   \
-    do {                                                                                        \
-      sim_asynch_inst_latency = (int32_t)((((double)(instpersec))*sim_asynch_latency)/1000000000);\
-      if (sim_asynch_inst_latency == 0)                                                         \
-        sim_asynch_inst_latency = 1;                                                            \
-      } while (0)
-#else /* !SIM_ASYNCH_IO */
-#define AIO_QUEUE_MODE "Asynchronous I/O is not available"
-#define AIO_UPDATE_QUEUE
-#define AIO_ACTIVATE(caller, uptr, event_time)
-#define AIO_VALIDATE(uptr)
-#define AIO_CHECK_EVENT
-#define AIO_INIT
-#define AIO_MAIN_THREAD true
-#define AIO_LOCK
-#define AIO_UNLOCK
-#define AIO_CLEANUP
-#define AIO_EVENT_BEGIN(uptr)
-#define AIO_EVENT_COMPLETE(uptr, reason)
-#define AIO_IS_ACTIVE(uptr) false
-#define AIO_CANCEL(uptr)
-#define AIO_SET_INTERRUPT_LATENCY(instpersec)
-#define AIO_TLS
-#endif /* SIM_ASYNCH_IO */
+#            define AIO_QUEUE_MODE "Lock based asynchronous event queue"
+#            define AIO_INIT                                                                                           \
+                do {                                                                                                   \
+                    pthread_mutexattr_t attr;                                                                          \
+                                                                                                                       \
+                    pthread_mutexattr_init(&attr);                                                                     \
+                    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);                                         \
+                    pthread_mutex_init(&sim_asynch_lock, &attr);                                                       \
+                    pthread_mutexattr_destroy(&attr);                                                                  \
+                    sim_asynch_main_threadid = pthread_self();                                                         \
+                    /* Empty list/list end uses the point value (void *)1.                                             \
+                       This allows NULL in an entry's a_next pointer to                                                \
+                       indicate that the entry is not currently in any list */                                         \
+                    sim_asynch_queue = QUEUE_LIST_END;                                                                 \
+                } while (0)
+#            define AIO_CLEANUP                                                                                        \
+                do {                                                                                                   \
+                    pthread_mutex_destroy(&sim_asynch_lock);                                                           \
+                    pthread_cond_destroy(&sim_asynch_wake);                                                            \
+                    pthread_mutex_destroy(&sim_timer_lock);                                                            \
+                    pthread_cond_destroy(&sim_timer_wake);                                                             \
+                    pthread_mutex_destroy(&sim_tmxr_poll_lock);                                                        \
+                    pthread_cond_destroy(&sim_tmxr_poll_cond);                                                         \
+                } while (0)
+#            define AIO_ILOCK AIO_LOCK
+#            define AIO_IUNLOCK AIO_UNLOCK
+#            define AIO_QUEUE_VAL sim_asynch_queue
+#            define AIO_QUEUE_SET(newval, oldval) ((sim_asynch_queue = newval), oldval)
+#            define AIO_UPDATE_QUEUE sim_aio_update_queue()
+#            define AIO_ACTIVATE(caller, uptr, event_time)                                                             \
+                if (!pthread_equal(pthread_self(), sim_asynch_main_threadid)) {                                        \
+                    sim_debug(SIM_DBG_AIO_QUEUE, sim_dflt_dev, "Queueing Asynch event for %s after %d instructions\n", \
+                              sim_uname(uptr), event_time);                                                            \
+                    AIO_LOCK;                                                                                          \
+                    if (uptr->a_next) { /* already queued? */                                                          \
+                        uptr->a_activate_call = sim_activate_abs;                                                      \
+                    } else {                                                                                           \
+                        uptr->a_next = sim_asynch_queue;                                                               \
+                        uptr->a_event_time = event_time;                                                               \
+                        uptr->a_activate_call = (ACTIVATE_API) & caller;                                               \
+                        sim_asynch_queue = uptr;                                                                       \
+                    }                                                                                                  \
+                    sim_asynch_check = 0;                                                                              \
+                    if (sim_idle_wait) {                                                                               \
+                        if (sim_deb) { /* only while debug do lock/unlock overhead */                                  \
+                            AIO_UNLOCK;                                                                                \
+                            sim_debug(TIMER_DBG_IDLE, &sim_timer_dev,                                                  \
+                                      "waking due to event on %s after %d instructions\n", sim_uname(uptr),            \
+                                      event_time);                                                                     \
+                            AIO_LOCK;                                                                                  \
+                        }                                                                                              \
+                        pthread_cond_signal(&sim_asynch_wake);                                                         \
+                    }                                                                                                  \
+                    AIO_UNLOCK;                                                                                        \
+                    return SCPE_OK;                                                                                    \
+                } else                                                                                                 \
+                    (void)0
+#        endif /* USE_AIO_INTRINSICS */
+#        define AIO_VALIDATE(uptr)                                                                                     \
+            if (!pthread_equal(pthread_self(), sim_asynch_main_threadid)) {                                            \
+                sim_printf("Improper thread context for operation on %s in %s line %d\n", sim_uname(uptr), __FILE__,   \
+                           __LINE__);                                                                                  \
+                abort();                                                                                               \
+            } else                                                                                                     \
+                (void)0
+#        define AIO_CHECK_EVENT                                                                                        \
+            if (0 > --sim_asynch_check) {                                                                              \
+                AIO_UPDATE_QUEUE;                                                                                      \
+                sim_asynch_check = sim_asynch_inst_latency;                                                            \
+            } else                                                                                                     \
+                (void)0
+#        define AIO_SET_INTERRUPT_LATENCY(instpersec)                                                                  \
+            do {                                                                                                       \
+                sim_asynch_inst_latency = (int32_t)((((double)(instpersec)) * sim_asynch_latency) / 1000000000);       \
+                if (sim_asynch_inst_latency == 0)                                                                      \
+                    sim_asynch_inst_latency = 1;                                                                       \
+            } while (0)
+#    else /* !SIM_ASYNCH_IO */
+#        define AIO_QUEUE_MODE "Asynchronous I/O is not available"
+#        define AIO_UPDATE_QUEUE
+#        define AIO_ACTIVATE(caller, uptr, event_time)
+#        define AIO_VALIDATE(uptr)
+#        define AIO_CHECK_EVENT
+#        define AIO_INIT
+#        define AIO_MAIN_THREAD true
+#        define AIO_LOCK
+#        define AIO_UNLOCK
+#        define AIO_CLEANUP
+#        define AIO_EVENT_BEGIN(uptr)
+#        define AIO_EVENT_COMPLETE(uptr, reason)
+#        define AIO_IS_ACTIVE(uptr) false
+#        define AIO_CANCEL(uptr)
+#        define AIO_SET_INTERRUPT_LATENCY(instpersec)
+#        define AIO_TLS
+#    endif /* SIM_ASYNCH_IO */
 
 #endif

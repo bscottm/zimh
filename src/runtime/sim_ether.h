@@ -29,14 +29,17 @@
   01-Dec-03  DTH  Added reflections, tweaked decnet fix items
   25-Nov-03  DTH  Verified DECNET_FIX, reversed ifdef to mainstream code
   14-Nov-03  DTH  Added #ifdef DECNET_FIX for problematic duplicate detection
-  code 07-Jun-03  MP   Added WIN32 support for DECNET duplicate address
-  detection. 05-Jun-03  DTH  Added used to struct eth_packet 01-Feb-03  MP
-  Changed some uint8 strings to char* to reflect usage 22-Oct-02  DTH  Added
-  all_multicast and promiscuous support 21-Oct-02  DTH  Corrected copyright
-  again 16-Oct-02  DTH  Fixed copyright 08-Oct-02  DTH  Integrated
-  with 2.10-0p4, added variable vector and copyrights 03-Oct-02  DTH  Beta
-  version of xq/sim_ether released for SIMH 2.09-11 15-Aug-02  DTH  Started XQ
-  simulation
+                  code
+  07-Jun-03  MP   Added WIN32 support for DECNET duplicate address
+                  detection.
+  05-Jun-03  DTH  Added used to struct eth_packet
+  01-Feb-03  MP    Changed some uint8 strings to char* to reflect usage
+  22-Oct-02  DTH  Added all_multicast and promiscuous support
+  21-Oct-02  DTH  Corrected copyright again
+  16-Oct-02  DTH  Fixed copyright
+  08-Oct-02  DTH  Integrated with 2.10-0p4, added variable vector and copyrights
+  03-Oct-02  DTH  Beta version of xq/sim_ether released for SIMH 2.09-11
+  15-Aug-02  DTH  Started XQ simulation
 
   ------------------------------------------------------------------------------
 */
@@ -244,8 +247,6 @@ struct eth_device {
   sim_atomic_value_t writer_status; /* Current writer state (atomically accessed) */
 #endif
 };
-
-typedef struct eth_device ETH_DEV;
 
 /* prototype declarations*/
 

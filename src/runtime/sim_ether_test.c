@@ -196,6 +196,9 @@ t_stat eth_test_open(const char *name, eth_backend_t *backend)
         return status;
 
     backend->eth_api = ETH_API_TEST;
+    backend->before_packet_write = NULL;
+    backend->write_packet = eth_writer_test;
+    backend->after_packet_write = NULL;
     backend->state.test_backend = test_backend;
 
     return SCPE_OK;

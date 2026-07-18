@@ -289,8 +289,7 @@ if ((!callback) || !ctx->asynch_io)
 #define DOP_WSEC  2             /* sim_disk_wrsect_a */
 #define DOP_IAVL  3             /* sim_disk_isavailable_a */
 
-static void *
-_disk_io(void *arg)
+static THREAD_FUNC_DEFN(_disk_io)
 {
 UNIT* volatile uptr = (UNIT*)arg;
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
@@ -328,7 +327,7 @@ pthread_mutex_unlock (&ctx->io_lock);
 
 sim_debug_unit (ctx->dbit, uptr, "_disk_io(unit=%d) exiting\n", (int)(uptr - ctx->dptr->units));
 
-return NULL;
+return THREAD_FUNC_RETURN(0);
 }
 
 /* This routine is called in the context of the main simulator thread before
@@ -674,7 +673,6 @@ sim_printf ("%s", msg);
 return SCPE_NOFNC;
 #else
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
-pthread_attr_t attr;
 int create_status;
 
 sim_debug_unit (ctx->dbit, uptr, "sim_disk_set_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
@@ -686,13 +684,9 @@ if (ctx->asynch_io) {
     pthread_cond_init (&ctx->io_cond, NULL);
     pthread_cond_init (&ctx->io_done, NULL);
     pthread_cond_init (&ctx->startup_cond, NULL);
-    pthread_attr_init(&attr);
-    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
     pthread_mutex_lock (&ctx->io_lock);
     ctx->io_thread_running = false;
-    create_status = pthread_create (&ctx->io_thread, &attr, _disk_io,
-                                    (void *)uptr);
-    pthread_attr_destroy(&attr);
+    create_status = sim_thread_create (&ctx->io_thread, _disk_io, uptr);
     if (create_status != 0) {
         pthread_mutex_unlock (&ctx->io_lock);
         pthread_cond_destroy (&ctx->startup_cond);

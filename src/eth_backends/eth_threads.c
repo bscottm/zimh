@@ -22,6 +22,13 @@ enum {
     ETH_READER_POLL_TMO = 500 /* ms */
 };
 
+#define POLL_NORMAL_EVENTS (POLLIN)
+#if !defined(_WIN32) && !defined(_WIN64)
+#    define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
+#else
+#    define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
+#endif
+
 /*============================================================================*/
 /*                 select()/poll() on a single socket                         */
 /*============================================================================*/
@@ -38,15 +45,7 @@ static inline int wait_one_socket(SOCKET socket_fd, long timeout_ms)
     timeout.tv_usec = timeout_ms * 1000;
     return select(socket_fd + 1, &setl, NULL, NULL, &timeout);
 #else
-#    define POLL_NORMAL_EVENTS (POLLIN)
-#    if !defined(_WIN32) && !defined(_WIN64)
-#        define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
-#    else
-#        define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
-#    endif
-
     sim_pollfd_t fds = {.fd = socket_fd, .events = POLL_NORMAL_EVENTS | POLL_EXTRA_EVENTS, .revents = 0};
-
     return poll(&fds, 1, (sim_polltmo_t)timeout_ms);
 #endif
 }
@@ -65,6 +64,13 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
     else
         snprintf(reader_name, sizeof(reader_name), "r: %s", dev->name);
     sim_set_thread_name(reader_name);
+
+    /* Set the reader thread's affinity to the I/O affinity set: */
+    sim_cpu_set_t io_set;
+
+    sim_os_get_cpu_partition(NULL, &io_set);
+    if (!sim_cpu_set_empty(&io_set))
+        sim_os_set_thread_affinity(&io_set);
 
     /* Signal that reader thread is ready */
     sim_mutex_lock(&dev->startup_lock);
@@ -198,30 +204,32 @@ THREAD_FUNC_DEFN(_eth_reader)
 
     int start_status = eth_reader_init(dev);
 
-    if (start_status == ETH_READER_RUNNING) {
-        sim_atomic_put(&dev->reader_status, start_status);
-        while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
-            /* Dispatch to API-specific wait handler */
-            int status = wait_dispatch_table[dev->backend.eth_api](dev);
+    if (start_status != ETH_READER_RUNNING) {
+        goto error_out;
+    }
 
-            /* Packet available? */
+    sim_atomic_put(&dev->reader_status, start_status);
+    while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
+        /* Dispatch to API-specific wait handler */
+        int status = wait_dispatch_table[dev->backend.eth_api](dev);
+
+        /* Packet available? */
+        if (status > 0) {
+            status = eth_reader_dispatch_table[dev->backend.eth_api](dev);
+
             if (status > 0) {
-                status = eth_reader_dispatch_table[dev->backend.eth_api](dev);
-
-                if (status > 0) {
-                    /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll */
-                    if (dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
-                        sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
-                        sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
-                    }
-                } else if (status < 0 && !eth_reader_error_handler(dev)) {
-                    goto error_out;
+                /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll */
+                if (dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
+                    sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
+                    sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
                 }
-            } else {
-                if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
-                    /* Handle select errors */
-                    goto error_out;
-                }
+            } else if (status < 0 && !eth_reader_error_handler(dev)) {
+                goto error_out;
+            }
+        } else {
+            if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
+                /* Handle select errors */
+                goto error_out;
             }
         }
     }
@@ -249,6 +257,13 @@ static int eth_writer_init(ETH_DEV *dev)
         snprintf(writer_name, sizeof(writer_name), "w: %s", dev->name);
     sim_set_thread_name(writer_name);
 
+    /* Set the writer thread's affinity to the I/O affinity set: */
+    sim_cpu_set_t io_set;
+
+    sim_os_get_cpu_partition(NULL, &io_set);
+    if (!sim_cpu_set_empty(&io_set))
+        sim_os_set_thread_affinity(&io_set);
+
     /* Signal that writer thread is ready */
     sim_mutex_lock(&dev->startup_lock);
     dev->threads_ready++;
@@ -265,103 +280,117 @@ static int eth_writer_init(ETH_DEV *dev)
 THREAD_FUNC_DEFN(_eth_writer)
 {
     ETH_DEV *dev = (ETH_DEV *)arg;
-    ETH_WRITE_REQUEST *local_freelist = NULL;  /* Local accumulator for freed buffers */
+    eth_backend_t *backend = &dev->backend;
+    ETH_WRITE_REQUEST *local_freelist = NULL; /* Local accumulator for freed buffers */
 
     sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_INIT);
 
     int start_status = eth_writer_init(dev);
 
-    if (start_status == ETH_WRITER_RUNNING) {
-        sim_atomic_put(&dev->writer_status, start_status);
+    if (start_status != ETH_WRITER_RUNNING) {
+        goto error_out;
+    }
 
-        do {
-            /* Wait for work or shutdown signal */
-            sim_mutex_lock(&dev->writer_lock);
-            while (sim_tailq_empty(&dev->write_requests)) {
-                /* Check for shutdown before waiting */
-                if ((eth_writer_state_t)sim_atomic_get(&dev->writer_status) == ETH_WRITER_SHUTDOWN) {
-                    sim_mutex_unlock(&dev->writer_lock);
-                    goto writer_done;
-                }
-                sim_cond_wait(&dev->writer_cond, &dev->writer_lock);
+    sim_atomic_put(&dev->writer_status, start_status);
+
+    while ((eth_writer_state_t)sim_atomic_get(&dev->writer_status) == ETH_WRITER_RUNNING) {
+        while (sim_tailq_empty(&dev->write_requests)) {
+            /* Check for shutdown before waiting */
+            if ((eth_writer_state_t)sim_atomic_get(&dev->writer_status) != ETH_WRITER_RUNNING) {
+                goto writer_done;
             }
-            /* Lock held: queue is non-empty, dequeue work */
-            ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+
+            sim_mutex_lock(&dev->writer_lock);
+            sim_cond_wait(&dev->writer_cond, &dev->writer_lock);
+            sim_mutex_unlock(&dev->writer_lock);
+        }
+
+        /* Before write housekeeping... */
+        if (backend->before_packet_write != NULL && !backend->before_packet_write(backend, dev)) {
+            goto error_out;
+        }
+
+        /* Dequeue and process outbound packets: */
+        ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+
+        while (outbound != NULL && (eth_writer_state_t)sim_atomic_get(&dev->writer_status) == ETH_WRITER_RUNNING) {
+            /* Check if throttling is enabled */
+            if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
+                uint32_t packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
+
+                /* Update throttle history */
+                dev->throttle_events <<= 1;
+                dev->throttle_events += (packet_delta_time < dev->throttle_time) ? 1 : 0;
+
+                /* Check if we need to throttle */
+                if ((dev->throttle_events & dev->throttle_mask) == dev->throttle_mask) {
+                    /* Sleep to throttle transmission rate */
+                    sim_os_ms_sleep(dev->throttle_delay);
+                    ++dev->throttle_count;
+                    dev->throttle_packet_time = sim_os_msec();
+                }
+            }
+
+            /* Send the outbound packet */
+            dev->write_status = _eth_write(dev, &outbound->packet, NULL);
+
+            /* Add to local freelist (no lock needed) */
+            outbound->next = local_freelist;
+            local_freelist = outbound;
+
+            /* Check for more work without blocking */
+            outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+        }
+
+        /* After write housekeeping... */
+        if (backend->after_packet_write != NULL && !backend->after_packet_write(backend, dev)) {
+            goto error_out;
+        }
+
+        /* Batch return buffers to global freelist - ONE lock for entire batch */
+        if (local_freelist != NULL) {
+            /* Find end of local freelist */
+            ETH_WRITE_REQUEST *tail = local_freelist;
+            while (tail->next != NULL) {
+                tail = tail->next;
+            }
+
+            /* Prepend entire local freelist to global freelist */
+            sim_mutex_lock(&dev->writer_lock);
+            tail->next = dev->write_buffers;
+            dev->write_buffers = local_freelist;
             sim_mutex_unlock(&dev->writer_lock);
 
-            /* Process the batch of pending write requests WITHOUT holding the lock */
-            do {
-                /* Check if throttling is enabled */
-                if (dev->throttle_delay != ETH_THROT_DISABLED_DELAY) {
-                    uint32_t packet_delta_time = sim_os_msec() - dev->throttle_packet_time;
-
-                    /* Update throttle history */
-                    dev->throttle_events <<= 1;
-                    dev->throttle_events += (packet_delta_time < dev->throttle_time) ? 1 : 0;
-
-                    /* Check if we need to throttle */
-                    if ((dev->throttle_events & dev->throttle_mask) == dev->throttle_mask) {
-                        /* Sleep to throttle transmission rate */
-                        sim_os_ms_sleep(dev->throttle_delay);
-                        ++dev->throttle_count;
-                        dev->throttle_packet_time = sim_os_msec();
-                    }
-                }
-
-                /* Send the outbound packet */
-                dev->write_status = _eth_write(dev, &outbound->packet, NULL);
-
-                /* Add to local freelist (no lock needed) */
-                outbound->next = local_freelist;
-                local_freelist = outbound;
-
-                /* Check for more work without blocking */
-                outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
-            } while (outbound != NULL &&
-                     (eth_writer_state_t)sim_atomic_get(&dev->writer_status) != ETH_WRITER_SHUTDOWN);
-
-            /* Batch return buffers to global freelist - ONE lock for entire batch */
-            if (local_freelist != NULL) {
-                /* Find end of local freelist */
-                ETH_WRITE_REQUEST *tail = local_freelist;
-                while (tail->next != NULL) {
-                    tail = tail->next;
-                }
-
-                /* Prepend entire local freelist to global freelist */
-                sim_mutex_lock(&dev->writer_lock);
-                tail->next = dev->write_buffers;
-                dev->write_buffers = local_freelist;
-                sim_mutex_unlock(&dev->writer_lock);
-
-                local_freelist = NULL;
-            }
-        } while (true);
+            local_freelist = NULL;
+        }
     }
 
 writer_done:
+    sim_mutex_lock(&dev->writer_lock);
+
     /* Return any local freelist buffers */
     if (local_freelist != NULL) {
         ETH_WRITE_REQUEST *tail = local_freelist;
         while (tail->next != NULL) {
             tail = tail->next;
         }
-        sim_mutex_lock(&dev->writer_lock);
+
         tail->next = dev->write_buffers;
         dev->write_buffers = local_freelist;
-        sim_mutex_unlock(&dev->writer_lock);
     }
 
     /* If we exited with requests in queue, avoid leaking by putting them on free list */
-    sim_mutex_lock(&dev->writer_lock);
     while (!sim_tailq_empty(&dev->write_requests)) {
         ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
         outbound->next = dev->write_buffers;
         dev->write_buffers = outbound;
     }
+
     sim_mutex_unlock(&dev->writer_lock);
 
     sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
     sim_debug(dev->dbit, dev->dptr, "Writer Thread Exiting\n");
+
+error_out:
     return THREAD_FUNC_RETURN(0);
 }

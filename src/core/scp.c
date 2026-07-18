@@ -2693,6 +2693,15 @@ for (i = 1; i < argc; i++) {                            /* loop thru args */
 sim_quiet = sim_switches & SWMASK ('Q');                /* -q means quiet */
 sim_on_inherit = sim_switches & SWMASK ('O');           /* -o means inherit on state */
 
+#if defined(SIM_ASYNCH_IO)
+/* Set the main thread's affinity: */
+sim_cpu_set_t main_set;
+
+sim_os_get_cpu_partition(&main_set, NULL);
+if (!sim_cpu_set_empty(&main_set))
+    sim_os_set_thread_affinity(&main_set);
+#endif
+
 sim_init_sock ();                                       /* init socket capabilities */
 AIO_INIT;                                               /* init Asynch I/O */
 sim_finit ();                                           /* init fio package */

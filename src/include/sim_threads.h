@@ -5,8 +5,9 @@
  * This is a thin wrapper abstraction around the pthreads library that permits additional thread library
  * support, if ever needed.
  *
- * C11 concurrency was an interesting experiment, but should not be considered unless an aboslute, bare boned
- * threading implementation is required.
+ * C11 concurrency was an interesting experiment, but should not be considered unless an absolutely bare boned
+ * threading implementation is required as a fallback. Consider, though, that features such as thread naming
+ * and thread affinity require platform or pthread functionality.
  *
  * Macros:
  *
@@ -14,6 +15,11 @@
  *                         forward declarations.
  * THREAD_FUNC_DEFN(FUNC)  Thread function definition macro. Use it in
  *                         front of the function's body (implementation).
+ * THREAD_FUNC_RETURN(VAL) Thread function return value. Notably, this is used as:
+ *
+ *                             return THREAD_FUNC_RETURN(val);
+ *
+ *                         pthreads returns a (void *) and the macro handles the casting.
  *
  * Types:
  *
@@ -31,7 +37,6 @@
 #    if defined(HAVE_PTHREADS)
 #        include <pthread.h>
 
-#        define HAVE_STD_THREADS 0
 #        define THREAD_FUNC_DECL(FUNC) void *FUNC(void *arg)
 #        define THREAD_FUNC_DEFN(FUNC) void *FUNC(void *arg)
 #        define THREAD_FUNC_RETURN(VAL) ((void *)VAL)
@@ -44,25 +49,6 @@ typedef pthread_mutex_t sim_mutex_t;
 #    else
 #        error "No standard threads or pthreads?"
 #    endif
-
-/* Create a new thread.
- *
- * Returns 0 on success, -1 (non-zero)on failure
- */
-static inline int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn func, void *arg)
-{
-#    if defined(HAVE_PTHREADS)
-    pthread_attr_t attr;
-    int retval;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    retval = pthread_create(thread_id, &attr, func, arg);
-    pthread_attr_destroy(&attr);
-
-    return (retval == 0) ? 0 : -1;
-#    endif
-}
 
 static inline int sim_thread_equal(sim_thread_t left, sim_thread_t right)
 {
@@ -178,13 +164,47 @@ static inline void sim_mutex_destroy(sim_mutex_t *mtx)
 }
 
 /*=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
- * Traditional external function declarations:
+ * Extern interface function declarations:
  *=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+
+extern int sim_thread_create(sim_thread_t *thread_id, sim_thread_fn func, void *arg);
+
 #    if !defined(THREAD_NAME_MAX)
 #        define THREAD_NAME_MAX 64
 #    endif
 
-extern void sim_set_thread_name(const char *name);
+extern void sim_set_thread_name(const char *);
+
+/*=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+ * Thread affinity:
+ *=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+
+#    define SIM_MAX_CPUS 64
+
+typedef struct {
+    uint64_t mask;
+} sim_cpu_set_t;
+
+static inline void sim_cpu_set_zero(sim_cpu_set_t *s)
+{
+    s->mask = 0;
+}
+
+static inline void sim_cpu_set_add(sim_cpu_set_t *s, int cpu)
+{
+    if (cpu >= 0 && cpu < SIM_MAX_CPUS)
+        s->mask |= ((uint64_t)1 << cpu);
+}
+
+static inline int sim_cpu_set_empty(const sim_cpu_set_t *s)
+{
+    return s->mask == 0;
+}
+
+extern int sim_os_get_cpu_count(void);
+extern t_stat sim_os_get_process_affinity(sim_cpu_set_t *set);
+extern t_stat sim_os_set_thread_affinity(const sim_cpu_set_t *set);
+extern t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set);
 
 #    define SIM_THREADS_H
 #endif

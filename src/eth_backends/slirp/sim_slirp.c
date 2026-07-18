@@ -7,21 +7,25 @@
    provide NAT network functionality.
 
 */
-#define SIMH_IP_NETWORK    0x0a000200  /* aka 10.0.2.0 */
-#define SIMH_IP_NETMASK    0xffffff00  /* aka 255.255.255.0 */
-#define SIMH_GATEWAY_ADDR  0x0a000202  /* aka 10.0.2.2 (SIMH's address) */
-#define SIMH_RESOLVER_ADDR 0x0a000203  /* aka 10.0.2.3 (DNS resolver) */
+#define SIMH_IP_NETWORK 0x0a000200    /* aka 10.0.2.0 */
+#define SIMH_IP_NETMASK 0xffffff00    /* aka 255.255.255.0 */
+#define SIMH_GATEWAY_ADDR 0x0a000202  /* aka 10.0.2.2 (SIMH's address) */
+#define SIMH_RESOLVER_ADDR 0x0a000203 /* aka 10.0.2.3 (DNS resolver) */
 
 /* IPv6 private address range (ULA) blessed by IANA */
-#define SIMH_IP6_NETWORK   "fd00:cafe:dead:beef::"
+#define SIMH_IP6_NETWORK "fd00:cafe:dead:beef::"
 #define SIMH_IP6_PREFIX_LEN 64
-#define SIMH_GW_ADDR6      "fd00:cafe:dead:beef::2"   /* SIMH's IPv6 address */
+#define SIMH_GW_ADDR6 "fd00:cafe:dead:beef::2" /* SIMH's IPv6 address */
 
 #include <glib.h>
-#include <errno.h>                  /* Paranoia for Win32/64 */
+#include <errno.h>                             /* Paranoia for Win32/64 */
 
 #include "sim_defs.h"
+#include "sim_tailq.h"
+#include "eth_backends/eth_types.h"
+#include "eth_backends/eth_backends.h"
 #include "sim_slirp.h"
+#include "sim_ether.h"
 #include "sim_printf_fmts.h"
 
 #define IS_TCP 0
@@ -30,11 +34,9 @@
 static const char *tcpudp[] = {"TCP", "UDP"};
 
 /* Additional debugging flags added to the device's debug table. */
-DEBTAB slirp_dbgtable[] = {
-    { "POLL", 0, "Show libslirp polling callback activity" },
-    { "SOCKET", 0, "Show libslirp socket registration activity" },
-    { NULL }
-};
+DEBTAB slirp_dbgtable[] = {{"POLL", 0, "Show libslirp polling callback activity"},
+                           {"SOCKET", 0, "Show libslirp socket registration activity"},
+                           {NULL}};
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * Port redirection management:
@@ -71,7 +73,7 @@ static int parse_redirect_port(struct redir_tcp_udp **head, const char *buff, in
 
         if (inet_pton(AF_INET, ipaddrstr, &addr) > 0) {
             inaddr = addr.s_addr;
-        } 
+        }
     }
 
     if (inaddr == INADDR_ANY) {
@@ -79,7 +81,7 @@ static int parse_redirect_port(struct redir_tcp_udp **head, const char *buff, in
         return -1;
     }
 
-    if ((newp = (struct redir_tcp_udp *) calloc(1, sizeof(struct redir_tcp_udp))) == NULL)
+    if ((newp = (struct redir_tcp_udp *)calloc(1, sizeof(struct redir_tcp_udp))) == NULL)
         return -1;
 
     newp->is_udp = is_udp;
@@ -101,8 +103,7 @@ static int do_redirects(sim_slirp_network *slirp, struct redir_tcp_udp *head)
     host_addr.s_addr = htonl(INADDR_ANY);
     if (head != NULL) {
         ret = do_redirects(slirp, head->next);
-        if (slirp_add_hostfwd(slirp->slirp_cxn, head->is_udp, host_addr,
-                              head->sim_local_port, head->sim_local_inaddr,
+        if (slirp_add_hostfwd(slirp->slirp_cxn, head->is_udp, host_addr, head->sim_local_port, head->sim_local_inaddr,
                               head->simh_host_port) < 0) {
             char local_addr[16];
 
@@ -132,7 +133,7 @@ static unsigned int collect_slirp_debug(const char *dbg_tokens, int *err)
         } else if (!strncasecmp(dbg_tokens, "ALL", 3)) {
             slirp_dbg |= (SLIRP_DBG_CALL | SLIRP_DBG_MISC | SLIRP_DBG_ERROR | SLIRP_DBG_VERBOSE_CALL);
         } else
-          *err = 1;
+            *err = 1;
 #else
         // libslirp debug is not visible until 4.9. <sigh!>
         *err = 1;
@@ -147,56 +148,6 @@ static unsigned int collect_slirp_debug(const char *dbg_tokens, int *err)
 
     return slirp_dbg;
 }
-
-#if defined(GLIB_H_MINIMAL)
-/* SIMH uses a custom logger to output libslirp messages. */
-
-static void output_stderr_noexit(const char *fmt, va_list args)
-{
-    char stackbuf[256];
-    char *buf = stackbuf;
-    size_t bufsize = sizeof(stackbuf);
-    int vlen;
-
-    do {
-        vlen = vsnprintf(buf, bufsize, fmt, args);
-        if (vlen < 0 || ((size_t) vlen) >= bufsize - 2) {
-            /* Reallocate a larger buffer... */
-            if (buf != stackbuf)
-                free(buf);
-            bufsize *= 2;
-            if (bufsize < (size_t) (vlen + 2))
-                bufsize = (size_t) (vlen + 2);
-            buf = (char *) calloc(bufsize, sizeof(char));
-            if (buf == NULL)
-                return;
-        }
-    } while (vlen < 0 || (size_t) vlen >= bufsize - 1);
-
-    buf[vlen++] = '\n';
-    buf[vlen] = '\0';
-
-    sim_misc_debug("libslirp", "trace", buf);
-
-    if (buf != stackbuf)
-        free(buf);
-}
-
-static void output_stderr_exit(const char *fmt, va_list args)
-{
-    output_stderr_noexit(fmt, args);
-    exit(1);
-    g_assert_not_reached();
-}
-
-static GLibLogger simh_logger = {
-    .logging_enabled = 1,
-    .output_warning = output_stderr_noexit,
-    .output_debug = output_stderr_noexit,
-    .output_error = output_stderr_exit,
-    .output_critical = output_stderr_exit
-};
-#endif
 
 static void libslirp_guest_error(const char *msg, void *opaque)
 {
@@ -218,19 +169,19 @@ static int initialize_poll_fds(sim_slirp_network *slirp);
 static slirp_ssize_t invoke_sim_packet_callback(const void *buf, size_t len, void *opaque);
 static void notify_callback(void *opaque);
 
-sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_callback pkt_callback, DEVICE *dptr, uint32_t dbit,
-                                char *errbuf, size_t errbuf_size)
+sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_callback pkt_callback, DEVICE *dptr,
+                                  uint32_t dbit, char *errbuf, size_t errbuf_size)
 {
-    sim_slirp_network  *slirp = (sim_slirp_network *) calloc(1, sizeof(*slirp));
-    SlirpConfig     *cfg = &slirp->slirp_config;
-    SlirpCb         *cbs = &slirp->slirp_callbacks;
+    sim_slirp_network *slirp = (sim_slirp_network *)calloc(1, sizeof(*slirp));
+    SlirpConfig *cfg = &slirp->slirp_config;
+    SlirpCb *cbs = &slirp->slirp_callbacks;
 
-    char            *targs = strdup(args);
-    const char      *tptr = targs;
-    const char      *cptr;
-    char             tbuf[CBUFSIZE], gbuf[CBUFSIZE], abuf[CBUFSIZE];
-    int              err;
-    struct in6_addr  default_ipv6_prefix, default_ipv6_gw;
+    char *targs = strdup(args);
+    const char *tptr = targs;
+    const char *cptr;
+    char tbuf[CBUFSIZE], gbuf[CBUFSIZE], abuf[CBUFSIZE];
+    int err;
+    struct in6_addr default_ipv6_prefix, default_ipv6_gw;
 
     /* Default IPv6 address -- FIXME */
     inet_pton(AF_INET6, SIMH_IP6_NETWORK, &default_ipv6_prefix);
@@ -260,7 +211,7 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
     /* Version 5 config: nothing used */
 
     /* SIMH state/config */
-    slirp->args = (char *) calloc(1 + strlen(args), sizeof(char));
+    slirp->args = (char *)calloc(1 + strlen(args), sizeof(char));
     strlcpy(slirp->args, args, 1 + strlen(args));
     pthread_mutex_init(&slirp->libslirp_lock, NULL);
     pthread_cond_init(&slirp->no_sockets_cv, NULL);
@@ -407,7 +358,7 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
                 continue;
             }
         }
-#endif        
+#endif
         snprintf(errbuf, errbuf_size - 1, "Unexpected NAT argument: %s", gbuf);
         err = 1;
     }
@@ -428,7 +379,7 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
         cfg->vnameserver.s_addr = htonl(ntohl(cfg->vnetwork.s_addr) | 3);
 
     /* Set the DNS search domains */
-    cfg->vdnssearch = (const char **) slirp->dns_search_domains;
+    cfg->vdnssearch = (const char **)slirp->dns_search_domains;
 
     /* Set the BOOTP file and TFTP path in the Slirp config: */
     cfg->bootfile = slirp->the_bootfile;
@@ -456,7 +407,7 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
     cbs->timer_free = simh_timer_free;
     cbs->timer_new_opaque = simh_timer_new_opaque;
 
-    slirp->slirp_cxn = slirp_new(cfg, cbs, (void *) slirp);
+    slirp->slirp_cxn = slirp_new(cfg, cbs, (void *)slirp);
 
     /* Capture the debugging info. */
     slirp->dbit = dptr->dctrl = dbit;
@@ -481,7 +432,7 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
 
 void sim_slirp_shutdown(void *opaque)
 {
-    sim_slirp_network *slirp = (sim_slirp_network *) opaque;
+    sim_slirp_network *slirp = (sim_slirp_network *)opaque;
     volatile sim_atomic_type_t n_sockets = sim_atomic_get(&slirp->n_sockets);
 
     /* Set the reader thread's exit condition. If the reader thread is waiting
@@ -605,17 +556,17 @@ static int initialize_poll_fds(sim_slirp_network *slirp)
 
     /* Start out with a generous number of LUT slots */
     slirp->lut_alloc = FDS_ALLOC_INIT;
-    slirp->lut = (SOCKET *) malloc(slirp->lut_alloc * sizeof(SOCKET));
+    slirp->lut = (SOCKET *)malloc(slirp->lut_alloc * sizeof(SOCKET));
 
     for (i = 0; i < slirp->lut_alloc; ++i)
         slirp->lut[i] = INVALID_SOCKET;
 #elif SIM_USE_POLL
     /* poll()-based file descriptor polling. */
-    static const sim_pollfd_t poll_initializer = { INVALID_SOCKET, 0, 0};
+    static const sim_pollfd_t poll_initializer = {INVALID_SOCKET, 0, 0};
 
     slirp->n_fds = FDS_ALLOC_INIT;
     slirp->fd_idx = 0;
-    slirp->fds = (sim_pollfd_t *) malloc(slirp->n_fds * sizeof(sim_pollfd_t));
+    slirp->fds = (sim_pollfd_t *)malloc(slirp->n_fds * sizeof(sim_pollfd_t));
     for (i = 0; i < slirp->n_fds; ++i) {
         slirp->fds[i] = poll_initializer;
     }
@@ -646,8 +597,7 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
 #if defined(AF_INET6)
     char v6_prefix[45], v6_gateway[45];
 
-    inet_ntop(AF_INET6, &slirp->slirp_config.vprefix_addr6, v6_prefix,
-              sizeof(v6_prefix));
+    inet_ntop(AF_INET6, &slirp->slirp_config.vprefix_addr6, v6_prefix, sizeof(v6_prefix));
     inet_ntop(AF_INET6, &slirp->slirp_config.vhost6, v6_gateway, sizeof(v6_gateway));
 
     fprintf(st, "        IPv6          = %sabled.\n", slirp->slirp_config.in6_enabled ? "en" : "dis");
@@ -678,8 +628,8 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
         char local_addr[16];
 
         inet_ntop(AF_INET, &rtmp->sim_local_inaddr, local_addr, sizeof(local_addr));
-        fprintf(st, "        redir %3s     = %d:%s:%d\n", tcpudp[rtmp->is_udp], rtmp->sim_local_port,
-                local_addr, rtmp->simh_host_port);
+        fprintf(st, "        redir %3s     = %d:%s:%d\n", tcpudp[rtmp->is_udp], rtmp->sim_local_port, local_addr,
+                rtmp->simh_host_port);
         rtmp = rtmp->next;
     }
 
@@ -699,10 +649,10 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
 /* Invoke the SIMH packet callback. */
 static slirp_ssize_t invoke_sim_packet_callback(const void *buf, size_t len, void *opaque)
 {
-    sim_slirp_network *slirp = (sim_slirp_network *) opaque;
+    sim_slirp_network *slirp = (sim_slirp_network *)opaque;
 
     /* Note: Should really range check len for int bounds. */
-    slirp->pkt_callback(slirp->pkt_opaque, buf, (int) len);
+    slirp->pkt_callback(slirp->pkt_opaque, buf, (int)len);
     /* FIXME: the packet callback should tell us how many octets were written.
      * For the time being, though, assume it was successful. */
     return len;
@@ -712,12 +662,32 @@ int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int fl
 {
     SIM_UNUSED_ARG(flags);
 
-    /* Just send the packet up to libslirp. */
+    slirp_input(slirp->slirp_cxn, (const uint8_t *)msg, (int)len);
+    return (int)len;
+}
+
+bool before_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
+{
+    sim_slirp_network *slirp = backend->state.slirp;
+
     pthread_mutex_lock(&slirp->libslirp_lock);
-    slirp_input(slirp->slirp_cxn, (const uint8_t *) msg, (int) len);
+    return true;
+}
+
+bool after_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
+{
+    sim_slirp_network *slirp = backend->state.slirp;
+
+    /* Fun fact: libslirp will add immediate responses to the read queue for certain IP messages, such as
+     * ARP, some ICMP requests, DNS replies, ... Instead of waiting for the reader thread to wake up,
+     * dispatch them to the simulator immediately. */
+    if (!sim_tailq_empty(&dev->read_queue)) {
+        sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
+    }
+
     pthread_mutex_unlock(&slirp->libslirp_lock);
 
-    return (int) len;
+    return true;
 }
 
 /* I/O thread notify callback from Slirp. Indicates that there's packet data waiting, I/O events
@@ -733,5 +703,5 @@ int64_t sim_clock_get_ns(void *opaque)
     SIM_UNUSED_ARG(opaque);
 
     /* Internally, libslirp cuts the nanoseconds down to milliseconds. */
-    return ((uint64_t) sim_os_msec()) * 10000000ull;
+    return ((uint64_t)sim_os_msec()) * 10000000ull;
 }

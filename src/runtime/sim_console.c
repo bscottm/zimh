@@ -3416,8 +3416,7 @@ pthread_t           sim_console_poll_thread;       /* Keyboard Polling Thread Id
 bool                sim_console_poll_running = false;
 pthread_cond_t      sim_console_startup_cond;
 
-static void *
-_console_poll(void *arg)
+static THREAD_FUNC_DEFN(_console_poll)
 {
 int wait_count = 0;
 DEVICE *d;
@@ -3475,7 +3474,8 @@ pthread_mutex_unlock (&sim_tmxr_poll_lock);
 
 sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - exiting\n");
 
-return NULL;
+/* Have to return something... */
+return THREAD_FUNC_RETURN(0);
 }
 
 /* Stop the asynchronous console polling thread if it is running. */
@@ -3531,29 +3531,27 @@ if (sim_asynch_enabled) {
     }
 pthread_mutex_lock (&sim_tmxr_poll_lock);
 if (sim_asynch_enabled) {
-    pthread_attr_t attr;
     int create_status;
 
     pthread_cond_init (&sim_console_startup_cond, NULL);
-    pthread_attr_init (&attr);
-    pthread_attr_setscope (&attr, PTHREAD_SCOPE_SYSTEM);
     sim_console_poll_running = false;
-    create_status = pthread_create (&sim_console_poll_thread, &attr,
-                                    _console_poll, NULL);
-    pthread_attr_destroy( &attr);
-    if (create_status != 0) {
+    create_status = sim_thread_create (&sim_console_poll_thread, _console_poll, NULL);
+    if (create_status == 0) {
+        while (!sim_console_poll_running)          /* Wait for thread to stabilize */
+            pthread_cond_wait (&sim_console_startup_cond, &sim_tmxr_poll_lock);
         pthread_cond_destroy (&sim_console_startup_cond);
-        pthread_mutex_unlock (&sim_tmxr_poll_lock);
-        tmxr_stop_poll ();
-        return sim_messagef (
-            SCPE_TTIERR,
-            "Console: can't start asynchronous poll thread: %s\n",
-            strerror (create_status));
+    } else {
+        if (create_status != 0) {
+            pthread_cond_destroy (&sim_console_startup_cond);
+            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+            tmxr_stop_poll ();
+            return sim_messagef (
+                SCPE_TTIERR,
+                "Console: can't start asynchronous poll thread: %s\n",
+                strerror (create_status));
+        }
     }
-    while (!sim_console_poll_running)          /* Wait for thread to stabilize */
-        pthread_cond_wait (&sim_console_startup_cond, &sim_tmxr_poll_lock);
-    pthread_cond_destroy (&sim_console_startup_cond);
-    }
+}
 pthread_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 return sim_os_ttrun ();
