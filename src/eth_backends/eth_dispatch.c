@@ -15,7 +15,7 @@
 
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(HAVE_PCAP_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_PCAP_NETWORK)
     return pcap_sendpacket(dev->backend.state.pcap, (u_char *)packet->msg, packet->len);
 #else
     (void)dev;
@@ -26,7 +26,7 @@ int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet)
 
 int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(HAVE_TAP_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_TAP_NETWORK)
     return (((int)packet->len == write(dev->fd_handle, (void *)packet->msg, packet->len)) ? 0 : -1);
 #else
     (void)dev;
@@ -37,7 +37,7 @@ int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet)
 
 int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(HAVE_VDE_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
     int status = vde_send(dev->backend.state.vde, (void *)packet->msg, packet->len, 0);
     if ((status == (int)packet->len) || (status == 0))
         return 0;
@@ -87,24 +87,25 @@ int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet)
     return 0; /* Test API handles writes differently */
 }
 
-#if defined(USE_READER_THREAD)
-
 /*============================================================================*/
 /*                         Reader Dispatch Functions                          */
 /*============================================================================*/
 
-static int eth_reader_dispatch_pcap(ETH_DEV *dev)
+int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 {
-#    if defined(HAVE_PCAP_NETWORK)
-    return pcap_dispatch(dev->backend.state.pcap, -1, &_eth_callback, (u_char *)dev);
-#    else
+    (void)dev;
+
+#if defined(USE_READER_THREAD) && defined(HAVE_PCAP_NETWORK)
+    return pcap_dispatch(backend->state.pcap, -1, _eth_callback, (u_char *)dev);
+#else
+    (void)backend;
     return 0;
-#    endif
+#endif
 }
 
-static int eth_reader_dispatch_tap(ETH_DEV *dev)
+int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
 {
-#    if defined(HAVE_TAP_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_TAP_NETWORK)
     struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
@@ -117,14 +118,14 @@ static int eth_reader_dispatch_tap(ETH_DEV *dev)
         return 1;
     }
     return (len < 0) ? -1 : 0;
-#    else
+#else
     return 0;
-#    endif
+#endif
 }
 
-static int eth_reader_dispatch_vde(ETH_DEV *dev)
+int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
 {
-#    if defined(HAVE_VDE_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
     struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
@@ -137,15 +138,16 @@ static int eth_reader_dispatch_vde(ETH_DEV *dev)
         return 1;
     }
     return (len < 0) ? -1 : 0;
-#    else
+#else
+    (void)backend;
     (void)dev;
     return 0;
-#    endif
+#endif
 }
 
-static int eth_reader_dispatch_nat(ETH_DEV *dev)
+int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
-#    if defined(HAVE_SLIRP_NETWORK)
+#if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
     sim_slirp_network *slirp = dev->backend.state.slirp;
 
     /* The mutex serializes the reader and the writer threads. */
@@ -157,14 +159,16 @@ static int eth_reader_dispatch_nat(ETH_DEV *dev)
      * whether packets arrived. But packets delivered via _slirp_callback()
      * are queued to dev->read_queue, so check if the queue is non-empty. */
     return sim_tailq_empty(&dev->read_queue) ? 0 : 1;
-#    else
+#else
+    (void)backend;
     (void)dev;
     return 0;
-#    endif
+#endif
 }
 
-static int eth_reader_dispatch_udp(ETH_DEV *dev)
+int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
+#if defined(USE_READER_THREAD)
     struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
@@ -177,25 +181,23 @@ static int eth_reader_dispatch_udp(ETH_DEV *dev)
         return 1;
     }
     return (len < 0) ? -1 : 0;
-}
-
-static int eth_reader_dispatch_none(ETH_DEV *dev)
-{
+#else
+    (void)backend;
     (void)dev;
-    return -1; /* Error: no API configured */
+    return 0;
+#endif
 }
 
-static int eth_reader_dispatch_test(ETH_DEV *dev)
+int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void)backend;
+    (void)dev;
+    return -1; /* No backend. */
+}
+
+int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev)
+{
+    (void)backend;
     (void)dev;
     return 0; /* Test API handles reads differently */
 }
-
-/* Reader dispatch table - indexed by eth_api_type_t */
-const eth_reader_dispatch_fn eth_reader_dispatch_table[ETH_API_COUNT] = {
-    [ETH_API_NONE] = eth_reader_dispatch_none, [ETH_API_PCAP] = eth_reader_dispatch_pcap,
-    [ETH_API_TAP] = eth_reader_dispatch_tap,   [ETH_API_VDE] = eth_reader_dispatch_vde,
-    [ETH_API_UDP] = eth_reader_dispatch_udp,   [ETH_API_NAT] = eth_reader_dispatch_nat,
-    [ETH_API_TEST] = eth_reader_dispatch_test};
-
-#endif /* USE_READER_THREAD */

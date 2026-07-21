@@ -1222,6 +1222,8 @@ else {
   /* copy device list into the passed structure */
   for (used=0, dev=alldevs; dev && (used < max); dev=dev->next) {
       edev.backend.eth_api = ETH_API_PCAP;
+      edev.backend.packet_wait = NULL;
+      edev.backend.packet_read = NULL;
       edev.backend.before_packet_write = NULL;
       edev.backend.write_packet = eth_writer_pcap;
       edev.backend.after_packet_write = NULL;
@@ -1999,6 +2001,8 @@ if (bufsz < ETH_MAX_JUMBO_FRAME)
   bufsz = ETH_MAX_JUMBO_FRAME;    /* Enable handling of jumbo frames */
 
 backend->eth_api = ETH_API_NONE;
+backend->packet_wait = NULL;
+backend->packet_read = eth_reader_none;
 backend->before_packet_write = NULL;
 backend->write_packet = eth_writer_none;
 backend->after_packet_write = NULL;
@@ -2115,9 +2119,11 @@ else if (0 == strncmp("tap:", savname, 4)) {
     }
 #else
   strlcpy(errbuf, "No support for tap: devices", PCAP_ERRBUF_SIZE);
-#endif /* !defined(__linux) && !defined(HAVE_BSDTUNTAP) */
+#    endif /* !defined(__linux) && !defined(HAVE_BSDTUNTAP) */
   if (0 == errbuf[0]) {
     backend->eth_api = ETH_API_TAP;
+    backend->packet_wait = eth_wait_tap;
+    backend->packet_read = eth_reader_tap;
     backend->before_packet_write = NULL;
     backend->write_packet = eth_writer_tap;
     backend->after_packet_write = NULL;
@@ -2154,6 +2160,8 @@ else { /* !tap: */
       strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
     else {
         backend->eth_api = ETH_API_VDE;
+        backend->packet_wait = eth_wait_vde;
+        backend->packet_read = eth_reader_vde;
         backend->before_packet_write = NULL;
         backend->write_packet = eth_writer_vde;
         backend->after_packet_write = NULL;
@@ -2172,6 +2180,8 @@ else { /* !tap: */
         ++devname;
       if ((backend->state.slirp = sim_slirp_open(devname, opaque, &_slirp_callback, dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)) != NULL) {
           backend->eth_api = ETH_API_NAT;
+          backend->packet_wait = eth_wait_nat;
+          backend->packet_read = eth_reader_nat;
           backend->before_packet_write = before_slirp_send;
           backend->write_packet = eth_writer_nat;
           backend->after_packet_write = after_slirp_send;
@@ -2207,6 +2217,8 @@ else { /* !tap: */
         if (INVALID_SOCKET == *fd_handle)
           return SCPE_OPENERR;
         backend->eth_api = ETH_API_UDP;
+        backend->packet_wait = eth_wait_udp;
+        backend->packet_read = eth_reader_udp;
         backend->before_packet_write = NULL;
         backend->write_packet = eth_writer_udp;
         backend->after_packet_write = NULL;

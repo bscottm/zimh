@@ -196,6 +196,8 @@ t_stat eth_test_open(const char *name, eth_backend_t *backend)
         return status;
 
     backend->eth_api = ETH_API_TEST;
+    backend->packet_wait = eth_wait_test;
+    backend->packet_read = eth_reader_test;
     backend->before_packet_write = NULL;
     backend->write_packet = eth_writer_test;
     backend->after_packet_write = NULL;

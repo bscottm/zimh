@@ -4,7 +4,7 @@
 /* Ethernet packet reader thread with state machine control flow */
 
 #if !defined(USE_READER_THREAD)
-#    error "eth_threads.c MUST BE compile with USE_READER_THREAD defined."
+#    error "eth_threads.c MUST BE compiled with USE_READER_THREAD defined."
 #endif
 
 #include "sim_ether.h"
@@ -22,11 +22,13 @@ enum {
     ETH_READER_POLL_TMO = 500 /* ms */
 };
 
-#define POLL_NORMAL_EVENTS (POLLIN)
-#if !defined(_WIN32) && !defined(_WIN64)
-#    define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
-#else
-#    define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
+#if SIM_USE_POLL
+#    define POLL_NORMAL_EVENTS (POLLIN)
+#    if !defined(_WIN32) && !defined(_WIN64)
+#        define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
+#    else
+#        define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
+#    endif
 #endif
 
 /*============================================================================*/
@@ -86,35 +88,24 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 /*============================================================================*/
 
 /* Forward declarations of API-specific wait handlers */
-static int eth_wait_pcap(ETH_DEV *dev);
-static int eth_wait_tap(ETH_DEV *dev);
-static int eth_wait_vde(ETH_DEV *dev);
-static int eth_wait_udp(ETH_DEV *dev);
-static int eth_wait_nat(ETH_DEV *dev);
-static int eth_wait_test(ETH_DEV *dev);
-static int eth_wait_none(ETH_DEV *dev);
-
-/* Dispatch table indexed by eth_api_t */
-typedef int (*eth_wait_fn)(ETH_DEV *dev);
-static const eth_wait_fn wait_dispatch_table[ETH_API_COUNT] = {
-    [ETH_API_NONE] = eth_wait_none, [ETH_API_PCAP] = eth_wait_pcap, [ETH_API_TAP] = eth_wait_tap,
-    [ETH_API_VDE] = eth_wait_vde,   [ETH_API_UDP] = eth_wait_udp,   [ETH_API_NAT] = eth_wait_nat,
-    [ETH_API_TEST] = eth_wait_test};
 
 /* PCAP wait implementation */
-static int eth_wait_pcap(ETH_DEV *dev)
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void) dev;
 #if defined(_WIN32)
     /* Windows: Use event-based waiting */
-    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(dev->backend.state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
+    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
 #else
-    return wait_one_socket(pcap_get_selectable_fd(dev->backend.state.pcap), ETH_READER_POLL_TMO);
+    return wait_one_socket(pcap_get_selectable_fd(backend->state.pcap), ETH_READER_POLL_TMO);
 #endif
 }
 
 /* TAP wait implementation */
-static int eth_wait_tap(ETH_DEV *dev)
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void)backend;
+
 #if defined(HAVE_TAP_NETWORK)
     return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
 #else
@@ -123,43 +114,49 @@ static int eth_wait_tap(ETH_DEV *dev)
 }
 
 /* VDE wait implementation */
-static int eth_wait_vde(ETH_DEV *dev)
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void) dev;
+
 #if defined(HAVE_VDE_NETWORK)
-    return wait_one_socket(vde_datafd(dev->backend.state.vde), ETH_READER_POLL_TMO);
+    return wait_one_socket(vde_datafd(backend->state.vde), ETH_READER_POLL_TMO);
 #else
     return 1;
 #endif
 }
 
 /* UDP wait implementation */
-static int eth_wait_udp(ETH_DEV *dev)
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void) backend;
     return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
 }
 
 /* NAT (SLiRP) wait implementation */
-static int eth_wait_nat(ETH_DEV *dev)
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
+    (void)dev;
 #ifdef HAVE_SLIRP_NETWORK
-    return sim_slirp_select(dev->backend.state.slirp, ETH_READER_POLL_TMO);
+    return sim_slirp_select(backend->state.slirp, ETH_READER_POLL_TMO);
 #else
     return 1;
 #endif
 }
 
 /* Test API wait implementation */
-static int eth_wait_test(ETH_DEV *dev)
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev)
 {
     /* Test API doesn't wait, always return immediately */
+    (void)backend;
     (void)dev;
     return 1;
 }
 
 /* None API wait implementation */
-static int eth_wait_none(ETH_DEV *dev)
+int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev)
 {
     /* No API configured, return immediately */
+    (void)backend;
     (void)dev;
     return 1;
 }
@@ -211,11 +208,12 @@ THREAD_FUNC_DEFN(_eth_reader)
     sim_atomic_put(&dev->reader_status, start_status);
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
-        int status = wait_dispatch_table[dev->backend.eth_api](dev);
+        eth_backend_t *backend = &dev->backend;
+        int status = backend->packet_wait(backend, dev);
 
         /* Packet available? */
         if (status > 0) {
-            status = eth_reader_dispatch_table[dev->backend.eth_api](dev);
+            status = backend->packet_read(backend, dev);
 
             if (status > 0) {
                 /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll */

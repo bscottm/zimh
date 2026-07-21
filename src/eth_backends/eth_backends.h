@@ -77,10 +77,27 @@ typedef struct eth_backend_s {
     /* API being used to move packets */
     eth_api_t eth_api;
 
-    /* API function interface: */
+    /* API interface: */
 
+    /* Wait for a packet's arrival at the reader. This is the poll/select point.
+     * Returns:
+     * > 0: One or more packets have arrived.
+     *   0: No packet arrival, not an error.
+     * < 0: Error waiting for packet arrival.
+     */
+    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev);
+    /* Read a packet and queue it for simulator device processing.
+     * > 0: Packet read successfully, queued for simulator device.
+     *   0: No packet read (not an error, safe to retry)
+     * < 0: Error reading packet.
+     */
+    int (*packet_read)(struct eth_backend_s *backend, ETH_DEV *dev);
+    
     /* Housekeeping before invoking write_packet(), optional and may be NULL.
      * Returns true if successful, false on error.
+     *
+     * Note: This is used by the libslirp backend to acquire the mutex that serializes access to libslirp,
+     * which is not thread safe.
      */
     bool (*before_packet_write)(struct eth_backend_s *self, ETH_DEV *dev);
     /* Packet writer function: writes one packet for the API.
@@ -89,6 +106,9 @@ typedef struct eth_backend_s {
     int (*write_packet)(ETH_DEV *dev, const ETH_PACK *packet);
     /* Housekeeping after invoking write_packet(), optional and may be NULL.
      * Returns true if successful, false on error.
+     *
+     * Note: This is used by the libslirp backend to release the previously acquired mutex that serializes
+     * access to libslirp, which is not thread safe.
      */
     bool (*after_packet_write)(struct eth_backend_s *self, ETH_DEV *dev);
 
@@ -110,12 +130,36 @@ typedef struct eth_backend_s {
 
 /*--- API functions for eth_backend_t ---*/
 
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
+
+int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
+int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
+
+/* PCAP writer */
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
+/* TAP writer */
 int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet);
+/* VDE writer */
 int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet);
+/* libslirp mutex acquisition */
 bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
+/* libslirp writer */
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
+/* libslirp mutex release */
 bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
+/* UDP writer */
 int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet);
+/* Empty/no network writer: This does nothing. Reallly. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
+/* Test backend writer. */
 int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);
