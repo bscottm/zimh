@@ -463,6 +463,22 @@ struct DEVICE {
 #    define DEV_UFMASK (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF) - 1))
 #    define DEV_RFLAGS (DEV_UFMASK | DEV_DIS) /* restored flags */
 
+/* Platform-specific file handle type
+ *
+ * Unifies file I/O across stdio-based (SIMH format) and raw handle-based
+ * (RAW physical disk, VHD) operations. Using native handles eliminates
+ * the overhead of maintaining parallel FILE* streams and enables direct
+ * use of pread()/pwrite() (POSIX) or ReadFile/WriteFile with OVERLAPPED
+ * (Windows) for atomic positioned I/O.
+ */
+#if defined(_WIN32)
+typedef void* SIM_FILE_HANDLE;         /* Windows: HANDLE (void* to avoid windows.h dependency here) */
+#    define SIM_INVALID_HANDLE NULL
+#else
+typedef int SIM_FILE_HANDLE;           /* POSIX: file descriptor */
+#    define SIM_INVALID_HANDLE (-1)
+#endif
+
 /* Unit data structure
 
    Parts of the unit structure are device specific, that is, they are
