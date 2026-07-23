@@ -701,7 +701,7 @@ DEBTAB hk_deb[] = {
 DEVICE hk_dev = {
     "HK", hk_unit, hk_reg, hk_mod,
     HK_NUMDR, DEV_RDX, 24, 1, DEV_RDX, 16,
-    NULL, NULL, &hk_reset,
+    &sim_disk_examine, &sim_disk_deposit, &hk_reset,
     &hk_boot, &hk_attach, &hk_detach,
     &hk_dib, DEV_DISABLE | DEV_UBUS | DEV_Q18 | DEV_DISK | DEV_DEBUG, 0,
     hk_deb, NULL, NULL, &hk_help, NULL, NULL,

@@ -126,8 +126,8 @@ DEVICE ctc_dev = {
     1,                              /* address incr. */
     16,                             /* data radix */
     8,                              /* data width */
-    NULL,                           /* examine routine */
-    NULL,                           /* deposit routine */
+    &sim_disk_examine,              /* examine routine */
+    &sim_disk_deposit,              /* deposit routine */
     &ctc_reset,                     /* reset routine */
     NULL,                           /* boot routine */
     &ctc_attach,                    /* attach routine */

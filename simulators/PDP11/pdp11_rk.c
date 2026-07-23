@@ -452,7 +452,7 @@ MTAB rk_mod[] = {
 DEVICE rk_dev = {
     "RK", rk_unit, rk_reg, rk_mod,
     RK_NUMDR, 8, 24, 1, 8, RKWRDSZ,
-    NULL, NULL, &rk_reset,
+    &sim_disk_examine, &sim_disk_deposit, &rk_reset,
     &rk_boot, &rk_attach, &rk_detach,
     &rk_dib, DEV_DISABLE | DEV_UBUS | DEV_Q18 | DEV_DEBUG | RK_DIS | DEV_DISK, 0,
     rk_deb, NULL, NULL, &rk_help, NULL, NULL,

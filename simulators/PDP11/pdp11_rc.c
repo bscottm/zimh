@@ -245,8 +245,8 @@ static const MTAB rc_mod[] = {
 DEVICE rc_dev = {
     "RC", &rc_unit, (REG *) rc_reg, (MTAB *) rc_mod,
     1, 8, 21, 1, 8, 16,
-    NULL,                                               /* examine */
-    NULL,                                               /* deposit */
+    &sim_disk_examine,                                  /* examine */
+    &sim_disk_deposit,                                  /* deposit */
     &rc_reset,                                          /* reset */
     NULL,                                               /* boot */
     &rc_attach,                                         /* attach */

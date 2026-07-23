@@ -384,7 +384,7 @@ MTAB rd_mod[] = {
 DEVICE rd_dev = {
     "RD", rd_unit, rd_reg, rd_mod,
     RD_NUMDR, DEV_RDX, 20, 1, DEV_RDX, 8,
-    NULL, NULL, &rd_reset,
+    &sim_disk_examine, &sim_disk_deposit, &rd_reset,
     NULL, &rd_attach, &rd_detach,
     &rd_dib, DEV_DEBUG | RD_FLAGS, 0,
     rd_debug, NULL, NULL, &rd_help, NULL, NULL,

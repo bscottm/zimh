@@ -472,8 +472,8 @@ struct DEVICE {
  * (Windows) for atomic positioned I/O.
  */
 #if defined(_WIN32)
-typedef void* SIM_FILE_HANDLE;         /* Windows: HANDLE (void* to avoid windows.h dependency here) */
-#    define SIM_INVALID_HANDLE NULL
+typedef HANDLE SIM_FILE_HANDLE;        /* Windows: native HANDLE type */
+#    define SIM_INVALID_HANDLE INVALID_HANDLE_VALUE
 #else
 typedef int SIM_FILE_HANDLE;           /* POSIX: file descriptor */
 #    define SIM_INVALID_HANDLE (-1)
@@ -492,7 +492,8 @@ struct UNIT {
     UNIT *next;                 /* next active */
     t_stat (*action)(UNIT *up); /* action routine */
     char *filename;             /* open file name */
-    FILE *fileref;              /* file reference */
+    FILE *fileref;              /* buffered I/O file handle for simulator-managed files */
+    SIM_FILE_HANDLE disk_image_file; /* positioned I/O handle for disk images (SIMH/RAW/VHD formats) */
     void *filebuf;              /* memory buffer */
     void *filebuf2;             /* copy of initial memory buffer */
     uint32_t hwmark;            /* high water mark */
@@ -832,7 +833,7 @@ struct MEMFILE {
 
  */
 
-#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
+#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, SIM_INVALID_HANDLE, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
 
 /* Register initialization macros.
 

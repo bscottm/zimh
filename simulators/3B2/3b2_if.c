@@ -87,7 +87,7 @@ REG if_reg[] = {
 DEVICE if_dev = {
     "IFLOPPY", &if_unit, if_reg, NULL,
     1, 16, 8, 1, 16, 8,
-    NULL, NULL, &if_reset,
+    &sim_disk_examine, &sim_disk_deposit, &if_reset,
     NULL, &if_attach, &if_detach, NULL,
     DEV_DEBUG|DEV_DISK|DEV_SECTORS, 0, sys_deb_tab,
     NULL, NULL, &if_help, NULL, NULL,

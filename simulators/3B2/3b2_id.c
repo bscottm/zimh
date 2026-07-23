@@ -162,7 +162,7 @@ MTAB id_mod[] = {
 DEVICE id_dev = {
     "IDISK", id_unit, id_reg, id_mod,
     ID_NUM_UNITS, 16, 32, 1, 16, 8,
-    NULL, NULL, &id_reset,
+    &sim_disk_examine, &sim_disk_deposit, &id_reset,
     NULL, &id_attach, &id_detach, NULL,
     DEV_DEBUG|DEV_DISK|DEV_SECTORS, 0, sys_deb_tab,
     NULL, NULL, &id_help, NULL, NULL,

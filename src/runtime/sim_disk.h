@@ -127,6 +127,8 @@ t_stat sim_disk_clr_async (UNIT *uptr);
 t_stat sim_disk_reset (UNIT *uptr);
 t_stat sim_disk_perror (UNIT *uptr, const char *msg);
 t_stat sim_disk_clearerr (UNIT *uptr);
+t_stat sim_disk_examine (t_value *v, t_addr a, UNIT *uptr, int32_t sw);
+t_stat sim_disk_deposit (t_value v, t_addr a, UNIT *uptr, int32_t sw);
 bool sim_disk_isavailable (UNIT *uptr);
 bool sim_disk_isavailable_a (UNIT *uptr, DISK_PCALLBACK callback);
 bool sim_disk_wrp (UNIT *uptr);

@@ -517,7 +517,7 @@ DEVICE rr_dev = {
     "RR", rr_unit, rr_reg, rr_mod, RP_NUMDR,
     DEV_RDX/*address radix*/, 26/*address width*/, 1/*address increment*/,
     DEV_RDX/*data radix*/, RPWRDSZ/*data width*/,
-    NULL/*examine()*/, NULL/*deposit()*/,
+    &sim_disk_examine/*examine()*/, &sim_disk_deposit/*deposit()*/,
     rr_reset, rr_boot, rr_attach, rr_detach,
     &rr_dib,
     DEV_DIS | DEV_DISABLE | DEV_UBUS | DEV_Q18 | DEV_DEBUG | DEV_DISK | DEV_RP11CE,

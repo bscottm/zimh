@@ -408,7 +408,7 @@ DEBTAB rl_deb[] = {
 DEVICE rl_dev = {
     "RL", (UNIT *) &rl_unit, (REG *)rl_reg, (MTAB *)rl_mod,
     RL_NUMDR, DEV_RDX, 24, 1, DEV_RDX, 16,
-    NULL, NULL, &rl_reset,
+    &sim_disk_examine, &sim_disk_deposit, &rl_reset,
     &rl_boot, &rl_attach, &rl_detach,
     &rl_dib, DEV_DISABLE | DEV_UBUS | DEV_QBUS | DEV_DISK | DEV_DEBUG, 0,
     rl_deb, NULL, NULL, &rl_help, NULL, NULL,

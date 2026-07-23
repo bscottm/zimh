@@ -709,7 +709,7 @@ DEBTAB rp_debug[] = {
 DEVICE rp_dev = {
     "RP", rp_unit, rp_reg, rp_mod,
     RP_NUMDR, DEV_RDX, 30, 1, DEV_RDX, 16,
-    NULL, NULL, &rp_reset,
+    &sim_disk_examine, &sim_disk_deposit, &rp_reset,
     &rp_boot, &rp_attach, &rp_detach,
     &rp_dib, DEV_DISABLE | DEV_UBUS | DEV_QBUS | DEV_MBUS | DEV_DEBUG | DEV_DISK,
     0, rp_debug, NULL, NULL, &rp_help, NULL, NULL,
