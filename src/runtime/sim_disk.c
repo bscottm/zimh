@@ -4467,27 +4467,28 @@ mode |= O_DSYNC;
 fd = open (rawdevicename, mode, 0);
 if (fd < 0)
     return SIM_INVALID_HANDLE;
-return fd;
+return sim_disk_make_native_handle(fd);
 }
 
 static int sim_os_disk_close_raw (SIM_FILE_HANDLE f)
 {
-return close (f);
+return close (sim_disk_get_native_handle(f));
 }
 
 static void sim_os_disk_flush_raw (SIM_FILE_HANDLE f)
 {
-fsync (f);
+fsync (sim_disk_get_native_handle(f));
 }
 
 static t_offset sim_os_disk_size_raw (SIM_FILE_HANDLE f)
 {
 t_offset pos, size;
+int fd = sim_disk_get_native_handle(f);
 
-pos = (t_offset)lseek (f, (off_t)0, SEEK_CUR);
-size = (t_offset)lseek (f, (off_t)0, SEEK_END);
+pos = (t_offset)lseek (fd, (off_t)0, SEEK_CUR);
+size = (t_offset)lseek (fd, (off_t)0, SEEK_END);
 if (pos != (t_offset)-1)
-    (void)lseek (f, (off_t)pos, SEEK_SET);
+    (void)lseek (fd, (off_t)pos, SEEK_SET);
 return size;
 }
 
@@ -4499,11 +4500,12 @@ static t_stat sim_os_disk_unload_raw (SIM_FILE_HANDLE f)
 #endif
 
 #if defined(CDROM_GET_CAPABILITY) && defined(CDROMEJECT) && defined(CDROMEJECT_SW)
-if (ioctl (f, CDROM_GET_CAPABILITY, NULL) < 0)
+int fd = sim_disk_get_native_handle(f);
+if (ioctl (fd, CDROM_GET_CAPABILITY, NULL) < 0)
     return SCPE_OK;
-if (ioctl(f, CDROM_LOCKDOOR, 0) < 0)
+if (ioctl(fd, CDROM_LOCKDOOR, 0) < 0)
     return SCPE_IOERR;
-if (ioctl(f, CDROMEJECT) < 0)
+if (ioctl(fd, CDROMEJECT) < 0)
     return SCPE_IOERR;
 #endif
 return SCPE_OK;
@@ -4517,9 +4519,10 @@ static bool sim_os_disk_isavailable_raw (SIM_FILE_HANDLE Disk)
 #endif
 
 #if defined(CDROMSTART) && defined(CDROM_GET_CAPABILITY)
-if (ioctl (Disk, CDROM_GET_CAPABILITY, NULL) < 0)
+int fd = sim_disk_get_native_handle(Disk);
+if (ioctl (fd, CDROM_GET_CAPABILITY, NULL) < 0)
     return true;
-switch (ioctl(Disk, CDROM_DRIVE_STATUS, CDSL_NONE)) {
+switch (ioctl(fd, CDROM_DRIVE_STATUS, CDSL_NONE)) {
     case CDS_NO_INFO:
     case CDS_NO_DISC:
     case CDS_TRAY_OPEN:
@@ -4540,7 +4543,7 @@ ssize_t bytesread;
 
 sim_debug_unit (ctx->dbit, uptr, "sim_os_disk_read(unit=%d, addr=0x%X, bytes=%u)\n", (int)(uptr - ctx->dptr->units), (uint32_t)addr, bytes);
 
-bytesread = pread((int)((long)uptr->disk_image_file), buf, bytes, (off_t)addr);
+bytesread = pread(sim_disk_get_native_handle(uptr->disk_image_file), buf, bytes, (off_t)addr);
 if (bytesread < 0) {
     if (rbytesread)
         *rbytesread = 0;
@@ -4560,7 +4563,7 @@ sim_debug_unit (ctx->dbit, uptr, "sim_os_disk_write(unit=%d, addr=0x%X, bytes=%u
 
 if (rbyteswritten)
     *rbyteswritten = 0;
-byteswritten = pwrite((int)((long)uptr->disk_image_file), buf, bytes, (off_t)addr);
+byteswritten = pwrite(sim_disk_get_native_handle(uptr->disk_image_file), buf, bytes, (off_t)addr);
 if (byteswritten < 0)
     return SCPE_IOERR;
 if (rbyteswritten)
@@ -4577,7 +4580,8 @@ static t_stat sim_os_disk_info_raw (SIM_FILE_HANDLE f, uint32_t *sector_size, ui
 
 if (sector_size) {
 #if defined(BLKSSZGET)
-    if (ioctl (f, BLKSSZGET, sector_size) < 0)
+    int fd = sim_disk_get_native_handle(f);
+    if (ioctl (fd, BLKSSZGET, sector_size) < 0)
 #endif
         *sector_size = 512;
     }
@@ -4585,7 +4589,8 @@ if (removable)
     *removable = 0;
 if (is_cdrom) {
 #if defined(CDROM_GET_CAPABILITY)
-    int cd_cap = ioctl (f, CDROM_GET_CAPABILITY, NULL);
+    int fd = sim_disk_get_native_handle(f);
+    int cd_cap = ioctl (fd, CDROM_GET_CAPABILITY, NULL);
 
     if (cd_cap < 0)
         *is_cdrom = 0;
