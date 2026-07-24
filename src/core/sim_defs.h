@@ -493,9 +493,9 @@ typedef union {
  * simple brace initialization of the appropriate union member.
  */
 #if defined(_WIN32)
-#    define SIM_INVALID_HANDLE {.native_handle = INVALID_HANDLE_VALUE}
+#    define SIM_INVALID_HANDLE INVALID_HANDLE_VALUE
 #else
-#    define SIM_INVALID_HANDLE {.native_fd = -1}
+#    define SIM_INVALID_HANDLE -1
 #endif
 
 /* Comparison helpers for SIM_FILE_HANDLE */
