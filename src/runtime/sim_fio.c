@@ -57,6 +57,7 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
+#include "sim_disk.h"
 #include "sim_host_path.h"
 #include "sim_types.h"
 
@@ -1602,11 +1603,11 @@ return 0;
 size_t sim_disk_pread (SIM_FILE_HANDLE handle, void *buf, size_t bytes, t_offset offset)
 {
 #if defined(_WIN32)
-    HANDLE hFile = (HANDLE)handle;
+    HANDLE hFile = sim_disk_get_native_handle(handle);
     OVERLAPPED ovl;
     DWORD bytesRead = 0;
 
-    if (handle == SIM_INVALID_HANDLE || !buf)
+    if (SIM_HANDLE_IS_INVALID(handle) || !buf)
         return (size_t)-1;
 
     /* Setup OVERLAPPED structure for positioned I/O */
@@ -1638,10 +1639,10 @@ size_t sim_disk_pread (SIM_FILE_HANDLE handle, void *buf, size_t bytes, t_offset
     return (size_t)bytesRead;
 
 #else /* POSIX */
-    int fd = handle;
+    int fd = sim_disk_get_native_handle(handle);
     ssize_t result;
 
-    if (handle == SIM_INVALID_HANDLE || !buf)
+    if (SIM_HANDLE_IS_INVALID(handle) || !buf)
         return (size_t)-1;
 
     /* pread() is atomic and thread-safe */
@@ -1664,11 +1665,11 @@ size_t sim_disk_pread (SIM_FILE_HANDLE handle, void *buf, size_t bytes, t_offset
 size_t sim_disk_pwrite (SIM_FILE_HANDLE handle, const void *buf, size_t bytes, t_offset offset)
 {
 #if defined(_WIN32)
-    HANDLE hFile = (HANDLE)handle;
+    HANDLE hFile = sim_disk_get_native_handle(handle);
     OVERLAPPED ovl;
     DWORD bytesWritten = 0;
 
-    if (handle == SIM_INVALID_HANDLE || !buf)
+    if (SIM_HANDLE_IS_INVALID(handle) || !buf)
         return (size_t)-1;
 
     /* Setup OVERLAPPED structure for positioned I/O */
@@ -1694,10 +1695,10 @@ size_t sim_disk_pwrite (SIM_FILE_HANDLE handle, const void *buf, size_t bytes, t
     return (size_t)bytesWritten;
 
 #else /* POSIX */
-    int fd = handle;
+    int fd = sim_disk_get_native_handle(handle);
     ssize_t result;
 
-    if (handle == SIM_INVALID_HANDLE || !buf)
+    if (SIM_HANDLE_IS_INVALID(handle) || !buf)
         return (size_t)-1;
 
     /* pwrite() is atomic and thread-safe */
@@ -1753,7 +1754,7 @@ SIM_FILE_HANDLE sim_disk_open_handle (const char *file)
         return SIM_INVALID_HANDLE;
     }
 
-    return h;
+    return sim_disk_make_native_handle(h);
 #else
     int fd;
     int flags = O_RDWR;
@@ -1769,7 +1770,7 @@ SIM_FILE_HANDLE sim_disk_open_handle (const char *file)
     if (fd == -1)
         return SIM_INVALID_HANDLE;
 
-    return fd;
+    return sim_disk_make_native_handle(fd);
 #endif
 }
 
@@ -1839,7 +1840,7 @@ SIM_FILE_HANDLE sim_fopen_handle (const char *file, const char *mode)
         return SIM_INVALID_HANDLE;
     }
 
-    return h;
+    return sim_disk_make_native_handle(h);
 #else
     int fd;
     int flags = 0;
@@ -1870,7 +1871,7 @@ SIM_FILE_HANDLE sim_fopen_handle (const char *file, const char *mode)
     if (fd == -1)
         return SIM_INVALID_HANDLE;
 
-    return fd;
+    return sim_disk_make_native_handle(fd);
 #endif
 }
 
@@ -1878,13 +1879,13 @@ SIM_FILE_HANDLE sim_fopen_handle (const char *file, const char *mode)
 int sim_fclose_handle (SIM_FILE_HANDLE handle)
 {
 #if defined(_WIN32)
-    if (handle == SIM_INVALID_HANDLE)
+    if (SIM_HANDLE_IS_INVALID(handle))
         return -1;
-    return CloseHandle((HANDLE)handle) ? 0 : -1;
+    return CloseHandle(sim_disk_get_native_handle(handle)) ? 0 : -1;
 #else
-    if (handle == SIM_INVALID_HANDLE)
+    if (SIM_HANDLE_IS_INVALID(handle))
         return -1;
-    return close(handle);
+    return close(sim_disk_get_native_handle(handle));
 #endif
 }
 
@@ -1892,11 +1893,11 @@ int sim_fclose_handle (SIM_FILE_HANDLE handle)
 void sim_fflush_handle (SIM_FILE_HANDLE handle)
 {
 #if defined(_WIN32)
-    if (handle != SIM_INVALID_HANDLE)
-        FlushFileBuffers((HANDLE)handle);
+    if (SIM_HANDLE_IS_VALID(handle))
+        FlushFileBuffers(sim_disk_get_native_handle(handle));
 #else
-    if (handle != SIM_INVALID_HANDLE)
-        fsync(handle);
+    if (SIM_HANDLE_IS_VALID(handle))
+        fsync(sim_disk_get_native_handle(handle));
 #endif
 }
 
@@ -1905,16 +1906,16 @@ t_offset sim_fsize_handle (SIM_FILE_HANDLE handle)
 {
 #if defined(_WIN32)
     LARGE_INTEGER size;
-    if (handle == SIM_INVALID_HANDLE)
+    if (SIM_HANDLE_IS_INVALID(handle))
         return (t_offset)-1;
-    if (!GetFileSizeEx((HANDLE)handle, &size))
+    if (!GetFileSizeEx(sim_disk_get_native_handle(handle), &size))
         return (t_offset)-1;
     return (t_offset)size.QuadPart;
 #else
     struct stat statbuf;
-    if (handle == SIM_INVALID_HANDLE)
+    if (SIM_HANDLE_IS_INVALID(handle))
         return (t_offset)-1;
-    if (fstat(handle, &statbuf) != 0)
+    if (fstat(sim_disk_get_native_handle(handle), &statbuf) != 0)
         return (t_offset)-1;
     return (t_offset)statbuf.st_size;
 #endif
