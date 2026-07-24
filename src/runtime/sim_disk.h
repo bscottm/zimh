@@ -69,6 +69,69 @@ typedef struct sim_disk_test_backend {
                      t_seccnt *sectswritten, t_seccnt sects);
 } SIM_DISK_TEST_BACKEND;
 
+/* Forward declaration for VHD handle type (opaque pointer) */
+struct VHD_IOData;
+typedef struct VHD_IOData *VHDHANDLE;
+
+/*
+ * Type-safe accessor functions for SIM_FILE_HANDLE
+ *
+ * SIM_FILE_HANDLE is a discriminated union that can hold either:
+ * - A native OS file handle (HANDLE on Windows, int fd on POSIX)
+ * - An opaque VHD handle pointer
+ *
+ * The discrimination is done via DK_GET_FMT(uptr), not within the handle itself.
+ * These accessors provide type safety and make the intent explicit at call sites.
+ *
+ * Note: These functions are defined here as inline for performance and are only
+ * intended for use within sim_disk.c. External code should use the sim_disk_*
+ * API functions instead of directly manipulating handles.
+ */
+
+#ifdef SIM_DEFS_H_  /* Only define accessors if sim_defs.h has been included */
+
+/* VHD handle accessors (for VHD format) */
+static inline VHDHANDLE sim_disk_get_vhd_handle(SIM_FILE_HANDLE h)
+{
+    return (VHDHANDLE)h.opaque_ptr;
+}
+
+static inline SIM_FILE_HANDLE sim_disk_make_vhd_handle(VHDHANDLE vhd)
+{
+    SIM_FILE_HANDLE h;
+    h.opaque_ptr = (void *)vhd;
+    return h;
+}
+
+/* Native file handle accessors (for SIMH and RAW formats) */
+#if defined(_WIN32)
+static inline HANDLE sim_disk_get_native_handle(SIM_FILE_HANDLE h)
+{
+    return h.native_handle;
+}
+
+static inline SIM_FILE_HANDLE sim_disk_make_native_handle(HANDLE native)
+{
+    SIM_FILE_HANDLE h;
+    h.native_handle = native;
+    return h;
+}
+#else /* POSIX */
+static inline int sim_disk_get_native_handle(SIM_FILE_HANDLE h)
+{
+    return h.native_fd;
+}
+
+static inline SIM_FILE_HANDLE sim_disk_make_native_handle(int native_fd)
+{
+    SIM_FILE_HANDLE h;
+    h.native_fd = native_fd;
+    return h;
+}
+#endif
+
+#endif /* SIM_DEFS_H_ */
+
 /* Prototypes */
 
 t_stat sim_disk_init (void);

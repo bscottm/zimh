@@ -227,19 +227,21 @@ sim_disk_clear_all_test_backends (void)
 
 /* Forward declarations */
 
+typedef struct VHD_IOData *VHDHANDLE;
+
 static t_stat sim_vhd_disk_implemented (void);
-static SIM_FILE_HANDLE sim_vhd_disk_open (const char *rawdevicename, const char *openmode);
-static SIM_FILE_HANDLE sim_vhd_disk_create (const char *szVHDPath, t_offset desiredsize);
-static SIM_FILE_HANDLE sim_vhd_disk_create_diff (const char *szVHDPath, const char *szParentVHDPath);
-static SIM_FILE_HANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentVHD);
-static int sim_vhd_disk_close (SIM_FILE_HANDLE f);
-static void sim_vhd_disk_flush (SIM_FILE_HANDLE f);
-static t_offset sim_vhd_disk_size (SIM_FILE_HANDLE f);
+static VHDHANDLE sim_vhd_disk_open (const char *rawdevicename, const char *openmode);
+static VHDHANDLE sim_vhd_disk_create (const char *szVHDPath, t_offset desiredsize);
+static VHDHANDLE sim_vhd_disk_create_diff (const char *szVHDPath, const char *szParentVHDPath);
+static VHDHANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentVHD);
+static int sim_vhd_disk_close (VHDHANDLE hVHD);
+static void sim_vhd_disk_flush (VHDHANDLE hVHD);
+static t_offset sim_vhd_disk_size (VHDHANDLE hVHD);
 static t_stat sim_vhd_disk_rdsect (UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt *sectsread, t_seccnt sects);
 static t_stat sim_vhd_disk_wrsect (UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt *sectswritten, t_seccnt sects);
 static t_stat sim_vhd_disk_clearerr (UNIT *uptr);
-static t_stat sim_vhd_disk_set_dtype (SIM_FILE_HANDLE f, const char *dtype, uint32_t SectorSize, uint32_t xfer_element_size);
-static const char *sim_vhd_disk_get_dtype (SIM_FILE_HANDLE f, uint32_t *SectorSize, uint32_t *xfer_element_size, char sim_name[64], time_t *creation_time);
+static t_stat sim_vhd_disk_set_dtype (VHDHANDLE hVHD, const char *dtype, uint32_t SectorSize, uint32_t xfer_element_size);
+static const char *sim_vhd_disk_get_dtype (VHDHANDLE hVHD, uint32_t *SectorSize, uint32_t *xfer_element_size, char sim_name[64], time_t *creation_time);
 static t_stat sim_os_disk_implemented_raw (void);
 static SIM_FILE_HANDLE sim_os_disk_open_raw (const char *rawdevicename, const char *openmode);
 static int sim_os_disk_close_raw (SIM_FILE_HANDLE f);
@@ -253,6 +255,17 @@ static t_stat sim_os_disk_info_raw (SIM_FILE_HANDLE f, uint32_t *sector_size, ui
 static char *HostPathToVhdPath (const char *szHostPath, char *szVhdPath, size_t VhdPathSize);
 static char *VhdPathToHostPath (const char *szVhdPath, char *szHostPath, size_t HostPathSize);
 static t_offset get_filesystem_size (UNIT *uptr, bool *readonly);
+
+/* Wrapper functions to adapt VHD functions to SIM_FILE_HANDLE signature */
+static int sim_vhd_disk_close_wrapper (SIM_FILE_HANDLE f)
+{
+    return sim_vhd_disk_close(sim_disk_get_vhd_handle(f));
+}
+
+static t_offset sim_vhd_disk_size_wrapper (SIM_FILE_HANDLE f)
+{
+    return sim_vhd_disk_size(sim_disk_get_vhd_handle(f));
+}
 
 struct sim_disk_fmt {
     const char          *name;                          /* name */
@@ -836,7 +849,7 @@ switch (f) {                                            /* case on format */
         sim_fflush_handle (uptr->disk_image_file);
         break;
     case DKUF_F_VHD:                                    /* Virtual Disk */
-        sim_vhd_disk_flush (uptr->disk_image_file);
+        sim_vhd_disk_flush (sim_disk_get_vhd_handle(uptr->disk_image_file));
         break;
     case DKUF_F_RAW:                                    /* Physical */
         sim_os_disk_flush_raw (uptr->disk_image_file);
@@ -2267,18 +2280,18 @@ switch (DK_GET_FMT (uptr)) {                            /* case on format */
             memcpy (f->Signature, "simh", 4);
             f->FooterVersion = FOOTER_VERSION;
             memset (f->DriveType, 0, sizeof (f->DriveType));
-            strlcpy ((char *)f->DriveType, sim_vhd_disk_get_dtype (uptr->disk_image_file, &f->SectorSize, &f->TransferElementSize, (char *)f->CreatingSimulator, &creation_time), sizeof (f->DriveType));
+            strlcpy ((char *)f->DriveType, sim_vhd_disk_get_dtype (sim_disk_get_vhd_handle(uptr->disk_image_file), &f->SectorSize, &f->TransferElementSize, (char *)f->CreatingSimulator, &creation_time), sizeof (f->DriveType));
             f->SectorSize = NtoHl (f->SectorSize);
             f->TransferElementSize = NtoHl (f->TransferElementSize);
             if ((f->SectorSize == 0) || (NtoHl (f->SectorSize) == 0x00020000)) {  /* Old or mangled format VHD footer */
-                sim_vhd_disk_set_dtype (uptr->disk_image_file, (char *)f->DriveType, ctx->sector_size, ctx->xfer_element_size);
-                sim_vhd_disk_get_dtype (uptr->disk_image_file, &f->SectorSize, &f->TransferElementSize, (char *)f->CreatingSimulator, NULL);
+                sim_vhd_disk_set_dtype (sim_disk_get_vhd_handle(uptr->disk_image_file), (char *)f->DriveType, ctx->sector_size, ctx->xfer_element_size);
+                sim_vhd_disk_get_dtype (sim_disk_get_vhd_handle(uptr->disk_image_file), &f->SectorSize, &f->TransferElementSize, (char *)f->CreatingSimulator, NULL);
                 f->SectorSize = NtoHl (f->SectorSize);
                 f->TransferElementSize = NtoHl (f->TransferElementSize);
                 }
             memset (f->CreationTime, 0, sizeof (f->CreationTime));
             strlcpy ((char*)f->CreationTime, ctime (&creation_time), sizeof (f->CreationTime));
-            container_size = sim_vhd_disk_size (uptr->disk_image_file);
+            container_size = sim_vhd_disk_size (sim_disk_get_vhd_handle(uptr->disk_image_file));
             if ((f->SectorSize != 0) && (NtoHl (f->SectorSize) <= 65536)) /* Range check for Coverity sake */
                 f->SectorCount = NtoHl ((uint32_t)(container_size / NtoHl (f->SectorSize)));
             container_size += sizeof (*f);      /* Adjust since it is removed below */
@@ -2588,9 +2601,9 @@ if (sim_switches & SWMASK ('D')) {                      /* create difference dis
     cptr = get_glyph_nc (cptr, gbuf, 0);                /* get spec */
     if (*cptr == 0)                                     /* must be more */
         return SCPE_2FARG;
-    vhd = sim_vhd_disk_create_diff (gbuf, cptr);
-    if (vhd != SIM_INVALID_HANDLE) {
-        sim_vhd_disk_close (vhd);
+    vhd = sim_disk_make_vhd_handle(sim_vhd_disk_create_diff (gbuf, cptr));
+    if (SIM_HANDLE_IS_VALID(vhd)) {
+        sim_vhd_disk_close (sim_disk_get_vhd_handle(vhd));
         return sim_disk_attach (uptr, gbuf, sector_size, xfer_element_size, dontchangecapac, dbit, dtype, pdp11tracksize, completion_delay);
         }
     return sim_messagef (SCPE_ARG, "Unable to create differencing VHD: %s\n", gbuf);
@@ -2628,10 +2641,10 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
     capac_factor = ((dptr->dwidth / dptr->aincr) >= 32) ? 8 : ((dptr->dwidth / dptr->aincr) == 16) ? 2 : 1; /* capacity units (quadword: 8, word: 2, byte: 1) */
     uptr->capac = target_capac;
     if (strcmp ("VHD", dest_fmt) == 0)
-        dest = sim_vhd_disk_create (gbuf, ((t_offset)uptr->capac)*capac_factor*((dptr->flags & DEV_SECTORS) ? 512 : 1));
+        dest = sim_disk_make_vhd_handle(sim_vhd_disk_create (gbuf, ((t_offset)uptr->capac)*capac_factor*((dptr->flags & DEV_SECTORS) ? 512 : 1)));
     else
-        dest = sim_fopen (gbuf, "wb+");
-    if (!dest) {
+        dest = sim_fopen_handle (gbuf, "wb+");
+    if (SIM_HANDLE_IS_INVALID(dest)) {
         sim_disk_detach (uptr);
         return sim_messagef (r, "%s: Cannot create %s disk container '%s'\n", sim_uname (uptr), dest_fmt, gbuf);
         }
@@ -2645,9 +2658,9 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
 
         if (!copy_buf) {
             if (strcmp ("VHD", dest_fmt) == 0)
-                sim_vhd_disk_close (dest);
+                sim_vhd_disk_close (sim_disk_get_vhd_handle(dest));
             else
-                fclose (dest);
+                sim_fclose_handle (dest);
             (void)remove (gbuf);
             sim_disk_detach (uptr);
             return SCPE_MEM;
@@ -2691,9 +2704,9 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
 
             if (!verify_buf) {
                 if (strcmp ("VHD", dest_fmt) == 0)
-                    sim_vhd_disk_close (dest);
+                    sim_vhd_disk_close (sim_disk_get_vhd_handle(dest));
                 else
-                    fclose (dest);
+                    sim_fclose_handle (dest);
                 (void)remove (gbuf);
                 free (copy_buf);
                 sim_disk_detach (uptr);
@@ -2749,9 +2762,9 @@ if (sim_switches & SWMASK ('C')) {                      /* create new disk conta
             }
         free (copy_buf);
         if (strcmp ("VHD", dest_fmt) == 0)
-            sim_vhd_disk_close (dest);
+            sim_vhd_disk_close (sim_disk_get_vhd_handle(dest));
         else
-            fclose (dest);
+            sim_fclose_handle (dest);
         sim_disk_detach (uptr);
         if (r == SCPE_OK) {
             created = true;
@@ -2773,11 +2786,11 @@ else
 
         sim_switches = sim_switches & ~(SWMASK ('M'));
         get_glyph_nc (cptr, gbuf, 0);                  /* get spec */
-        vhd = sim_vhd_disk_merge (gbuf, &Parent);
-        if (vhd != SIM_INVALID_HANDLE) {
+        vhd = sim_disk_make_vhd_handle(sim_vhd_disk_merge (gbuf, &Parent));
+        if (SIM_HANDLE_IS_VALID(vhd)) {
             t_stat r;
 
-            sim_vhd_disk_close (vhd);
+            sim_vhd_disk_close (sim_disk_get_vhd_handle(vhd));
             r = sim_disk_attach (uptr, Parent, sector_size, xfer_element_size, dontchangecapac, dbit, dtype, pdp11tracksize, completion_delay);
             free (Parent);
             return r;
@@ -2805,17 +2818,19 @@ if (ramdisk_attach) {
 else switch (DK_GET_FMT (uptr)) {                       /* case on format */
     case DKUF_F_AUTO:                                   /* SIMH format */
         auto_format = true;
-        if (SIM_INVALID_HANDLE != (uptr->disk_image_file = sim_vhd_disk_open (cptr, "rb"))) { /* Try VHD */
+        uptr->disk_image_file = sim_disk_make_vhd_handle(sim_vhd_disk_open (cptr, "rb"));
+        if (SIM_HANDLE_IS_VALID(uptr->disk_image_file)) { /* Try VHD */
             sim_disk_set_fmt (uptr, 0, "VHD", NULL);    /* set file format to VHD */
-            sim_vhd_disk_close (uptr->disk_image_file);         /* close vhd file*/
+            sim_vhd_disk_close (sim_disk_get_vhd_handle(uptr->disk_image_file));         /* close vhd file*/
             uptr->disk_image_file = SIM_INVALID_HANDLE;
-            open_function = sim_vhd_disk_open;
+            open_function = (SIM_FILE_HANDLE (*)(const char *, const char *))sim_vhd_disk_open;
             break;
             }
         while (tmp_size < sector_size)
             tmp_size <<= 1;
         if (tmp_size ==  sector_size) {                     /* Power of 2 sector size can do RAW */
-            if (SIM_INVALID_HANDLE != (uptr->disk_image_file = sim_os_disk_open_raw (cptr, "rb"))) {
+            uptr->disk_image_file = sim_os_disk_open_raw (cptr, "rb");
+            if (SIM_HANDLE_IS_VALID(uptr->disk_image_file)) {
                 sim_disk_set_fmt (uptr, 0, "RAW", NULL);    /* set file format to RAW */
                 sim_os_disk_close_raw (uptr->disk_image_file);      /* close raw file*/
                 open_function = sim_os_disk_open_raw;
@@ -2828,27 +2843,29 @@ else switch (DK_GET_FMT (uptr)) {                       /* case on format */
         open_function = sim_fopen_handle;
         break;
     case DKUF_F_STD:                                    /* SIMH format */
-        if (SIM_INVALID_HANDLE != (uptr->disk_image_file = sim_vhd_disk_open (cptr, "rb"))) { /* Try VHD first */
+        uptr->disk_image_file = sim_disk_make_vhd_handle(sim_vhd_disk_open (cptr, "rb"));
+        if (SIM_HANDLE_IS_VALID(uptr->disk_image_file)) { /* Try VHD first */
             sim_disk_set_fmt (uptr, 0, "VHD", NULL);    /* set file format to VHD */
-            sim_vhd_disk_close (uptr->disk_image_file);         /* close vhd file*/
+            sim_vhd_disk_close (sim_disk_get_vhd_handle(uptr->disk_image_file));         /* close vhd file*/
             uptr->disk_image_file = SIM_INVALID_HANDLE;
-            open_function = sim_vhd_disk_open;
+            open_function = (SIM_FILE_HANDLE (*)(const char *, const char *))sim_vhd_disk_open;
             auto_format = true;
             break;
             }
         open_function = sim_fopen_handle;
         break;
     case DKUF_F_VHD:                                    /* VHD format */
-        open_function = sim_vhd_disk_open;
-        create_function = sim_vhd_disk_create;
+        open_function = (SIM_FILE_HANDLE (*)(const char *, const char *))sim_vhd_disk_open;
+        create_function = (SIM_FILE_HANDLE (*)(const char *, t_offset))sim_vhd_disk_create;
         storage_function = sim_os_disk_info_raw;
         break;
     case DKUF_F_RAW:                                    /* Raw Physical Disk Access */
-        if (SIM_INVALID_HANDLE != (uptr->disk_image_file = sim_vhd_disk_open (cptr, "rb"))) { /* Try VHD first */
+        uptr->disk_image_file = sim_disk_make_vhd_handle(sim_vhd_disk_open (cptr, "rb"));
+        if (SIM_HANDLE_IS_VALID(uptr->disk_image_file)) { /* Try VHD first */
             sim_disk_set_fmt (uptr, 0, "VHD", NULL);    /* set file format to VHD */
-            sim_vhd_disk_close (uptr->disk_image_file);         /* close vhd file*/
+            sim_vhd_disk_close (sim_disk_get_vhd_handle(uptr->disk_image_file));         /* close vhd file*/
             uptr->disk_image_file = SIM_INVALID_HANDLE;
-            open_function = sim_vhd_disk_open;
+            open_function = (SIM_FILE_HANDLE (*)(const char *, const char *))sim_vhd_disk_open;
             auto_format = true;
             break;
             }
@@ -2914,7 +2931,7 @@ if (ramdisk_attach) {
         }
     default_size = sim_disk_default_ramdisk_size (uptr, ctx, dptr);
     r = sim_disk_ramdisk_create (uptr, options, default_size, ctx->sector_size,
-                                 restoring, mode, &uptr->disk_image_file,
+                                 restoring, mode, &uptr->fileref,
                                  &ctx->ramdisk);
     sim_disk_ramdisk_free_spec (options);
     if (r != SCPE_OK)
@@ -2937,7 +2954,7 @@ else if ((sim_switches & SWMASK ('R')) ||               /* read only? */
         return sim_messagef (_err_return (uptr, SCPE_NORO), "%s: Read Only operation not allowed\n", /* no, error */
                                                         sim_uname (uptr));
     uptr->disk_image_file = open_function (cptr, "rb");         /* open rd only */
-    if (uptr->disk_image_file == SIM_INVALID_HANDLE)                          /* open fail? */
+    if (SIM_HANDLE_IS_INVALID(uptr->disk_image_file))                          /* open fail? */
         return sim_messagef (_err_return (uptr, SCPE_OPENERR), "%s: Can't open '%s': %s\n", /* yes, error */
                                             sim_uname (uptr), cptr, strerror (errno));
     uptr->flags = uptr->flags | UNIT_RO;                /* set rd only */
@@ -2945,13 +2962,13 @@ else if ((sim_switches & SWMASK ('R')) ||               /* read only? */
     }
 else {                                                  /* normal */
     uptr->disk_image_file = open_function (cptr, "rb+");        /* open r/w */
-    if (uptr->disk_image_file == SIM_INVALID_HANDLE) {                        /* open fail? */
+    if (SIM_HANDLE_IS_INVALID(uptr->disk_image_file)) {                        /* open fail? */
         if ((errno == EROFS) || (errno == EACCES)) {    /* read only? */
             if ((uptr->flags & UNIT_ROABLE) == 0)       /* allowed? */
                 return sim_messagef (_err_return (uptr, SCPE_NORO), "%s: Read Only operation not allowed\n", /* no, error */
                                                                 sim_uname (uptr));
             uptr->disk_image_file = open_function (cptr, "rb"); /* open rd only */
-            if (uptr->disk_image_file == SIM_INVALID_HANDLE)                  /* open fail? */
+            if (SIM_HANDLE_IS_INVALID(uptr->disk_image_file))                  /* open fail? */
                 return sim_messagef (_err_return (uptr, SCPE_OPENERR), "%s: Can't open '%s': %s\n", /* yes, error */
                                                     sim_uname (uptr), cptr, strerror (errno));
             uptr->flags = uptr->flags | UNIT_RO;        /* set rd only */
@@ -2966,7 +2983,7 @@ else {                                                  /* normal */
                 uptr->disk_image_file = create_function (cptr, ((t_offset)uptr->capac)*ctx->capac_factor*((dptr->flags & DEV_SECTORS) ? 512 : 1));/* create new file */
             else
                 uptr->disk_image_file = open_function (cptr, "wb+");/* open new file */
-            if (uptr->disk_image_file == SIM_INVALID_HANDLE)                  /* open fail? */
+            if (SIM_HANDLE_IS_INVALID(uptr->disk_image_file))                  /* open fail? */
                 return sim_messagef (_err_return (uptr, SCPE_OPENERR), "%s: Cannot create '%s' - %s\n",
                                      sim_uname (uptr), cptr, strerror (errno));
             sim_messagef (SCPE_OK, "%s: Creating new file: %s\n", sim_uname (uptr), cptr);
@@ -2978,7 +2995,7 @@ else {                                                  /* normal */
 if ((DK_GET_FMT (uptr) == DKUF_F_VHD) || (ctx->footer)) {
     uint32_t container_sector_size = 0, container_xfer_element_size = 0, container_sectors = 0;
     char created_name[64];
-    const char *container_dtype = ctx->footer ? (char *)ctx->footer->DriveType : sim_vhd_disk_get_dtype (uptr->disk_image_file, &container_sector_size, &container_xfer_element_size, created_name, NULL);
+    const char *container_dtype = ctx->footer ? (char *)ctx->footer->DriveType : sim_vhd_disk_get_dtype (sim_disk_get_vhd_handle(uptr->disk_image_file), &container_sector_size, &container_xfer_element_size, created_name, NULL);
 
     if (ctx->footer) {
         container_sector_size = NtoHl (ctx->footer->SectorSize);
@@ -2987,7 +3004,7 @@ if ((DK_GET_FMT (uptr) == DKUF_F_VHD) || (ctx->footer)) {
         strlcpy (created_name, (char *)ctx->footer->CreatingSimulator, sizeof (created_name));
         }
     if ((DK_GET_FMT (uptr) == DKUF_F_VHD) && created && dtype) {
-        sim_vhd_disk_set_dtype (uptr->disk_image_file, dtype, ctx->sector_size, ctx->xfer_element_size);
+        sim_vhd_disk_set_dtype (sim_disk_get_vhd_handle(uptr->disk_image_file), dtype, ctx->sector_size, ctx->xfer_element_size);
         (void)get_disk_footer (uptr);
         container_dtype = (char *)ctx->footer->DriveType;
         }
@@ -3413,7 +3430,7 @@ switch (DK_GET_FMT (uptr)) {                            /* case on format */
         close_function = sim_fclose_handle;
         break;
     case DKUF_F_VHD:                                    /* Virtual Disk */
-        close_function = sim_vhd_disk_close;
+        close_function = sim_vhd_disk_close_wrapper;
         break;
     case DKUF_F_RAW:                                    /* Physical */
         close_function = sim_os_disk_close_raw;
@@ -4146,13 +4163,14 @@ else
 Handle = CreateFileA (tmpname, DesiredAccess, FILE_SHARE_READ|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS|FILE_FLAG_WRITE_THROUGH, NULL);
 free (tmpname);
 if (Handle != INVALID_HANDLE_VALUE) {
-    if ((sim_os_disk_info_raw (Handle, NULL, NULL, &is_cdrom)) ||
+    SIM_FILE_HANDLE temp_handle = sim_disk_make_native_handle(Handle);
+    if ((sim_os_disk_info_raw (temp_handle, NULL, NULL, &is_cdrom)) ||
         ((DesiredAccess & GENERIC_WRITE) && is_cdrom)) {
         CloseHandle (Handle);
         errno = EACCES;
         return SIM_INVALID_HANDLE;
         }
-    return Handle;
+    return temp_handle;
     }
 _set_errno_from_status (GetLastError ());
 return SIM_INVALID_HANDLE;
@@ -4160,7 +4178,7 @@ return SIM_INVALID_HANDLE;
 
 static int sim_os_disk_close_raw (SIM_FILE_HANDLE f)
 {
-if (!CloseHandle (f)) {
+if (!CloseHandle (sim_disk_get_native_handle(f))) {
     _set_errno_from_status (GetLastError ());
     return EOF;
     }
@@ -4169,7 +4187,7 @@ return 0;
 
 static void sim_os_disk_flush_raw (SIM_FILE_HANDLE f)
 {
-FlushFileBuffers (f);
+FlushFileBuffers (sim_disk_get_native_handle(f));
 }
 
 static t_offset sim_os_disk_size_raw (SIM_FILE_HANDLE Disk)
@@ -4177,7 +4195,7 @@ static t_offset sim_os_disk_size_raw (SIM_FILE_HANDLE Disk)
 DWORD IoctlReturnSize;
 LARGE_INTEGER Size;
 
-if (GetFileSizeEx(Disk, &Size))
+if (GetFileSizeEx(sim_disk_get_native_handle(Disk), &Size))
     return (t_offset)(Size.QuadPart);
 #ifdef IOCTL_STORAGE_READ_CAPACITY
 {
@@ -4185,7 +4203,7 @@ if (GetFileSizeEx(Disk, &Size))
 
     ZeroMemory (&S, sizeof (S));
     S.Version = sizeof (STORAGE_READ_CAPACITY);
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_STORAGE_READ_CAPACITY,      /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4201,7 +4219,7 @@ if (GetFileSizeEx(Disk, &Size))
     DISK_GEOMETRY_EX G;
 
     ZeroMemory (&G, sizeof (G));
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4216,7 +4234,7 @@ if (GetFileSizeEx(Disk, &Size))
 {
     DISK_GEOMETRY G;
 
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_DISK_GET_DRIVE_GEOMETRY,    /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4239,7 +4257,7 @@ uint32_t Removable = 0;
 
 sim_os_disk_info_raw (Disk, NULL, &Removable, NULL);
 if (Removable) {
-    if (!DeviceIoControl(Disk,                             /* handle to disk */
+    if (!DeviceIoControl(sim_disk_get_native_handle(Disk),    /* handle to disk */
                          IOCTL_STORAGE_EJECT_MEDIA,        /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4265,7 +4283,7 @@ uint32_t Removable = 0;
 
 sim_os_disk_info_raw (Disk, NULL, &Removable, NULL);
 if (Removable) {
-    if (!DeviceIoControl(Disk,                             /* handle to disk */
+    if (!DeviceIoControl(sim_disk_get_native_handle(Disk),    /* handle to disk */
                          IOCTL_STORAGE_CHECK_VERIFY,       /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4287,7 +4305,7 @@ DWORD IoctlReturnSize;
 STORAGE_DEVICE_NUMBER Device;
 
 ZeroMemory (&Device, sizeof (Device));
-DeviceIoControl(Disk,                             /* handle to volume */
+DeviceIoControl(sim_disk_get_native_handle(Disk),        /* handle to volume */
                 IOCTL_STORAGE_GET_DEVICE_NUMBER,  /* dwIoControlCode */
                 NULL,                             /* lpInBuffer */
                 0,                                /* nInBufferSize */
@@ -4308,7 +4326,7 @@ if (is_cdrom)
 
     ZeroMemory (&S, sizeof (S));
     S.Version = sizeof (STORAGE_READ_CAPACITY);
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_STORAGE_READ_CAPACITY,      /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4325,7 +4343,7 @@ if (is_cdrom)
     DISK_GEOMETRY_EX G;
 
     ZeroMemory (&G, sizeof (G));
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_DISK_GET_DRIVE_GEOMETRY_EX, /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4341,7 +4359,7 @@ if (is_cdrom)
 {
     DISK_GEOMETRY G;
 
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_DISK_GET_DRIVE_GEOMETRY,    /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4358,7 +4376,7 @@ if (is_cdrom)
     STORAGE_HOTPLUG_INFO H;
 
     ZeroMemory (&H, sizeof (H));
-    if (DeviceIoControl(Disk,                              /* handle to volume */
+    if (DeviceIoControl(sim_disk_get_native_handle(Disk),     /* handle to volume */
                          IOCTL_STORAGE_GET_HOTPLUG_INFO,   /* dwIoControlCode */
                          NULL,                             /* lpInBuffer */
                          0,                                /* nInBufferSize */
@@ -4384,7 +4402,7 @@ sim_debug_unit (ctx->dbit, uptr, "sim_os_disk_read(unit=%d, addr=0x%X, bytes=%u)
 memset (&pos, 0, sizeof (pos));
 pos.Offset = (DWORD)addr;
 pos.OffsetHigh = (DWORD)(addr >> 32);
-if (ReadFile ((HANDLE)(uptr->disk_image_file), buf, (DWORD)bytes, (LPDWORD)bytesread, &pos))
+if (ReadFile (sim_disk_get_native_handle(uptr->disk_image_file), buf, (DWORD)bytes, (LPDWORD)bytesread, &pos))
     return SCPE_OK;
 if (ERROR_HANDLE_EOF == GetLastError ()) {  /* Return 0's for reads past EOF */
     memset (buf, 0, bytes);
@@ -4406,7 +4424,7 @@ sim_debug_unit (ctx->dbit, uptr, "sim_os_disk_write(unit=%d, lba=0x%X, bytes=%u)
 memset (&pos, 0, sizeof (pos));
 pos.Offset = (DWORD)addr;
 pos.OffsetHigh = (DWORD)(addr >> 32);
-if (WriteFile ((HANDLE)(uptr->disk_image_file), buf, bytes, (LPDWORD)byteswritten, &pos))
+if (WriteFile (sim_disk_get_native_handle(uptr->disk_image_file), buf, bytes, (LPDWORD)byteswritten, &pos))
     return SCPE_OK;
 _set_errno_from_status (GetLastError ());
 return SCPE_IOERR;
@@ -5071,7 +5089,7 @@ if (sDynamic)
 if (aBAT)
     *aBAT = NULL;
 File = sim_fopen_handle (szVHDPath, "rb");
-if (File == SIM_INVALID_HANDLE) {
+if (SIM_HANDLE_IS_INVALID(File)) {
     Return = errno;
     goto Return_Cleanup;
     }
@@ -5248,7 +5266,7 @@ if ((sDynamic) &&
         }
     }
 Return_Cleanup:
-if (File != SIM_INVALID_HANDLE)
+if (SIM_HANDLE_IS_VALID(File))
     sim_fclose_handle(File);
 if (aBAT && (0 != Return)) {
     free (*aBAT);
@@ -5271,9 +5289,8 @@ static t_stat sim_vhd_disk_implemented (void)
 return SCPE_OK;
 }
 
-static t_stat sim_vhd_disk_set_dtype (SIM_FILE_HANDLE f, const char *dtype, uint32_t SectorSize, uint32_t xfer_element_size)
+static t_stat sim_vhd_disk_set_dtype (VHDHANDLE hVHD, const char *dtype, uint32_t SectorSize, uint32_t xfer_element_size)
 {
-VHDHANDLE hVHD  = (VHDHANDLE)f;
 int Status = 0;
 
 memset (hVHD->Footer.DriveType, '\0', sizeof hVHD->Footer.DriveType);
@@ -5328,9 +5345,8 @@ if (Status)
 return SCPE_OK;
 }
 
-static const char *sim_vhd_disk_get_dtype (SIM_FILE_HANDLE f, uint32_t *SectorSize, uint32_t *xfer_element_size, char sim_name[64], time_t *creation_time)
+static const char *sim_vhd_disk_get_dtype (VHDHANDLE hVHD, uint32_t *SectorSize, uint32_t *xfer_element_size, char sim_name[64], time_t *creation_time)
 {
-VHDHANDLE hVHD  = (VHDHANDLE)f;
 
 if (SectorSize)
     *SectorSize = NtoHl (hVHD->Footer.DriveSectorSize);
@@ -5343,14 +5359,14 @@ if (creation_time)
 return (char *)(&hVHD->Footer.DriveType[0]);
 }
 
-static SIM_FILE_HANDLE sim_vhd_disk_open (const char *szVHDPath, const char *DesiredAccess)
+static VHDHANDLE sim_vhd_disk_open (const char *szVHDPath, const char *DesiredAccess)
     {
     VHDHANDLE hVHD = (VHDHANDLE) calloc (1, sizeof(*hVHD));
     bool NeedUpdate = false;
     int Status;
 
     if (hVHD == NULL)
-        return SIM_INVALID_HANDLE;
+        return NULL;
     Status = GetVHDFooter (szVHDPath,
                            &hVHD->Footer,
                            &hVHD->Dynamic,
@@ -5365,7 +5381,7 @@ static SIM_FILE_HANDLE sim_vhd_disk_open (const char *szVHDPath, const char *Des
         VHD_Footer ParentFooter;
         VHD_DynamicDiskHeader ParentDynamic;
 
-        hVHD->Parent = (VHDHANDLE)sim_vhd_disk_open (hVHD->ParentVHDPath, "rb");
+        hVHD->Parent = sim_vhd_disk_open (hVHD->ParentVHDPath, "rb");
         if (!hVHD->Parent) {
             Status = errno;
             goto Cleanup_Return;
@@ -5402,14 +5418,14 @@ static SIM_FILE_HANDLE sim_vhd_disk_open (const char *szVHDPath, const char *Des
         goto Cleanup_Return;
         }
     hVHD->File = sim_fopen_handle (szVHDPath, DesiredAccess);
-    if (hVHD->File == SIM_INVALID_HANDLE) {
+    if (SIM_HANDLE_IS_INVALID(hVHD->File)) {
         Status = errno;
         goto Cleanup_Return;
         }
 Cleanup_Return:
     if (Status) {
         sim_vhd_disk_close (hVHD);
-        hVHD = SIM_INVALID_HANDLE;
+        hVHD = NULL;
         }
     else {
         if (NeedUpdate) {                               /* Update Differencing Disk Header? */
@@ -5419,7 +5435,7 @@ Cleanup_Return:
                                   NULL,
                                   NtoHll (hVHD->Footer.DataOffset))) {
                 sim_vhd_disk_close (hVHD);
-                hVHD = SIM_INVALID_HANDLE;
+                hVHD = NULL;
                 }
             }
         }
@@ -5435,7 +5451,7 @@ WriteVirtualDiskSectors(VHDHANDLE hVHD,
                         uint32_t SectorSize,
                         t_lba lba);
 
-static SIM_FILE_HANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentVHD)
+static VHDHANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentVHD)
     {
     VHDHANDLE hVHD = (VHDHANDLE) calloc (1, sizeof(*hVHD));
     VHDHANDLE Parent = NULL;
@@ -5447,7 +5463,7 @@ static SIM_FILE_HANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentV
     void *BlockData = NULL;
 
     if (!hVHD)
-        return (SIM_FILE_HANDLE)hVHD;
+        return hVHD;
     if (0 != (Status = GetVHDFooter (szVHDPath,
                                      &hVHD->Footer,
                                      &hVHD->Dynamic,
@@ -5471,13 +5487,13 @@ static SIM_FILE_HANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentV
         Status = errno;
         goto Cleanup_Return;
         }
-    Parent = (VHDHANDLE)sim_vhd_disk_open (hVHD->ParentVHDPath, "rb+");
+    Parent = sim_vhd_disk_open (hVHD->ParentVHDPath, "rb+");
     if (!Parent) {
         Status = errno;
         goto Cleanup_Return;
         }
     hVHD->File = sim_fopen_handle (szVHDPath, "rb");
-    if (hVHD->File == SIM_INVALID_HANDLE) {
+    if (SIM_HANDLE_IS_INVALID(hVHD->File)) {
         Status = errno;
         goto Cleanup_Return;
         }
@@ -5528,7 +5544,7 @@ static SIM_FILE_HANDLE sim_vhd_disk_merge (const char *szVHDPath, char **ParentV
         }
 Cleanup_Return:
     free (BlockData);
-    if (hVHD->File != SIM_INVALID_HANDLE)
+    if (SIM_HANDLE_IS_VALID(hVHD->File))
         sim_fclose_handle (hVHD->File);
     if (Status) {
         free (hVHD->BAT);
@@ -5542,18 +5558,17 @@ Cleanup_Return:
         hVHD = Parent;
         }
     errno = Status;
-    return (SIM_FILE_HANDLE)hVHD;
+    return hVHD;
     }
 
-static int sim_vhd_disk_close (SIM_FILE_HANDLE f)
+static int sim_vhd_disk_close (VHDHANDLE hVHD)
 {
-VHDHANDLE hVHD = (VHDHANDLE)f;
 
-if (SIM_INVALID_HANDLE != f) {
+if (hVHD != NULL) {
     if (hVHD->Parent)
-        sim_vhd_disk_close ((SIM_FILE_HANDLE)hVHD->Parent);
+        sim_vhd_disk_close (hVHD->Parent);
     free (hVHD->BAT);
-    if (hVHD->File != SIM_INVALID_HANDLE) {
+    if (SIM_HANDLE_IS_VALID(hVHD->File)) {
         sim_fflush_handle (hVHD->File);
         sim_fclose_handle (hVHD->File);
         }
@@ -5563,17 +5578,15 @@ if (SIM_INVALID_HANDLE != f) {
 return -1;
 }
 
-static void sim_vhd_disk_flush (SIM_FILE_HANDLE f)
+static void sim_vhd_disk_flush (VHDHANDLE hVHD)
 {
-VHDHANDLE hVHD = (VHDHANDLE)f;
 
-if ((SIM_INVALID_HANDLE != f) && (hVHD->File != SIM_INVALID_HANDLE))
+if ((hVHD != NULL) && SIM_HANDLE_IS_VALID(hVHD->File))
     sim_fflush_handle (hVHD->File);
 }
 
-static t_offset sim_vhd_disk_size (SIM_FILE_HANDLE f)
+static t_offset sim_vhd_disk_size (VHDHANDLE hVHD)
 {
-VHDHANDLE hVHD = (VHDHANDLE)f;
 
 return (t_offset)(NtoHll (hVHD->Footer.CurrentSize));
 }
@@ -5602,14 +5615,14 @@ if (SizeInBytes > ((uint64)(1024 * 1024 * 1024)) * 2040) {
     goto Cleanup_Return;
     }
 File = sim_fopen_handle (szVHDPath, "rb");
-if (File != SIM_INVALID_HANDLE) {
+if (SIM_HANDLE_IS_VALID(File)) {
     sim_fclose_handle (File);
     File = SIM_INVALID_HANDLE;
     Status = EEXIST;
     goto Cleanup_Return;
     }
 File = sim_fopen_handle (szVHDPath, "wb+");
-if (File == SIM_INVALID_HANDLE) {
+if (SIM_HANDLE_IS_INVALID(File)) {
     Status = errno;
     goto Cleanup_Return;
     }
@@ -5739,14 +5752,14 @@ if (WriteFilePosition(File,
 
 Cleanup_Return:
 free (BAT);
-if (File != SIM_INVALID_HANDLE)
+if (SIM_HANDLE_IS_VALID(File))
     sim_fclose_handle (File);
 if (Status) {
     if (Status != EEXIST)
         (void)remove (szVHDPath);
     }
 else {
-    hVHD = (VHDHANDLE)sim_vhd_disk_open (szVHDPath, "rb+");
+    hVHD = sim_vhd_disk_open (szVHDPath, "rb+");
     if (!hVHD)
         Status = errno;
     }
@@ -6001,7 +6014,7 @@ if (Status) {
         (void)remove (szVHDPath);
     }
 else {
-    hVHD = (VHDHANDLE)sim_vhd_disk_open (szVHDPath, "rb+");
+    hVHD = sim_vhd_disk_open (szVHDPath, "rb+");
     if (!hVHD)
         Status = errno;
     }
@@ -6009,15 +6022,15 @@ errno = Status;
 return hVHD;
 }
 
-static SIM_FILE_HANDLE sim_vhd_disk_create (const char *szVHDPath, t_offset desiredsize)
+static VHDHANDLE sim_vhd_disk_create (const char *szVHDPath, t_offset desiredsize)
 {
-return (SIM_FILE_HANDLE)sim_CreateVirtualDisk (szVHDPath, (uint32_t)(desiredsize/512), 0,
+return sim_CreateVirtualDisk (szVHDPath, (uint32_t)(desiredsize/512), 0,
                                       (sim_switches & SWMASK ('X')) != 0);
 }
 
-static SIM_FILE_HANDLE sim_vhd_disk_create_diff (const char *szVHDPath, const char *szParentVHDPath)
+static VHDHANDLE sim_vhd_disk_create_diff (const char *szVHDPath, const char *szParentVHDPath)
 {
-return (SIM_FILE_HANDLE)CreateDifferencingVirtualDisk (szVHDPath, szParentVHDPath);
+return CreateDifferencingVirtualDisk (szVHDPath, szParentVHDPath);
 }
 
 static t_stat
@@ -6035,7 +6048,7 @@ t_stat r = SCPE_OK;
 
 if (BytesRead)
     *BytesRead = 0;
-if (!hVHD || (hVHD->File == SIM_INVALID_HANDLE)) {
+if (!hVHD || SIM_HANDLE_IS_INVALID(hVHD->File)) {
     errno = EBADF;
     return SCPE_IOERR;
     }
@@ -6125,7 +6138,7 @@ return r;
 
 static t_stat sim_vhd_disk_rdsect (UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt *sectsread, t_seccnt sects)
 {
-VHDHANDLE hVHD = (VHDHANDLE)uptr->disk_image_file;
+VHDHANDLE hVHD = sim_disk_get_vhd_handle(uptr->disk_image_file);
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
 return ReadVirtualDiskSectors(hVHD, buf, sects, sectsread, ctx->sector_size, lba);
@@ -6165,7 +6178,7 @@ t_stat r = SCPE_OK;
 
 if (BytesWritten)
     *BytesWritten = 0;
-if (!hVHD || !hVHD->File) {
+if (!hVHD || SIM_HANDLE_IS_INVALID(hVHD->File)) {
     errno = EBADF;
     return SCPE_IOERR;
     }
@@ -6365,7 +6378,7 @@ return r;
 
 static t_stat sim_vhd_disk_wrsect (UNIT *uptr, t_lba lba, uint8_t *buf, t_seccnt *sectswritten, t_seccnt sects)
 {
-VHDHANDLE hVHD = (VHDHANDLE)uptr->disk_image_file;
+VHDHANDLE hVHD = sim_disk_get_vhd_handle(uptr->disk_image_file);
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
 return WriteVirtualDiskSectors(hVHD, buf, sects, sectswritten, ctx->sector_size, lba);
@@ -6477,9 +6490,9 @@ if (info->flag) {        /* zap type */
         info->stat = sim_messagef (SCPE_ALATT, "Cannot ZAP an attached disk container: %s\n", FullPath);
         return;
         }
-    vhd_container = sim_vhd_disk_open (FullPath, "r");
-    if (vhd_container != SIM_INVALID_HANDLE) {
-        sim_vhd_disk_close (vhd_container);
+    vhd_container = sim_disk_make_vhd_handle(sim_vhd_disk_open (FullPath, "r"));
+    if (SIM_HANDLE_IS_VALID(vhd_container)) {
+        sim_vhd_disk_close (sim_disk_get_vhd_handle(vhd_container));
         info->stat = sim_messagef (SCPE_OPENERR, "Cannot change the disk type of a VHD container file: %s\n", FullPath);
         return;
         }
@@ -6555,18 +6568,18 @@ if (info->flag == 0) {
     uptr->flags |= UNIT_ATTABLE;
     uptr->disk_ctx = &disk_ctx;
     sim_disk_set_fmt (uptr, 0, "VHD", NULL);
-    container = sim_vhd_disk_open (FullPath, "r");
-    if (container == NULL) {
+    container = sim_disk_make_vhd_handle(sim_vhd_disk_open (FullPath, "r"));
+    if (SIM_HANDLE_IS_INVALID(container)) {
         sim_disk_set_fmt (uptr, 0, "SIMH", NULL);
         container = sim_fopen_handle (FullPath, "rb+");
         close_function = sim_fclose_handle;
         size_function = sim_fsize_handle;
         }
     else {
-        close_function = sim_vhd_disk_close;
-        size_function = sim_vhd_disk_size;
+        close_function = sim_vhd_disk_close_wrapper;
+        size_function = sim_vhd_disk_size_wrapper;
         }
-    if (container) {
+    if (SIM_HANDLE_IS_VALID(container)) {
         container_size = size_function (container);
         uptr->filename = strdup (FullPath);
         uptr->disk_image_file = container;

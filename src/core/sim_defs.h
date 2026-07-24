@@ -470,13 +470,36 @@ struct DEVICE {
  * the overhead of maintaining parallel FILE* streams and enables direct
  * use of pread()/pwrite() (POSIX) or ReadFile/WriteFile with OVERLAPPED
  * (Windows) for atomic positioned I/O.
+ *
+ * This is an opaque union type that can safely hold either:
+ * - A native OS file handle (HANDLE on Windows, int fd on POSIX)
+ * - An opaque VHD handle pointer (for VHD format disks)
+ *
+ * Access the contents via the inline accessor functions in sim_disk.h.
+ * Do not access the union members directly outside sim_disk.c.
  */
+typedef union {
+    void *opaque_ptr;      /* For VHD handles and general pointer storage */
 #if defined(_WIN32)
-typedef HANDLE SIM_FILE_HANDLE;        /* Windows: native HANDLE type */
-#    define SIM_INVALID_HANDLE INVALID_HANDLE_VALUE
+    HANDLE native_handle;  /* Windows: native HANDLE type */
 #else
-typedef int SIM_FILE_HANDLE;           /* POSIX: file descriptor */
-#    define SIM_INVALID_HANDLE (-1)
+    int native_fd;         /* POSIX: file descriptor */
+#endif
+} SIM_FILE_HANDLE;
+
+#if defined(_WIN32)
+#    define SIM_INVALID_HANDLE ((SIM_FILE_HANDLE){.native_handle = INVALID_HANDLE_VALUE})
+#else
+#    define SIM_INVALID_HANDLE ((SIM_FILE_HANDLE){.native_fd = -1})
+#endif
+
+/* Comparison helpers for SIM_FILE_HANDLE (works with compound literals in C99+) */
+#if defined(_WIN32)
+#    define SIM_HANDLE_IS_INVALID(h) ((h).native_handle == INVALID_HANDLE_VALUE)
+#    define SIM_HANDLE_IS_VALID(h) ((h).native_handle != INVALID_HANDLE_VALUE)
+#else
+#    define SIM_HANDLE_IS_INVALID(h) ((h).native_fd == -1)
+#    define SIM_HANDLE_IS_VALID(h) ((h).native_fd != -1)
 #endif
 
 /* Unit data structure
