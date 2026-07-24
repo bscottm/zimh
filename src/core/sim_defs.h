@@ -487,13 +487,18 @@ typedef union {
 #endif
 } SIM_FILE_HANDLE;
 
+/* SIM_INVALID_HANDLE definition
+ *
+ * MSVC doesn't support compound literals in static initializers, so we use
+ * simple brace initialization of the appropriate union member.
+ */
 #if defined(_WIN32)
-#    define SIM_INVALID_HANDLE ((SIM_FILE_HANDLE){.native_handle = INVALID_HANDLE_VALUE})
+#    define SIM_INVALID_HANDLE {.native_handle = INVALID_HANDLE_VALUE}
 #else
-#    define SIM_INVALID_HANDLE ((SIM_FILE_HANDLE){.native_fd = -1})
+#    define SIM_INVALID_HANDLE {.native_fd = -1}
 #endif
 
-/* Comparison helpers for SIM_FILE_HANDLE (works with compound literals in C99+) */
+/* Comparison helpers for SIM_FILE_HANDLE */
 #if defined(_WIN32)
 #    define SIM_HANDLE_IS_INVALID(h) ((h).native_handle == INVALID_HANDLE_VALUE)
 #    define SIM_HANDLE_IS_VALID(h) ((h).native_handle != INVALID_HANDLE_VALUE)
