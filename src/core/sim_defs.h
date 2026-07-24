@@ -502,9 +502,11 @@ typedef union {
 #if defined(_WIN32)
 #    define SIM_HANDLE_IS_INVALID(h) ((h).native_handle == INVALID_HANDLE_VALUE)
 #    define SIM_HANDLE_IS_VALID(h) ((h).native_handle != INVALID_HANDLE_VALUE)
+#    define SIM_FILE_HANDLE_INIT {.native_handle = INVALID_HANDLE_VALUE}
 #else
 #    define SIM_HANDLE_IS_INVALID(h) ((h).native_fd == -1)
 #    define SIM_HANDLE_IS_VALID(h) ((h).native_fd != -1)
+#    define SIM_FILE_HANDLE_INIT {.native_fd = -1}
 #endif
 
 /* Unit data structure
@@ -861,7 +863,7 @@ struct MEMFILE {
 
  */
 
-#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, SIM_INVALID_HANDLE, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
+#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, SIM_FILE_HANDLE_INIT, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
 
 /* Register initialization macros.
 
