@@ -70,7 +70,7 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
     /* Set the reader thread's affinity to the I/O affinity set: */
     sim_cpu_set_t io_set;
 
-    sim_os_get_cpu_partition(NULL, &io_set);
+    sim_os_get_cpu_partition(NULL, &io_set, NULL);
     if (!sim_cpu_set_empty(&io_set))
         sim_os_set_thread_affinity(&io_set);
 
@@ -258,7 +258,7 @@ static int eth_writer_init(ETH_DEV *dev)
     /* Set the writer thread's affinity to the I/O affinity set: */
     sim_cpu_set_t io_set;
 
-    sim_os_get_cpu_partition(NULL, &io_set);
+    sim_os_get_cpu_partition(NULL, &io_set, NULL);
     if (!sim_cpu_set_empty(&io_set))
         sim_os_set_thread_affinity(&io_set);
 

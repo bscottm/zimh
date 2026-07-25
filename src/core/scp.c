@@ -2697,7 +2697,7 @@ sim_on_inherit = sim_switches & SWMASK ('O');           /* -o means inherit on s
 /* Set the main thread's affinity: */
 sim_cpu_set_t main_set;
 
-sim_os_get_cpu_partition(&main_set, NULL);
+sim_os_get_cpu_partition(&main_set, NULL, NULL);
 if (!sim_cpu_set_empty(&main_set))
     sim_os_set_thread_affinity(&main_set);
 #endif

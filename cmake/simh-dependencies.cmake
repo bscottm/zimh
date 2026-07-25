@@ -268,6 +268,9 @@ if(WITH_VIDEO)
         find_package(SDL2_ttf REQUIRED)
 
         target_compile_definitions(simh_video INTERFACE USE_SIM_VIDEO HAVE_LIBSDL)
+        ## NOTE: aio_support also needs to know about SDL2 because the processor affinity code
+        ## will create a CPU affinity set for SDL.
+        target_compile_definitions(aio_support PRIVATE HAVE_LIBSDL)
 
         if (TARGET PNG::PNG)
             target_compile_definitions(simh_video INTERFACE HAVE_LIBPNG)

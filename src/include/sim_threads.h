@@ -204,7 +204,7 @@ static inline int sim_cpu_set_empty(const sim_cpu_set_t *s)
 extern int sim_os_get_cpu_count(void);
 extern t_stat sim_os_get_process_affinity(sim_cpu_set_t *set);
 extern t_stat sim_os_set_thread_affinity(const sim_cpu_set_t *set);
-extern t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set);
+extern t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, sim_cpu_set_t *sdl_set);
 
 #    define SIM_THREADS_H
 #endif

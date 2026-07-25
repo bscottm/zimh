@@ -239,50 +239,77 @@ static inline void sim_call_once(sim_once_t *once, void (*fn)(void))
 #endif
 
 /* Inner callback function for computing the CPU affinity partitions between the main and the I/O threads. */
-static void sim_os_compute_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set)
+static void sim_os_compute_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, sim_cpu_set_t *sdl_set)
 {
     sim_cpu_set_t allowed;
-    int cpu, first = -1, n = 0;
+    int cpu, n = 0;
+    int cpus[SIM_MAX_CPUS];
 
+    sim_cpu_set_zero(sdl_set);
     sim_cpu_set_zero(main_set);
     sim_cpu_set_zero(io_set);
 
     if (sim_os_get_process_affinity(&allowed) != SCPE_OK)
         return;
 
-    for (cpu = 0; cpu < SIM_MAX_CPUS; cpu++) {
-        if (allowed.mask & ((uint64_t)1 << cpu)) {
-            if (first < 0)
-                first = cpu;
-            n++;
-        }
-    }
-    if (n < 2)
-        return; /* not enough usable CPUs to bother partitioning */
-
-    sim_cpu_set_add(main_set, first);
-    for (cpu = first + 1; cpu < SIM_MAX_CPUS; cpu++)
+    for (cpu = 0; cpu < SIM_MAX_CPUS; cpu++)
         if (allowed.mask & ((uint64_t)1 << cpu))
-            sim_cpu_set_add(io_set, cpu);
+            cpus[n++] = cpu;
+
+    if (n == 0)
+        return;
+
+#if defined(HAVE_LIBSDL)
+    if (n >= 3) {
+        sim_cpu_set_add(sdl_set, cpus[0]);
+        sim_cpu_set_add(main_set, cpus[1]);
+        for (cpu = 2; cpu < n; cpu++)
+            sim_cpu_set_add(io_set, cpus[cpu]);
+    } else if (n == 2) {
+        /* Not enough CPUs to isolate all three. SDL shares with the
+         * instruction loop rather than with I/O -- it's idle waiting
+         * on the event queue almost all the time, closer in behavior
+         * to reader/writer than to the interpreter, but the loop is
+         * the one thing that must never be starved, so it wins the
+         * dedicated slot and SDL is the one that doubles up. */
+        sim_cpu_set_add(sdl_set, cpus[0]);
+        sim_cpu_set_add(main_set, cpus[0]);
+        sim_cpu_set_add(io_set, cpus[1]);
+    } else {
+        sim_cpu_set_add(sdl_set, cpus[0]);
+        sim_cpu_set_add(main_set, cpus[0]);
+        sim_cpu_set_add(io_set, cpus[0]);
+    }
+#else
+    /* Headless build -- no SDL thread exists at all. sdl_set stays
+     * empty; callers must check sim_cpu_set_empty() before using it. */
+    sim_cpu_set_add(main_set, cpus[0]);
+    for (cpu = 1; cpu < n; cpu++)
+        sim_cpu_set_add(io_set, cpus[cpu]);
+#endif
 }
 
 /* CPU affinity sets: g_main_cpu_set for the main thread's CPU affinity, g_io_cpu_set for the
  * I/O threads. */
 static sim_cpu_set_t g_main_cpu_set;
 static sim_cpu_set_t g_io_cpu_set;
+static sim_cpu_set_t g_sdl_cpu_set;
 static sim_once_t g_cpu_partition_once = SIM_ONCE_INIT;
 
 static void compute_cpu_partition_once(void)
 {
-    sim_os_compute_cpu_partition(&g_main_cpu_set, &g_io_cpu_set);
+    sim_os_compute_cpu_partition(&g_main_cpu_set, &g_io_cpu_set, &g_sdl_cpu_set);
 }
 
-t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set)
+t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, sim_cpu_set_t *sdl_set)
 {
     sim_call_once(&g_cpu_partition_once, compute_cpu_partition_once);
     if (main_set != NULL)
         *main_set = g_main_cpu_set;
     if (io_set != NULL)
         *io_set = g_io_cpu_set;
+    if (sdl_set != NULL)
+        *sdl_set = g_sdl_cpu_set;
+
     return SCPE_OK;
 }
