@@ -463,51 +463,40 @@ struct DEVICE {
 #    define DEV_UFMASK (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF) - 1))
 #    define DEV_RFLAGS (DEV_UFMASK | DEV_DIS) /* restored flags */
 
-/* Platform-specific file handle type
- *
- * Unifies file I/O across stdio-based (SIMH format) and raw handle-based
- * (RAW physical disk, VHD) operations. Using native handles eliminates
- * the overhead of maintaining parallel FILE* streams and enables direct
- * use of pread()/pwrite() (POSIX) or ReadFile/WriteFile with OVERLAPPED
- * (Windows) for atomic positioned I/O.
- *
+/* Platform-specific raw operating system file descriptor/handle, used for positional reads and writes. */
+#    if defined(_WIN32)
+typedef HANDLE sim_raw_osfile_t;
+
+#    define SIM_INVALID_OSFILE INVALID_HANDLE_VALUE
+#    else
+typedef int sim_raw_osfile_t;
+
+#    define SIM_INVALID_OSFILE -1
+#endif
+
+/*
  * This is an opaque union type that can safely hold either:
+ *
  * - A native OS file handle (HANDLE on Windows, int fd on POSIX)
  * - An opaque VHD handle pointer (for VHD format disks)
  *
- * Access the contents via the inline accessor functions in sim_disk.h.
- * Do not access the union members directly outside sim_disk.c.
+ * Access the contents via the inline accessor functions in sim_disk.h.  Do not access the union members
+ * directly outside sim_disk.c.
+ *
+ * Unifies file I/O across stdio-based (SIMH format) and raw handle-based (RAW physical disk, VHD)
+ * operations. Using native handles eliminates the overhead of maintaining parallel FILE* streams and enables
+ * direct use of pread()/pwrite() (POSIX) or ReadFile/WriteFile with OVERLAPPED (Windows) for atomic
+ * positioned I/O.
  */
 typedef union {
-    void *opaque_ptr;      /* For VHD handles and general pointer storage */
-#if defined(_WIN32)
-    HANDLE native_handle;  /* Windows: native HANDLE type */
-#else
-    int native_fd;         /* POSIX: file descriptor */
-#endif
-} SIM_FILE_HANDLE;
-
-/* SIM_INVALID_HANDLE definition
- *
- * MSVC doesn't support compound literals in static initializers, so we use
- * simple brace initialization of the appropriate union member.
- */
-#if defined(_WIN32)
-#    define SIM_INVALID_HANDLE INVALID_HANDLE_VALUE
-#else
-#    define SIM_INVALID_HANDLE -1
-#endif
+    void *opaque_ptr;           /* For VHD handles and general pointer storage */
+    sim_raw_osfile_t native_fd; /* Native O/S file descriptor/handle */
+} sim_disk_image_t;
 
 /* Comparison helpers for SIM_FILE_HANDLE */
-#if defined(_WIN32)
-#    define SIM_HANDLE_IS_INVALID(h) ((h).native_handle == INVALID_HANDLE_VALUE)
-#    define SIM_HANDLE_IS_VALID(h) ((h).native_handle != INVALID_HANDLE_VALUE)
-#    define SIM_FILE_HANDLE_INIT {.native_handle = INVALID_HANDLE_VALUE}
-#else
-#    define SIM_HANDLE_IS_INVALID(h) ((h).native_fd == -1)
-#    define SIM_HANDLE_IS_VALID(h) ((h).native_fd != -1)
-#    define SIM_FILE_HANDLE_INIT {.native_fd = -1}
-#endif
+#    define SIM_HANDLE_IS_INVALID(h) ((h).native_fd == INVALID_HANDLE_VALUE)
+#    define SIM_HANDLE_IS_VALID(h) ((h).native_fd != INVALID_HANDLE_VALUE)
+#    define SIM_FILE_HANDLE_INIT {.native_fd = INVALID_HANDLE_VALUE}
 
 /* Unit data structure
 
@@ -523,7 +512,7 @@ struct UNIT {
     t_stat (*action)(UNIT *up); /* action routine */
     char *filename;             /* open file name */
     FILE *fileref;              /* buffered I/O file handle for simulator-managed files */
-    SIM_FILE_HANDLE disk_image_file; /* positioned I/O handle for disk images (SIMH/RAW/VHD formats) */
+    sim_disk_image_t disk_image_file; /* positioned I/O handle for disk images (SIMH/RAW/VHD formats) */
     void *filebuf;              /* memory buffer */
     void *filebuf2;             /* copy of initial memory buffer */
     uint32_t hwmark;            /* high water mark */

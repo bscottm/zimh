@@ -88,49 +88,29 @@ typedef struct VHD_IOData *VHDHANDLE;
  * API functions instead of directly manipulating handles.
  */
 
-#ifdef SIM_DEFS_H_  /* Only define accessors if sim_defs.h has been included */
-
 /* VHD handle accessors (for VHD format) */
-static inline VHDHANDLE sim_disk_get_vhd_handle(SIM_FILE_HANDLE h)
+static inline VHDHANDLE sim_disk_get_vhd_handle(sim_disk_image_t h)
 {
-    return (VHDHANDLE)h.opaque_ptr;
+    return ((VHDHANDLE) h.opaque_ptr);
 }
 
-static inline SIM_FILE_HANDLE sim_disk_make_vhd_handle(VHDHANDLE vhd)
+static inline sim_disk_image_t sim_disk_make_vhd_handle(VHDHANDLE vhd)
 {
-    SIM_FILE_HANDLE h;
-    h.opaque_ptr = (void *)vhd;
+    sim_disk_image_t h = {.opaque_ptr = (void *) vhd };
     return h;
 }
 
 /* Native file handle accessors (for SIMH and RAW formats) */
-#if defined(_WIN32)
-static inline HANDLE sim_disk_get_native_handle(SIM_FILE_HANDLE h)
-{
-    return h.native_handle;
-}
-
-static inline SIM_FILE_HANDLE sim_disk_make_native_handle(HANDLE native)
-{
-    SIM_FILE_HANDLE h;
-    h.native_handle = native;
-    return h;
-}
-#else /* POSIX */
-static inline int sim_disk_get_native_handle(SIM_FILE_HANDLE h)
+static inline sim_raw_osfile_t sim_disk_get_native_handle(sim_disk_image_t h)
 {
     return h.native_fd;
 }
 
-static inline SIM_FILE_HANDLE sim_disk_make_native_handle(int native_fd)
+static inline sim_disk_image_t sim_disk_make_native_handle(sim_raw_osfile_t native)
 {
-    SIM_FILE_HANDLE h;
-    h.native_fd = native_fd;
+    sim_disk_image_t h = {.native_fd = native };
     return h;
 }
-#endif
-
-#endif /* SIM_DEFS_H_ */
 
 /* Prototypes */
 
