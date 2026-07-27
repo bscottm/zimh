@@ -41,6 +41,21 @@
    30-Apr-02    RMS     Added CLR_TRAPS macro
 */
 
+/* "Branchless" condition codes: Since C99, `bool` conditions and variables evaluate to
+ * either 0 or 1. Consequently, computing the VAX's condition codes can be rewritten as
+ * a series of bitwise OR-concatenated boolean multiplications, e.g.:
+ *
+ *       return (((int8_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
+ *
+ * X86 and ARM compilers generate conditional move code and emit fewer branches when
+ * confronted with the branchless (if-less) code. On ARM, CC_N is a power-of-2 constant,
+ * that can be further reduced to a free shift in the emitted ORR instruction.
+ *
+ * Fewer branches (and longer basic blocks) means that the processor spends less time
+ * predicting conditional branches, which means fewer pipeline stalls or wasted speculative
+ * execution.
+ */
+
 #ifndef VAX_DEFS_H
 #define VAX_DEFS_H     1
 
@@ -54,6 +69,18 @@
 
 #include "sim_defs.h"
 #include "vax_psl.h"
+ 
+/* Forward declarations: */
+static inline uint32_t cc_iizz_b(uint32_t r);
+static inline uint32_t cc_iizz_w(uint32_t r);
+static inline uint32_t cc_iizp_o(uint32_t rl, uint32_t rm2, uint32_t rm1, uint32_t rh);
+static inline uint32_t add_set_carry(uint32_t cc, uint32_t v1, uint32_t v2);
+static inline uint32_t sub_set_carry(uint32_t cc, uint32_t v1, uint32_t v2);
+static inline uint32_t cc_cmp_b(uint8_t v1, uint8_t v2);
+static inline uint32_t cc_cmp_w(uint16_t v1, uint16_t v2);
+static inline uint32_t cc_cmp_l(uint32_t v1, uint32_t v2);
+static inline uint32_t set_trap_irq(uint32_t trpirq, uint32_t trp);
+static inline uint32_t set_overflow_trap(uint32_t trpirq);
 
 /* Stops and aborts */
 
@@ -274,7 +301,7 @@ extern jmp_buf save_env;
 #define TRAP_FLTUND     (5 << TIR_V_TRAP)               /* flt underflow */
 #define TRAP_DECOVF     (6 << TIR_V_TRAP)               /* decimal overflow */
 #define TRAP_SUBSCR     (7 << TIR_V_TRAP)               /* subscript range */
-#define SET_TRAP(x)     trpirq = (trpirq & PSL_M_IPL) | (x)
+#define SET_TRAP(x)     trpirq = set_trap_irq(trpirq, (x))
 #define CLR_TRAPS       trpirq = trpirq & ~TIR_TRAP
 #define SET_IRQL        trpirq = (trpirq & TIR_TRAP) | eval_int ()
 #define GET_TRAP(x)     (((x) >> TIR_V_TRAP) & TIR_M_TRAP)
@@ -356,7 +383,8 @@ extern jmp_buf save_env;
 #define DR_GETNSP(x)    ((x) & DR_NSPMASK)              /* #specifiers */
 #define DR_GETUSP(x)    (((x) >> DR_V_USPMASK) & DR_M_USPMASK) /* #specifiers for unimplemented instructions */
 
-/* Extra bits in the opcode flag word of the Decode ROM array only for history results */
+/* Extra bits in the opcode flag word of the Decode ROM array only for history results, and they
+ * identify the instruction group. */
 
 #define DR_V_RESMASK    8
 #define DR_M_RESMASK    0x000F
@@ -598,11 +626,22 @@ enum opcodes {
 
 /* Repeated operations */
 
-#define SXTB(x)         (((x) & BSIGN)? ((x) | ~BMASK): ((x) & BMASK))
-#define SXTW(x)         (((x) & WSIGN)? ((x) | ~WMASK): ((x) & WMASK))
-#define SXTBW(x)        (((x) & BSIGN)? ((x) | (WMASK - BMASK)): ((x) & BMASK))
-#define SXTL(x)         (((x) & LSIGN)? ((x) | ~LMASK): ((x) & LMASK))
-#define INTOV           if (PSL & PSW_IV) SET_TRAP (TRAP_INTOV)
+// Allow the compiler pick the best way to sign-extend (vice masking and bitwise operations.)
+//
+// The sign extensions look a bit convoluted, but are actually very straightforward and return
+// a uint32_t, which is the same as the VAX register type representation.
+
+// Assume val is int8_t, promote (sign extend) to int32_t, return as uint32_t (NOP type change.)
+static inline uint32_t SXTB(uint32_t val) { return (uint32_t) (((int32_t) ((int8_t) val))); }
+// Assume val is int16_t, promote (sign extend) to int32_t, return as uint32_t (NOP type change.)
+static inline uint32_t SXTW(uint32_t val) { return (uint32_t) (((int32_t) ((int16_t) val))); }
+// Assume val is int8_t, promote (sign extend) to int16_t, return as uint32_t so only the lower
+// 16 bits were actually sign extended from 8 bits.
+static inline uint32_t SXTBW(uint32_t val) { return (uint32_t) (((int16_t) ((int8_t) val))); }
+
+// SXTL was never used. And not clear why it existed in the first place, other than for completeness.
+
+#define INTOV           trpirq = set_overflow_trap(trpirq)
 #define V_INTOV         cc = cc | CC_V; INTOV
 #define NEG(x)          ((~(x) + 1) & LMASK)
 
@@ -655,45 +694,12 @@ enum opcodes {
 
 #define CC_ZZ1P cc = CC_Z | (cc & CC_C)
 
-#define CC_IIZZ_B(r) \
-            if ((r) & BSIGN) cc = CC_N; \
-            else if ((r) == 0) cc = CC_Z; \
-            else cc = 0
-#define CC_IIZZ_W(r) \
-            if ((r) & WSIGN) cc = CC_N; \
-            else if ((r) == 0) cc = CC_Z; \
-            else cc = 0
-#define CC_IIZZ_L(r) \
-            if ((r) & LSIGN) cc = CC_N; \
-            else if ((r) == 0) cc = CC_Z; \
-            else cc = 0
-#define CC_IIZZ_Q(rl,rh) \
-            if ((rh) & LSIGN) cc = CC_N; \
-            else if (((rl) | (rh)) == 0) cc = CC_Z; \
-            else cc = 0
-#define CC_IIZZ_FP      CC_IIZZ_W
-
-#define CC_IIZP_B(r) \
-            if ((r) & BSIGN) cc = CC_N | (cc & CC_C); \
-            else if ((r) == 0) cc = CC_Z | (cc & CC_C); \
-            else cc = cc & CC_C
-#define CC_IIZP_W(r) \
-            if ((r) & WSIGN) cc = CC_N | (cc & CC_C); \
-            else if ((r) == 0) cc = CC_Z | (cc & CC_C); \
-            else cc = cc & CC_C
-#define CC_IIZP_L(r) \
-            if ((r) & LSIGN) cc = CC_N | (cc & CC_C); \
-            else if ((r) == 0) cc = CC_Z | (cc & CC_C); \
-            else cc = cc & CC_C
-#define CC_IIZP_Q(rl,rh) \
-            if ((rh) & LSIGN) cc = CC_N | (cc & CC_C); \
-            else if (((rl) | (rh)) == 0) cc = CC_Z | (cc & CC_C); \
-            else cc = cc & CC_C
-#define CC_IIZP_O(rl,rm2,rm1,rh) \
-            if ((rh) & LSIGN) cc = CC_N | (cc & CC_C); \
-            else if (((rl) | (rm2) | (rm1) | (rh)) == 0) cc = CC_Z | (cc & CC_C); \
-            else cc = cc & CC_C
-#define CC_IIZP_FP      CC_IIZP_W
+#define CC_IIZP_B(r)       cc = cc_iizz_b(r) | (cc & CC_C);
+#define CC_IIZP_W(r)       cc = cc_iizz_w(r) | (cc & CC_C);
+#define CC_IIZP_L(r)       cc = cc_iizz_l(r) | (cc & CC_C);
+#  define CC_IIZP_Q(rl,rh) cc = cc_iizz_q(rl, rh) | (cc & CC_C);
+#define CC_IIZP_O(rl, rm2, rm1, rh) cc = cc_iizp_o((rl), (rm2), (rm1), (rh)) | (cc & CC_C);
+#define CC_IIZP_FP CC_IIZP_W
 
 #define V_ADD_B(r,s1,s2) \
             if (((~(s1) ^ (s2)) & ((s1) ^ (r))) & BSIGN) { V_INTOV; }
@@ -701,19 +707,18 @@ enum opcodes {
             if (((~(s1) ^ (s2)) & ((s1) ^ (r))) & WSIGN) { V_INTOV; }
 #define V_ADD_L(r,s1,s2) \
             if (((~(s1) ^ (s2)) & ((s1) ^ (r))) & LSIGN) { V_INTOV; }
-#define C_ADD(r,s1,s2) \
-            if (((uint32_t) r) < ((uint32_t) s2)) cc = cc | CC_C
+#define C_ADD(r,s1,s2)  cc = add_set_carry(cc, (r), (s2))
 
 #define CC_ADD_B(r,s1,s2) \
-            CC_IIZZ_B (r); \
+            cc = cc_iizz_b(r); \
             V_ADD_B (r, s1, s2); \
             C_ADD (r, s1, s2)
 #define CC_ADD_W(r,s1,s2) \
-            CC_IIZZ_W (r); \
+            cc = cc_iizz_w(r); \
             V_ADD_W (r, s1, s2); \
             C_ADD (r, s1, s2)
 #define CC_ADD_L(r,s1,s2) \
-            CC_IIZZ_L (r); \
+            cc = cc_iizz_l(r); \
             V_ADD_L (r, s1, s2); \
             C_ADD (r, s1, s2)
 
@@ -723,26 +728,24 @@ enum opcodes {
             if ((((s1) ^ (s2)) & (~(s1) ^ (r))) & WSIGN) { V_INTOV; }
 #define V_SUB_L(r,s1,s2) \
             if ((((s1) ^ (s2)) & (~(s1) ^ (r))) & LSIGN) { V_INTOV; }
-#define C_SUB(r,s1,s2) \
-            if (((uint32_t) s2) < ((uint32_t) s1)) cc = cc | CC_C
+#define C_SUB(r,s1,s2)  cc = sub_set_carry(cc, (s2), (s1))
 
 #define CC_SUB_B(r,s1,s2) \
-            CC_IIZZ_B (r); \
+            cc = cc_iizz_b(r); \
             V_SUB_B (r, s1, s2); \
             C_SUB (r, s1, s2)
 #define CC_SUB_W(r,s1,s2) \
-            CC_IIZZ_W (r); \
+            cc = cc_iizz_w(r); \
             V_SUB_W (r, s1, s2); \
             C_SUB (r, s1, s2)
 #define CC_SUB_L(r,s1,s2) \
-            CC_IIZZ_L (r); \
+            cc = cc_iizz_l(r); \
             V_SUB_L (r, s1, s2); \
             C_SUB (r, s1, s2)
 
-#define CC_CMP_B(s1,s2) \
-            cc = vax_cmp_b_cc ((uint32_t) (s1), (uint32_t) (s2))
-#define CC_CMP_W(s1,s2) \
-            cc = vax_cmp_w_cc ((uint32_t) (s1), (uint32_t) (s2))
+#define CC_CMP_B(s1,s2) cc = cc_cmp_b((s1),(s2))
+#define CC_CMP_W(s1,s2) cc = cc_cmp_w((s1),(s2))
+#define CC_CMP_L(s1,s2) cc = cc_cmp_l((s1),(s2))
 
 /* Interpret VAX integer bit patterns as signed host values.
 
@@ -751,33 +754,50 @@ enum opcodes {
    defined by C.  Use these helpers at the points where the architecture
    requires a signed byte, word, or longword interpretation. */
 
-/* Return the signed byte value represented by the low 8 bits of val. */
+/* Return the signed byte value represented by the low 8 bits of val.
+ * 
+ * Note: This is probably overly paranoid and a simple int8_t -> int32_t cast
+ * chain would suffice. */
 static inline int32_t vax_sbyte (uint32_t val)
 {
-uint32_t mag;
+#if 1 || __STDC_VERSION__ >= 202311L
+    // C23: two's complement is mandated
+    return ((int32_t) ((int8_t) val));
+#else
+    uint32_t mag;
 
-val = val & BMASK;
-if ((val & BSIGN) == 0)
-    return (int32_t) val;
-mag = ((~val) + 1) & BMASK;
-return -(int32_t) mag;
+    val = val & BMASK;
+    if ((val & BSIGN) == 0)
+        return (int32_t) val;
+    mag = ((~val) + 1) & BMASK;
+    return -(int32_t) mag;
+#endif
 }
 
 /* Return the signed word value represented by the low 16 bits of val. */
 static inline int32_t vax_sword (uint32_t val)
 {
-uint32_t mag;
+#if 1 || __STDC_VERSION__ >= 202311L
+    // C23: two's complement is mandated
+    return ((int32_t) ((int16_t) val));
+#else
+    uint32_t mag;
 
-val = val & WMASK;
-if ((val & WSIGN) == 0)
-    return (int32_t) val;
-mag = ((~val) + 1) & WMASK;
-return -(int32_t) mag;
+    val = val & WMASK;
+    if ((val & WSIGN) == 0)
+        return (int32_t) val;
+    mag = ((~val) + 1) & WMASK;
+    return -(int32_t) mag;
+#endif
 }
 
 /* Return the signed longword value represented by all 32 bits of val. */
 static inline int32_t vax_slong (uint32_t val)
 {
+#if 1 || __STDC_VERSION__ >= 202311L
+    // C23: two's complement is mandated. Basically a NOP type conversion.
+    return ((int32_t) val);
+#else
 uint32_t mag;
 
 if ((val & LSIGN) == 0)
@@ -786,79 +806,62 @@ if (val == LSIGN)
     return -2147483647 - 1;
 mag = ((~val) + 1) & LMASK;
 return -(int32_t) mag;
+#endif
 }
 
 /* Compare two unsigned longword bit patterns as signed VAX longwords. */
 static inline bool vax_signed_lt_l (uint32_t s1, uint32_t s2)
 {
-if ((s1 ^ s2) & LSIGN)
-    return (s1 & LSIGN) != 0;
-return s1 < s2;
+    return (((s1 ^ s2) & LSIGN) != 0) * ((s1 & LSIGN) != 0) + (((s1 ^ s2) & LSIGN) == 0) * (s1 < s2);
 }
 
 static inline bool vax_signed_le_l (uint32_t s1, uint32_t s2)
 {
-return (s1 == s2) || vax_signed_lt_l (s1, s2);
+    return (s1 == s2) || vax_signed_lt_l (s1, s2);
 }
 
 /* Return CMPB condition codes for two VAX byte bit patterns.
 
    VAX compare uses signed ordering for N, equality for Z, unsigned
    ordering for C, and leaves V clear. */
-static inline int32_t vax_cmp_b_cc (uint32_t s1, uint32_t s2)
+static inline uint32_t vax_cmp_b_cc (uint32_t s1, uint32_t s2)
 {
-int32_t cmp_cc = 0;
-
-s1 = s1 & BMASK;
-s2 = s2 & BMASK;
-if (vax_sbyte (s1) < vax_sbyte (s2))
-    cmp_cc = CC_N;
-else if (s1 == s2)
-    cmp_cc = CC_Z;
-if (s1 < s2)
-    cmp_cc = cmp_cc | CC_C;
-return cmp_cc;
+    return (((int8_t) s1 < (int8_t) s2) * CC_N) | (((uint8_t) s1 == (uint8_t) s2) * CC_Z)
+              | (((uint8_t) s1 < (uint8_t) s2) * CC_C);
 }
 
 /* Return CMPW condition codes for two VAX word bit patterns.
 
    VAX compare uses signed ordering for N, equality for Z, unsigned
    ordering for C, and leaves V clear. */
-static inline int32_t vax_cmp_w_cc (uint32_t s1, uint32_t s2)
+static inline uint32_t vax_cmp_w_cc (uint32_t s1, uint32_t s2)
 {
-int32_t cmp_cc = 0;
-
-s1 = s1 & WMASK;
-s2 = s2 & WMASK;
-if (vax_sword (s1) < vax_sword (s2))
-    cmp_cc = CC_N;
-else if (s1 == s2)
-    cmp_cc = CC_Z;
-if (s1 < s2)
-    cmp_cc = cmp_cc | CC_C;
-return cmp_cc;
+    return (((int16_t) s1 < (int16_t) s2) * CC_N) | (((uint16_t) s1 == (uint16_t) s2) * CC_Z)
+              | (((uint16_t) s1 < (uint16_t) s2) * CC_C);
 }
 
 /* Return CMPL condition codes for two VAX longword bit patterns.
 
    VAX compare uses signed ordering for N, equality for Z, unsigned
    ordering for C, and leaves V clear. */
-static inline int32_t vax_cmp_l_cc (uint32_t s1, uint32_t s2)
+static inline uint32_t vax_cmp_l_cc (uint32_t s1, uint32_t s2)
 {
-int32_t cmp_cc = 0;
-
-if (vax_signed_lt_l (s1, s2))
-    cmp_cc = CC_N;
-else if (s1 == s2)
-    cmp_cc = CC_Z;
-if (s1 < s2)
-    cmp_cc = cmp_cc | CC_C;
-return cmp_cc;
+    return (((int32_t) s1 < (int32_t) s2) * CC_N) | ((s1 == s2) * CC_Z)
+              | ((s1 < s2) * CC_C);
 }
 
 /* Shift a VAX longword right arithmetically using defined operations. */
 static inline uint32_t vax_arith_rsh_l (uint32_t val, uint32_t sc)
 {
+#if 1
+    uint32_t sign_mask = -(val >> 31);
+    uint32_t safe_sc = (sc < 32) * sc + (sc >= 32) * 31;
+    uint32_t shifted = val >> safe_sc;
+    uint32_t fill_shift = (32 - safe_sc) & 31;
+    uint32_t fill = (sign_mask << fill_shift) & -(sc != 0);
+    uint32_t arith_result = shifted | fill;
+    return (sc >= 32) * sign_mask + (sc < 32) * arith_result;
+#else
 if (sc == 0)
     return val;
 if (sc >= 32)
@@ -866,10 +869,8 @@ if (sc >= 32)
 if (val & LSIGN)
     return (val >> sc) | (LMASK << (32 - sc));
 return val >> sc;
+#endif
 }
-
-#define CC_CMP_L(s1,s2) \
-            cc = vax_cmp_l_cc ((uint32_t) (s1), (uint32_t) (s2))
 
 /* Operand Memory vs Register Indicator */
 #define OP_MEM          0xFFFFFFFF
@@ -1001,5 +1002,85 @@ extern DEVICE cpu_dev;                                  /* CPU */
 extern UNIT cpu_unit;                                   /* CPU */
 extern UNIT clk_unit;                                   /* clock */
 extern REG cpu_reg[];                                   /* CPU registers */
+
+/* Condition code inlines:
+ *
+ * 0: Carry    (C)
+ * 1: Overflow (V)
+ * 2: Zero     (Z)
+ * 3: Negative (N)
+ */
+
+static inline uint32_t cc_iizz_b(uint32_t r)
+{
+    return (((int8_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
+}
+
+static inline uint32_t cc_iizz_w(uint32_t r)
+{
+  return (((int16_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
+}
+
+static inline uint32_t cc_iizz_l(uint32_t r)
+{
+  return (((int32_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
+}
+
+static inline uint32_t cc_iizz_q(uint32_t rl, uint32_t rh)
+{
+  return (((int32_t) rh < 0) * CC_N) | (((rl | rh) == 0) * CC_Z);
+}
+
+static inline uint32_t cc_iizz_fp(uint32_t r)
+{
+    // For some reason, and it's not entirely clear, floating point condition
+    // codes are set the same as integer word condition codes.
+    return cc_iizz_w(r);
+}
+
+static inline uint32_t cc_iizp_o(uint32_t rl, uint32_t rm2, uint32_t rm1, uint32_t rh)
+{
+  return (((int32_t) rh < 0) * CC_N) | (((rl | rm2 | rm1 | rh) == 0) * CC_Z);
+}
+
+static inline uint32_t add_set_carry(uint32_t cc, uint32_t v1, uint32_t v2)
+{
+    return (cc & ~CC_C) | ((v1 < v2) * CC_C);
+}
+
+static inline uint32_t sub_set_carry(uint32_t cc, uint32_t v1, uint32_t v2)
+{
+    return (cc & ~CC_C) | ((v1 < v2) * CC_C);
+}
+
+/* Note: Prefer casting over explicit sign extension. Does exactly the same
+ * thing as explicit sign extension, puts the burden on the compiler to generate
+ * the desired comparison(s) and adds type safety (somewhat clearer in the code's
+ * intent.) */
+
+static inline uint32_t cc_cmp_b(uint8_t v1, uint8_t v2)
+{
+    return (((int8_t) v1 < (int8_t) v2) * CC_N) + ((v1 == v2) * CC_Z) + ((v1 < v2) * CC_C);
+}
+
+static inline uint32_t cc_cmp_w(uint16_t v1, uint16_t v2)
+{
+  return (((int16_t) v1 < (int16_t) v2) * CC_N) | ((v1 == v2) * CC_Z) | ((v1 < v2) * CC_C);
+}
+
+static inline uint32_t cc_cmp_l(uint32_t v1, uint32_t v2)
+{
+    return (((int32_t) v1 < (int32_t) v2) * CC_N) | ((v1 == v2) * CC_Z) | ((v1 < v2) * CC_C);
+}
+
+static inline uint32_t set_trap_irq(uint32_t trpirq, uint32_t trp)
+{
+  return (trpirq & PSL_M_IPL) | trp;
+}
+
+static inline uint32_t set_overflow_trap(uint32_t trpirq)
+{
+  return set_trap_irq(trpirq, ((PSL & PSW_IV) != 0) * TRAP_INTOV);
+}
 
 #endif                                                  /* _VAX_DEFS_H */

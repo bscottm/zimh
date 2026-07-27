@@ -509,7 +509,8 @@ return buf;
 
 t_stat sim_instr (void)
 {
-volatile int32_t opc = 0, cc;                           /* used by setjmp */
+volatile int32_t opc = 0;                               /* used by setjmp */
+volatile uint32_t cc;                                   /* used by setjmp */
 volatile int32_t acc;                                   /* set by setjmp */
 int abortval;
 t_stat ret;
@@ -1672,15 +1673,15 @@ for ( ;; ) {
 */
 
     case TSTB:
-        CC_IIZZ_B (op0);                                /* set cc's */
+        cc = cc_iizz_b(op0);                            /* set cc's */
         break;
 
     case TSTW:
-        CC_IIZZ_W (op0);                                /* set cc's */
+        cc = cc_iizz_w(op0);                            /* set cc's */
         break;
 
     case TSTL:
-        CC_IIZZ_L (op0);                                /* set cc's */
+        cc = cc_iizz_l(op0);                            /* set cc's */
         if ((cc == CC_Z) &&                             /* zero result and */
             ((PC - fault_PC) == 6) &&                   /* 6 byte instruction? */
             (fault_PC & 0x80000000) &&                  /* in system space? */
@@ -1816,25 +1817,25 @@ for ( ;; ) {
     case CVTBW:
         r = vax_sbyte (op0) & WMASK;                    /* ext sign */
         WRITE_W (r);                                    /* store result */
-        CC_IIZZ_W (r);                                  /* set cc's */
+        cc = cc_iizz_w(r);                              /* set cc's */
         break;
 
     case CVTBL:
         r = vax_sbyte (op0);                            /* ext sign */
         WRITE_L (r);                                    /* store result */
-        CC_IIZZ_L (r);                                  /* set cc's */
+        cc = cc_iizz_l(r);                              /* set cc's */
         break;
 
     case CVTWL:
         r = vax_sword (op0);                            /* ext sign */
         WRITE_L (r);                                    /* store result */
-        CC_IIZZ_L (r);                                  /* set cc's */
+        cc = cc_iizz_l(r);                              /* set cc's */
         break;
 
     case CVTLB:
         r = op0 & BMASK;                                /* set result */
         WRITE_B (r);                                    /* store result */
-        CC_IIZZ_B (r);                                  /* initial cc's */
+        cc = cc_iizz_b(r);                              /* initial cc's */
         temp = vax_slong (op0);
         if ((temp > 127) || (temp < -128)) {
             V_INTOV;
@@ -1844,7 +1845,7 @@ for ( ;; ) {
     case CVTLW:
         r = op0 & WMASK;                                /* set result */
         WRITE_W (r);                                    /* store result */
-        CC_IIZZ_W (r);                                  /* initial cc's */
+        cc = cc_iizz_w(r);                              /* initial cc's */
         temp = vax_slong (op0);
         if ((temp > 32767) || (temp < -32768)) {
             V_INTOV;
@@ -1854,7 +1855,7 @@ for ( ;; ) {
     case CVTWB:
         r = op0 & BMASK;                                /* set result */
         WRITE_B (r);                                    /* store result */
-        CC_IIZZ_B (r);                                  /* initial cc's */
+        cc = cc_iizz_b(r);                              /* initial cc's */
         temp = vax_sword (op0);                         /* cvt op to long */
         if ((temp > 127) || (temp < -128)) {
             V_INTOV;
@@ -1940,8 +1941,7 @@ for ( ;; ) {
         r = (op1 + op0 + (cc & CC_C)) & LMASK;          /* calc result */
         WRITE_L (r);                                    /* store result */
         CC_ADD_L (r, op0, op1);                         /* set cc's */
-        if ((r == op1) && op0)                          /* special case */
-            cc = cc | CC_C;
+        cc |= (cc & ~CC_C) | ((r == op1) && op0) * CC_C;/* special case */
         break;
 
     case ADDL2: case ADDL3:
@@ -1966,8 +1966,7 @@ for ( ;; ) {
         r = (op1 - op0 - (cc & CC_C)) & LMASK;          /* calc result */
         WRITE_L (r);                                    /* store result */
         CC_SUB_L (r, op0, op1);                         /* set cc's */
-        if ((op0 == op1) && r)                          /* special case */
-            cc = cc | CC_C;
+        cc |= (cc & ~CC_C) | ((op0 == op1) && r) * CC_C;/* special case */
         break;
 
     case SUBL2: case SUBL3:
@@ -1980,7 +1979,7 @@ for ( ;; ) {
         temp = vax_sbyte (op0) * vax_sbyte (op1);       /* multiply */
         r = temp & BMASK;                               /* mask to result */
         WRITE_B (r);                                    /* store result */
-        CC_IIZZ_B (r);                                  /* set cc's */
+        cc = cc_iizz_b(r);                              /* set cc's */
         if ((temp > 127) || (temp < -128)) {
             V_INTOV;
             }
@@ -1990,7 +1989,7 @@ for ( ;; ) {
         temp = vax_sword (op0) * vax_sword (op1);       /* multiply */
         r = temp & WMASK;                               /* mask to result */
         WRITE_W (r);                                    /* store result */
-        CC_IIZZ_W (r);                                  /* set cc's */
+        cc = cc_iizz_w(r);                              /* set cc's */
         if ((temp > 32767) || (temp < -32768)) {
             V_INTOV;
             }
@@ -1999,7 +1998,7 @@ for ( ;; ) {
     case MULL2: case MULL3:
         r = op_emul (op0, op1, &rh);                    /* get 64b result */
         WRITE_L (r);                                    /* store result */
-        CC_IIZZ_L (r);                                  /* set cc's */
+        cc = cc_iizz_l(r);                              /* set cc's */
         if (rh != ((r & LSIGN)? -1: 0)) {               /* chk overflow */
             V_INTOV;
             }
@@ -2021,8 +2020,8 @@ for ( ;; ) {
             temp = 0;
             }
         r = r & BMASK;                                  /* mask to result */
-        WRITE_B (r);                                    /* write result */
-        CC_IIZZ_B (r);                                  /* set cc's */
+        WRITE_B (r);                                /* write result */
+        cc = cc_iizz_b(r);                              /* set cc's */
         cc = cc | temp;                                 /* error? set V */
         break;
 
@@ -2043,7 +2042,7 @@ for ( ;; ) {
             }
         r = r & WMASK;                                  /* mask to result */
         WRITE_W (r);                                    /* write result */
-        CC_IIZZ_W (r);                                  /* set cc's */
+        cc = cc_iizz_w(r);                              /* set cc's */
         cc = cc | temp;                                 /* error? set V */
         break;
 
@@ -2065,8 +2064,7 @@ for ( ;; ) {
             }
         r = r & LMASK;                                  /* mask to result */
         WRITE_L (r);                                    /* write result */
-        CC_IIZZ_L (r);                                  /* set cc's */
-        cc = cc | temp;                                 /* error? set V */
+        cc = cc_iizz_l(r) | temp;                       /* set cc's, on error, set V too. */
         break;
 
     case BISB2: case BISB3:
@@ -2162,7 +2160,7 @@ for ( ;; ) {
                 r = (op1 & LSIGN)? LMASK: 0;
             else r = vax_arith_rsh_l (op1, temp);       /* shift */
             WRITE_L (r);                                /* store result */
-            CC_IIZZ_L (r);                              /* set cc's */
+            cc = cc_iizz_l(r);                          /* set cc's */
             break;
             }
         else {
@@ -2173,7 +2171,7 @@ for ( ;; ) {
                 temp = vax_arith_rsh_l (r, op0);        /* shift back */
                 }
             WRITE_L (r);                                /* store result */
-            CC_IIZZ_L (r);                              /* set cc's */
+            cc = cc_iizz_l(r);                              /* set cc's */
             if (op1 != temp) {                          /* bits lost? */
                 V_INTOV;
                 }
@@ -2183,7 +2181,7 @@ for ( ;; ) {
     case ASHQ:
         r = op_ashq (opnd, &rh, &flg);                  /* do qw shift */
         WRITE_Q (r, rh);                                /* store results */
-        CC_IIZZ_Q (r, rh);                              /* set cc's */
+        cc = cc_iizz_q(r, rh);                              /* set cc's */
         if (flg) {                                      /* if ovflo, set */
             V_INTOV;
             }
@@ -2203,7 +2201,7 @@ for ( ;; ) {
         rh = rh + (((uint32_t) r) < ((uint32_t) op2)) - /* into 64b result */
             ((op2 & LSIGN)? 1: 0);
         WRITE_Q (r, rh);                                /* write result */
-        CC_IIZZ_Q (r, rh);                              /* set cc's */
+        cc = cc_iizz_q(r, rh);                              /* set cc's */
         break;
 
 /* EDIV - ediv dvr.rl,dvd.rq,quo.wl,rem.wl
@@ -2235,8 +2233,7 @@ for ( ;; ) {
         if (op5 != OP_MEM)                              /* store remainder */
             R[op5] = rh;
         else Write (op6, rh, L_LONG, WA);
-        CC_IIZZ_L (r);                                  /* set cc's */
-        cc = cc | flg;                                  /* set V if required */
+        cc = cc_iizz_l(r) | flg;                        /* set cc's, overflow if required */
         break;
 
 /* Control instructions */
@@ -2755,7 +2752,7 @@ for ( ;; ) {
             SET_TRAP (TRAP_SUBSCR);
         r = (op0 + op4) * op3;
         WRITE_L (r);
-        CC_IIZZ_L (r);
+        cc = cc_iizz_l(r);
         break;
 
 /* Queue and interlocked queue */
@@ -2812,12 +2809,12 @@ for ( ;; ) {
 
     case TSTF: case TSTD:
         r = op_movfd (op0);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case TSTG:
         r = op_movg (op0);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MOVF:
@@ -2843,21 +2840,21 @@ for ( ;; ) {
     case MNEGF:
         r = op_mnegfd (op0);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MNEGD:
         if ((r = op_mnegfd (op0)) == 0)
             op1 = 0;
         WRITE_Q (r, op1);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MNEGG:
         if ((r = op_mnegg (op0)) == 0)
             op1 = 0;
         WRITE_Q (r, op1);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CMPF:
@@ -2875,43 +2872,43 @@ for ( ;; ) {
     case CVTBF:
         r = op_cvtifdg (vax_sbyte (op0), NULL, opc);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTWF:
         r = op_cvtifdg (vax_sword (op0), NULL, opc);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTLF:
         r = op_cvtifdg (op0, NULL, opc);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTBD: case CVTBG:
         r = op_cvtifdg (vax_sbyte (op0), &rh, opc);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTWD: case CVTWG:
         r = op_cvtifdg (vax_sword (op0), &rh, opc);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTLD: case CVTLG:
         r = op_cvtifdg (op0, &rh, opc);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTFB: case CVTDB: case CVTGB:
         r = op_cvtfdgi (opnd, &flg, opc) & BMASK;
         WRITE_B (r);
-        CC_IIZZ_B (r);
+        cc = cc_iizz_b(r);
         if (flg) {
             V_INTOV;
             }
@@ -2920,7 +2917,7 @@ for ( ;; ) {
     case CVTFW: case CVTDW: case CVTGW:
         r = op_cvtfdgi (opnd, &flg, opc) & WMASK;
         WRITE_W (r);
-        CC_IIZZ_W (r);
+        cc = cc_iizz_w(r);
         if (flg) {
             V_INTOV;
             }
@@ -2930,7 +2927,7 @@ for ( ;; ) {
     case CVTRFL: case CVTRDL: case CVTRGL:
         r = op_cvtfdgi (opnd, &flg, opc) & LMASK;
         WRITE_L (r);
-        CC_IIZZ_L (r);
+        cc = cc_iizz_l(r);
         if (flg) {
             V_INTOV;
             }
@@ -2939,97 +2936,97 @@ for ( ;; ) {
     case CVTFD:
         r = op_movfd (op0);
         WRITE_Q (r, 0);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTDF:
         r = op_cvtdf (opnd);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTFG:
         r = op_cvtfg (opnd, &rh);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case CVTGF:
         r = op_cvtgf (opnd);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case ADDF2: case ADDF3:
         r = op_addf (opnd, false);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case ADDD2: case ADDD3:
         r = op_addd (opnd, &rh, false);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case ADDG2: case ADDG3:
         r = op_addg (opnd, &rh, false);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case SUBF2: case SUBF3:
         r = op_addf (opnd, true);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case SUBD2: case SUBD3:
         r = op_addd (opnd, &rh, true);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case SUBG2: case SUBG3:
         r = op_addg (opnd, &rh, true);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MULF2: case MULF3:
         r = op_mulf (opnd);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MULD2: case MULD3:
         r = op_muld (opnd, &rh);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case MULG2: case MULG3:
         r = op_mulg (opnd, &rh);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case DIVF2: case DIVF3:
         r = op_divf (opnd);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case DIVD2: case DIVD3:
         r = op_divd (opnd, &rh);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case DIVG2: case DIVG3:
         r = op_divg (opnd, &rh);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         break;
 
     case ACBF:
@@ -3079,7 +3076,7 @@ for ( ;; ) {
             R[op3] = temp;
         else Write (op4, temp, L_LONG, WA);
         WRITE_L (r);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         if (flg) {
             V_INTOV;
             }
@@ -3104,7 +3101,7 @@ for ( ;; ) {
             R[op5] = temp;
         else Write (op6, temp, L_LONG, WA);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         if (flg) {
             V_INTOV;
             }
@@ -3120,7 +3117,7 @@ for ( ;; ) {
             R[op5] = temp;
         else Write (op6, temp, L_LONG, WA);
         WRITE_Q (r, rh);
-        CC_IIZZ_FP (r);
+        cc = cc_iizz_fp(r);
         if (flg) {
             V_INTOV;
             }
@@ -3130,17 +3127,17 @@ for ( ;; ) {
 
     case POLYF:
         op_polyf (opnd, acc);
-        CC_IIZZ_FP (R[0]);
+        cc = cc_iizz_fp(R[0]);
         break;
 
     case POLYD:
         op_polyd (opnd, acc);
-        CC_IIZZ_FP (R[0]);
+        cc = cc_iizz_fp(R[0]);
         break;
 
     case POLYG:
         op_polyg (opnd, acc);
-        CC_IIZZ_FP (R[0]);
+        cc = cc_iizz_fp(R[0]);
         break;
 
 /* Operating system instructions */
@@ -3180,8 +3177,8 @@ for ( ;; ) {
         mxpr_cc_vc = cc & CC_C;                         /* std: V=0, C unchgd */
         r = op_mfpr (opnd);
         WRITE_L (r);
-        CC_IIZZ_L (r);                                  /* set NV, clr VC */
-        cc = cc | (mxpr_cc_vc & (CC_V|CC_C));           /* or in V,C */
+        cc = cc_iizz_l(r)                               /* set NV, clr VC */
+            | (mxpr_cc_vc & (CC_V|CC_C));               /* or in V,C */
         break;
 
 /* CIS or emulated instructions */

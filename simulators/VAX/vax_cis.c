@@ -358,7 +358,7 @@ switch (opc) {                                          /* case on opcode */
             R[2] = 0;
             }
         PSL = PSL & ~PSL_FPD;
-        CC_IIZZ_L (R[0]);                               /* set cc's */
+        cc = cc_iizz_l(R[0]);                               /* set cc's */
         return cc;
 
 /* CRC
@@ -407,7 +407,7 @@ switch (opc) {                                          /* case on opcode */
         R[1] = 0;
         R[2] = 0;
         PSL = PSL & ~PSL_FPD;
-        CC_IIZZ_L (R[0]);                               /* set cc's */
+        cc = cc_iizz_l(R[0]);                               /* set cc's */
         return cc;
 
 /* MOVP
@@ -752,7 +752,7 @@ switch (opc) {                                          /* case on opcode */
             R[op[2]] = result;                          /* after reg update */
         if (V && (PSL & PSW_IV))                        /* ovflo and IV? trap */
             SET_TRAP (TRAP_INTOV);
-        CC_IIZZ_L (result);
+        cc = cc_iizz_l(result);
         return cc | (V? CC_V: 0);
 
 /* CVTLP
