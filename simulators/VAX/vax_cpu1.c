@@ -1209,7 +1209,8 @@ int32_t newpc = Read (SP, L_LONG, RA);
 int32_t newpsl = Read (SP + 4, L_LONG, RA);
 int32_t newcur = PSL_GETCUR (newpsl);
 int32_t oldcur = PSL_GETCUR (PSL);
-int32_t newipl, i;
+uint32_t newipl;
+int32_t i;
 
 if ((newpsl & PSL_MBZ) ||                               /* rule 8 */
     (newcur < oldcur))                                  /* rule 1 */
@@ -1430,7 +1431,7 @@ if (PSL & PSL_CUR)                                      /* must be kernel */
     RSVD_INST_FAULT(MTPR);
 if (prn > MT_MAX)                                       /* reg# > max? fault */
     RSVD_OPND_FAULT(op_mtpr);
-CC_IIZZ_L (val);                                        /* set cc's */
+cc = cc_iizz_l(val);                                  /* set cc's */
 switch (prn) {                                          /* case on reg # */
 
     case MT_KSP:                                        /* KSP */

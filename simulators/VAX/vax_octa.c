@@ -170,7 +170,7 @@ switch (opc) {
 
     case TSTH:
         r = op_tsth (opnd[0]);                          /* test for 0 */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* MOVO, MOVH, MNEGH
@@ -201,7 +201,7 @@ switch (opc) {
         if ((r = op_tsth (opnd[0]))) {                  /* test for 0 */
             opnd[0] = opnd[0] ^ FPSIGN;                 /* nz, invert sign */
             h_write_o (spec, va, opnd, acc, hst);       /* write result */
-            CC_IIZZ_FP (opnd[0]);                       /* set cc's */
+            cc = cc_iizz_w(opnd[0]);                       /* set cc's */
             }
         else {                                          /* zero */
             h_write_o (spec, va, z_octa, acc, hst);     /* write 0 */
@@ -230,19 +230,19 @@ switch (opc) {
     case CVTBH:
         r = op_cvtih (vax_sbyte (opnd[0]), r_octa);     /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write reslt */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case CVTWH:
         r = op_cvtih (vax_sword (opnd[0]), r_octa);     /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case CVTLH:
         r = op_cvtih (opnd[0], r_octa);                 /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* CVTHB, CVTHW, CVTHL, CVTRHL
@@ -256,7 +256,7 @@ switch (opc) {
     case CVTHB:
         r = op_cvthi (opnd, &flg, opc) & BMASK;         /* convert */
         h_write_b (spec, va, r, acc, hst);              /* write result */
-        CC_IIZZ_B (r);                                  /* set cc's */
+        cc = cc_iizz_b(r);                                  /* set cc's */
         if (flg) {
             V_INTOV;
             }
@@ -265,7 +265,7 @@ switch (opc) {
     case CVTHW:
         r = op_cvthi (opnd, &flg, opc) & WMASK;         /* convert */
         h_write_w (spec, va, r, acc, hst);              /* write result */
-        CC_IIZZ_W (r);                                  /* set cc's */
+        cc = cc_iizz_w(r);                                  /* set cc's */
         if (flg) {
             V_INTOV;
             }
@@ -274,7 +274,7 @@ switch (opc) {
     case CVTHL: case CVTRHL:
         r = op_cvthi (opnd, &flg, opc) & LMASK;         /* convert */
         h_write_l (spec, va, r, acc, hst);              /* write result */
-        CC_IIZZ_L (r);                                  /* set cc's */
+        cc = cc_iizz_l(r);                                  /* set cc's */
         if (flg) {
             V_INTOV;
             }
@@ -291,7 +291,7 @@ switch (opc) {
     case CVTFH:
         r = op_cvtfdh (opnd[0], 0, r_octa);             /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* CVTDH, CVTGH
@@ -305,13 +305,13 @@ switch (opc) {
     case CVTDH:
         r = op_cvtfdh (opnd[0], opnd[1], r_octa);       /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case CVTGH:
         r = op_cvtgh (opnd[0], opnd[1], r_octa);        /* convert */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* CVTHF, CVTHD, CVTHG
@@ -325,19 +325,19 @@ switch (opc) {
     case CVTHF:
         r = op_cvthfd (opnd, NULL);                     /* convert */
         h_write_l (spec, va, r, acc, hst);              /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case CVTHD:
         r = op_cvthfd (opnd, &rh);                      /* convert */
         h_write_q (spec, va, r, rh, acc, hst);          /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case CVTHG:
         r = op_cvthg (opnd, &rh);                       /* convert */
         h_write_q (spec, va, r, rh, acc, hst);          /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* ADDH2, SUBH2, MULH2, DIVH2
@@ -360,25 +360,25 @@ switch (opc) {
     case ADDH2: case ADDH3:
         r = op_addh (opnd, r_octa, false);              /* add */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case SUBH2: case SUBH3:
         r = op_addh (opnd, r_octa, true);               /* subtract */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case MULH2: case MULH3:
         r = op_mulh (opnd, r_octa);                     /* multiply */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
     case DIVH2: case DIVH3:
         r = op_divh (opnd, r_octa);                     /* divide */
         h_write_o (spec, va, r_octa, acc, hst);         /* write result */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         break;
 
 /* ACBH
@@ -410,7 +410,7 @@ switch (opc) {
 
     case POLYH:
         op_polyh (opnd, acc);                           /* eval polynomial */
-        CC_IIZZ_FP (R[0]);                              /* set cc's */
+        cc = cc_iizz_w(R[0]);                              /* set cc's */
         break;
 
 /* EMODH
@@ -434,7 +434,7 @@ switch (opc) {
             R[opnd[9]] = temp;
         else Write (opnd[10], temp, L_LONG, WA);
         h_write_o (spec, va, r_octa, acc, hst);         /* write 2nd */
-        CC_IIZZ_FP (r);                                 /* set cc's */
+        cc = cc_iizz_w(r);                                 /* set cc's */
         if (flg) {
             V_INTOV;
             }

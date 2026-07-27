@@ -166,7 +166,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_B ((dst & BMASK));
+            cc = cc_iizz_b(dst & BMASK);
             break;
 
         case 004: case 005:                             /* BR */
@@ -281,8 +281,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            cc = cc | CC_C;
+            cc = cc_iizz_w(dst) | CC_C;
             break;
 
         case 052:                                       /* INC */
@@ -319,11 +318,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if (dst == 0100000)
-                cc = cc | CC_V;
-            if (dst)
-                cc = cc | CC_C;
+            cc = cc_iizz_w(dst) | ((dst == 0100000) * CC_V) | ((dst != 0) * CC_C);
             break;
 
         case 055:                                       /* ADC */
@@ -334,10 +329,9 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if ((src == 077777) && (dst == 0100000))
-                cc = cc | CC_V;
-            if ((src == 0177777) && (dst == 0))
+            cc = cc_iizz_w(dst)
+                | (((src == 077777) && (dst == 0100000)) * CC_V)
+                | (((src == 0177777) && (dst == 0)) * CC_C);
                 cc = cc | CC_C;
             break;
 
@@ -349,18 +343,16 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if ((src == 0100000) && (dst == 077777))
-                cc = cc | CC_V;
-            if ((src == 0) && (dst == 0177777))
-                cc = cc | CC_C;
+            cc = cc_iizz_w(dst)
+                | (((src == 0100000) && (dst == 077777)) * CC_V)
+                | (((src == 0) && (dst == 0177777)) * CC_C);
             break;
 
         case 057:                                       /* TST */
             if (dstreg)
                 src = RdRegW (dstspec);
             else src = RdMemW (GeteaW (dstspec));
-            CC_IIZZ_W (src);
+            cc = cc_iizz_w(src);
             break;
 
         case 060:                                       /* ROR */
@@ -371,11 +363,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if (src & 1)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_w(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & 1) != 0) * CC_C);
             break;
 
         case 061:                                       /* ROL */
@@ -386,11 +374,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if (src & WSIGN)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_w(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & WSIGN) != 0) * CC_C);
             break;
 
         case 062:                                       /* ASR */
@@ -401,11 +385,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if (src & 1)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_w(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & 1) != 0) * CC_C);
             break;
 
         case 063:                                       /* ASL */
@@ -416,11 +396,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegW (dst, dstspec);
             else WrMemW (dst, ea);
-            CC_IIZZ_W (dst);
-            if (src & WSIGN)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_w(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & WSIGN) != 0) * CC_C);
             break;
 
         case 065:                                       /* MFPI */
@@ -483,11 +459,9 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             src2 = RdRegW (dstspec);
         else src2 = RdMemW (GeteaW (dstspec));
         dst = (src - src2) & WMASK;
-        CC_IIZZ_W (dst);
-        if (((src ^ src2) & (~src2 ^ dst)) & WSIGN)
-            cc = cc | CC_V;
-        if (src < src2)
-            cc = cc | CC_C;
+        cc = cc_iizz_w(dst)
+            | (((((src ^ src2) & (~src2 ^ dst)) & WSIGN) != 0) * CC_V)
+            | ((src < src2) * CC_C);
         break;
 
     case 003:                                           /* BIT */
@@ -575,7 +549,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             dst = src * src2;                           /* multiply */
             WrRegW ((dst >> 16) & WMASK, srcspec);      /* high 16b */
             WrRegW (dst & WMASK, srcspec | 1);          /* low 16b */
-            CC_IIZZ_L (dst & LMASK);
+            cc = cc_iizz_l(dst & LMASK);
             if ((dst > 077777) || (dst < -0100000))
                 cc = cc | CC_C;
             break;
@@ -603,7 +577,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
                 cc = CC_V;                              /* overflow */
                 break;
                 }
-            CC_IIZZ_W (dst & WMASK);                    /* set cc's */
+            cc = cc_iizz_w(dst & WMASK);                    /* set cc's */
             WrRegW (dst & WMASK, srcspec);              /* quotient */
             WrRegW ((src - (src2 * dst)) & WMASK, srcspec | 1);
             break;
@@ -642,8 +616,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
                 oc = ((src >> (63 - src2)) & 1)? CC_C: 0;
                 }
             WrRegW (dst = dst & WMASK, srcspec);        /* result */
-            CC_IIZZ_W (dst);
-            cc = cc | oc;
+            cc = cc_iizz_w(dst) | oc;
             break;
 
         case 3:                                         /* ASHC */
@@ -675,7 +648,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
                 }
             WrRegW ((dst >> 16) & WMASK, srcspec);      /* high result */
             WrRegW (dst & WMASK, srcspec | 1);          /* low result */
-            CC_IIZZ_L (dst & LMASK);
+            cc = cc_iizz_l(dst & LMASK);
             cc = cc | oc;
             break;
 
@@ -827,8 +800,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            cc = cc | CC_C;
+            cc = cc_iizz_b(dst) | CC_C;
             break;
 
         case 052:                                       /* INCB */
@@ -865,11 +837,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if (dst == 0200)
-                cc = cc | CC_V;
-            if (dst)
-                cc = cc | CC_C;
+            cc = cc_iizz_b(dst) | ((dst == 0200) * CC_V) | ((dst != 0) * CC_C);
             break;
 
         case 055:                                       /* ADCB */
@@ -880,11 +848,9 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if ((src == 0177) && (dst == 0200))
-                cc = cc | CC_V;
-            if ((src == 0377) && (dst == 0))
-                cc = cc | CC_C;
+            cc = cc_iizz_b(dst)
+                | (((src == 0177) && (dst == 0200)) * CC_V)
+                | (((src == 0377) && (dst == 0)) * CC_C);
             break;
 
         case 056:                                       /* SBCB */
@@ -895,18 +861,16 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if ((src == 0200) && (dst == 0177))
-                cc = cc | CC_V;
-            if ((src == 0) && (dst == 0377))
-                cc = cc | CC_C;
+            cc = cc_iizz_b(dst)
+                | (((src == 0200) && (dst == 0177)) * CC_V)
+                | (((src == 0) && (dst == 0377)) * CC_C);
             break;
 
         case 057:                                       /* TSTB */
             if (dstreg)
                 src = RdRegB (dstspec);
             else src = RdMemB (GeteaB (dstspec));
-            CC_IIZZ_B (src);
+            cc = cc_iizz_b(src);
             break;
 
         case 060:                                       /* RORB */
@@ -917,11 +881,9 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if (src & 1)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_b(dst)
+                | ((CC_XOR_NC (cc)) * CC_V)
+                | (((src & 1) != 0) * CC_C);
             break;
 
         case 061:                                       /* ROLB */
@@ -932,11 +894,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if (src & BSIGN)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_b(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & BSIGN) != 0) * CC_C);
             break;
 
         case 062:                                       /* ASRB */
@@ -947,11 +905,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if (src & 1)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_b(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & 1) != 0) * CC_C);
             break;
 
         case 063:                                       /* ASLB */
@@ -962,11 +916,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             if (dstreg)
                 WrRegB (dst, dstspec);
             else WrMemB (dst, ea);
-            CC_IIZZ_B (dst);
-            if (src & BSIGN)
-                cc = cc | CC_C;
-            if (CC_XOR_NC (cc))
-                cc = cc | CC_V;
+            cc = cc_iizz_b(dst) | ((CC_XOR_NC (cc)) * CC_V) | (((src & BSIGN) != 0) * CC_C);
             break;
 
         case 065:                                       /* MFPD */
@@ -1017,11 +967,7 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
             src2 = RdRegB (dstspec);
         else src2 = RdMemB (GeteaB (dstspec));
         dst = (src - src2) & BMASK;
-        CC_IIZZ_B (dst);
-        if (((src ^ src2) & (~src2 ^ dst)) & BSIGN)
-            cc = cc | CC_V;
-        if (src < src2)
-            cc = cc | CC_C;
+        cc = cc_iizz_b(dst) | ((((src ^ src2) & (~src2 ^ dst)) & BSIGN) * CC_V) | ((src < src2) * CC_C);
         break;
 
     case 013:                                           /* BITB */
@@ -1074,11 +1020,9 @@ switch ((IR >> 12) & 017) {                             /* decode IR<15:12> */
         if (dstreg)
             WrRegW (dst, dstspec);
         else WrMemW (dst, ea);
-        CC_IIZZ_W (dst);
-        if (((src ^ src2) & (~src ^ dst)) & WSIGN)
-            cc = cc | CC_V;
-        if (src2 < src)
-            cc = cc | CC_C;
+        cc = cc_iizz_w(dst)
+            | (((((src ^ src2) & (~src ^ dst)) & WSIGN) != 0) * CC_V)
+            | (((src2 < src) != 0) * CC_C);
         break;
 
     default:
