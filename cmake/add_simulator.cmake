@@ -296,6 +296,16 @@ function (simh_executable_template _targ)
     target_compile_options(${_targ} PRIVATE ${EXTRA_TARGET_CFLAGS})
     target_link_options(${_targ} PRIVATE ${EXTRA_TARGET_LFLAGS})
 
+    # Serialize linking on Windows with Ninja to avoid "executable busy" errors
+    if (WIN32 AND CMAKE_GENERATOR MATCHES "Ninja")
+        get_property(_zimh_link_pools GLOBAL PROPERTY JOB_POOLS)
+        list(FIND _zimh_link_pools "link=1" _zimh_link_pool_idx)
+        if (_zimh_link_pool_idx EQUAL -1)
+            set_property(GLOBAL APPEND PROPERTY JOB_POOLS link=1)
+        endif()
+        set_target_properties(${_targ} PROPERTIES JOB_POOL_LINK link)
+    endif()
+
     if (MINGW)
         ## target_compile_options(${_targ} PUBLIC "-fms-extensions")
         target_link_options(${_targ} PUBLIC "-mconsole")
