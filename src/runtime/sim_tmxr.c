@@ -3993,6 +3993,15 @@ UNIT **activated = NULL;
 SOCKET *sockets = NULL;
 int wait_count = 0;
 
+/* Set the thread's affinity to the I/O affinity set: */
+sim_cpu_set_t io_set;
+
+sim_os_get_cpu_partition(NULL, &io_set, NULL);
+if (!sim_cpu_set_empty(&io_set))
+    sim_os_set_thread_affinity(&io_set);
+
+sim_set_thread_name("sim txmr thread");
+
 sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - starting\n");
 
 units = (UNIT **)calloc(FD_SETSIZE, sizeof(*units));

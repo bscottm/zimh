@@ -296,6 +296,18 @@ struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
 sim_debug_unit (ctx->dbit, uptr, "_disk_io(unit=%d) starting\n", (int)(uptr - ctx->dptr->units));
 
+/* Set the thread's affinity to the I/O affinity set: */
+sim_cpu_set_t io_set;
+
+sim_os_get_cpu_partition(NULL, &io_set, NULL);
+if (!sim_cpu_set_empty(&io_set))
+    sim_os_set_thread_affinity(&io_set);
+
+char thread_name[THREAD_NAME_MAX + 1];
+
+snprintf(thread_name, THREAD_NAME_MAX, "%s disk thread", uptr->uname);
+sim_set_thread_name(thread_name);
+
 pthread_mutex_lock (&ctx->io_lock);
 ctx->io_thread_running = true;
 pthread_cond_signal (&ctx->startup_cond);   /* Signal we're ready to go */

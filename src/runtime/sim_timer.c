@@ -2288,15 +2288,14 @@ static THREAD_FUNC_DEFN(_timer_thread)
        This implementation does not use every parameter. */
     (void)arg;
 
-    int sched_policy;
-    struct sched_param sched_priority;
+    /* Set the thread's affinity to the I/O affinity set: */
+    sim_cpu_set_t io_set;
 
-    /* Boost Priority for this I/O thread vs the CPU instruction execution
-       thread which, in general, won't be readily yielding the processor when
-       this thread needs to run */
-    pthread_getschedparam(pthread_self(), &sched_policy, &sched_priority);
-    ++sched_priority.sched_priority;
-    pthread_setschedparam(pthread_self(), sched_policy, &sched_priority);
+    sim_os_get_cpu_partition(NULL, &io_set, NULL);
+    if (!sim_cpu_set_empty(&io_set))
+        sim_os_set_thread_affinity(&io_set);
+
+    sim_set_thread_name("sim timer thread");
 
     sim_debug(DBG_TIM, &sim_timer_dev, "_timer_thread() - starting\n");
 

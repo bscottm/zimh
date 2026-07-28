@@ -3423,6 +3423,15 @@ DEVICE *d;
 
 sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - starting\n");
 
+/* Set the thread's affinity to the I/O affinity set: */
+sim_cpu_set_t io_set;
+
+sim_os_get_cpu_partition(NULL, &io_set, NULL);
+if (!sim_cpu_set_empty(&io_set))
+    sim_os_set_thread_affinity(&io_set);
+
+sim_set_thread_name("sim console poll thread");
+
 pthread_mutex_lock (&sim_tmxr_poll_lock);
 sim_console_poll_running = true;
 pthread_cond_signal (&sim_console_startup_cond);   /* Signal we're ready to go */
