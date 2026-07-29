@@ -1885,6 +1885,10 @@ eth_stop_threads(ETH_DEV *dev)
     sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
 
     /* Join reader thread - will exit on next timeout (max 250ms) */
+    if (dev->backend.reader_shutdown != NULL) {
+        dev->backend.reader_shutdown(&dev->backend, dev);
+    }
+
     sim_thread_join(dev->reader_thread, NULL);
 
     /* Wake up writer thread if it's waiting on the condition variable */
@@ -1895,6 +1899,10 @@ eth_stop_threads(ETH_DEV *dev)
     sim_mutex_unlock(&dev->writer_lock);
 
     /* Join writer thread - will exit when it checks shutdown flag */
+    if (dev->backend.writer_shutdown != NULL) {
+        dev->backend.writer_shutdown(&dev->backend, dev);
+    }
+
     sim_thread_join(dev->writer_thread, NULL);
 }
 
@@ -2006,6 +2014,8 @@ backend->packet_read = eth_reader_none;
 backend->before_packet_write = NULL;
 backend->write_packet = eth_writer_none;
 backend->after_packet_write = NULL;
+backend->reader_shutdown = NULL;
+backend->writer_shutdown = NULL;
 memset(&backend->state, 0, sizeof(backend->state));
 *fd_handle = 0;
 
@@ -2127,6 +2137,8 @@ else if (0 == strncmp("tap:", savname, 4)) {
     backend->before_packet_write = NULL;
     backend->write_packet = eth_writer_tap;
     backend->after_packet_write = NULL;
+    backend->reader_shutdown = NULL;
+    backend->writer_shutdown = NULL;
     /* No additional state recorded in the backend.*/
     }
   }
@@ -2185,6 +2197,8 @@ else { /* !tap: */
           backend->before_packet_write = before_slirp_send;
           backend->write_packet = eth_writer_nat;
           backend->after_packet_write = after_slirp_send;
+          backend->reader_shutdown = sim_slirp_reader_shutdown;
+          backend->writer_shutdown = sim_slirp_writer_shutdown;
         *fd_handle = 0;
       } else {
         strlcpy(errbuf, strerror(errno), PCAP_ERRBUF_SIZE);
@@ -2222,6 +2236,8 @@ else { /* !tap: */
         backend->before_packet_write = NULL;
         backend->write_packet = eth_writer_udp;
         backend->after_packet_write = NULL;
+        backend->reader_shutdown = NULL;
+        backend->writer_shutdown = NULL;
         }
       else { /* not udp:, so attempt to open the parameter as if it were an explicit device name */
 #if defined(HAVE_PCAP_NETWORK)

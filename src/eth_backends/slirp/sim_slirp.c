@@ -430,9 +430,9 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
     return slirp;
 }
 
-void sim_slirp_shutdown(void *opaque)
+void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev)
 {
-    sim_slirp_network *slirp = (sim_slirp_network *)opaque;
+    sim_slirp_network *slirp = backend->state.slirp;
     volatile sim_atomic_type_t n_sockets = sim_atomic_get(&slirp->n_sockets);
 
     /* Set the reader thread's exit condition. If the reader thread is waiting
@@ -440,6 +440,12 @@ void sim_slirp_shutdown(void *opaque)
     sim_atomic_put(&slirp->n_sockets, -1);
     if (n_sockets == 0)
         pthread_cond_broadcast(&slirp->no_sockets_cv);
+}
+
+void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev)
+{
+    (void) backend;
+    (void) dev;
 }
 
 void sim_slirp_close(sim_slirp_network *slirp)

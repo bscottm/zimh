@@ -112,6 +112,11 @@ typedef struct eth_backend_s {
      */
     bool (*after_packet_write)(struct eth_backend_s *self, ETH_DEV *dev);
 
+    /* Reader-side thread shutdown hook. Optional -- may be NULL. */
+    void (*reader_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+
+    /* Writer-side thread shutdown hook. Optional -- may be NULL. */
+    void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
     union {
 #    ifdef HAVE_PCAP_NETWORK
         pcap_t *pcap;                   /* PCAP handle */
@@ -163,3 +168,7 @@ int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet);
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */
 int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);
+
+/* libslirp shutdown hooks: */
+void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev);
+void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev);

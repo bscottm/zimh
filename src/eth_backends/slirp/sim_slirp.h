@@ -32,6 +32,7 @@
 // Older libslirp before slirp_os_socket reflects the underlying system's actual
 // type...
 typedef int slirp_os_socket;
+typedef ssize_t slirp_ssize_t;
 #        endif
 
 #        if SIM_USE_SELECT
@@ -126,7 +127,6 @@ typedef struct sim_slirp sim_slirp_network;
 
 sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_callback pkt_callback, DEVICE *dptr,
                                   uint32_t dbit, char *errbuf, size_t errbuf_size);
-void sim_slirp_shutdown(void *opaque);
 void sim_slirp_close(sim_slirp_network *slirp);
 int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags);
 int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout);

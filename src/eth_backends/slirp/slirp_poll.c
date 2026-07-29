@@ -88,7 +88,13 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
         pthread_cond_wait(&slirp->no_sockets_cv, &slirp->no_sockets_lock);
         pthread_mutex_unlock(&slirp->no_sockets_lock);
 
-        return sim_slirp_select(slirp, ms_timeout);
+        n_sockets = sim_atomic_get(&slirp->n_sockets);
+        if (n_sockets > 0) {
+            return sim_slirp_select(slirp, ms_timeout);
+        } else {
+            /* Reader thread is shutting down. */
+            return 0;
+        }
     } else {
         /* Error or shutting down... make the reader thread exit. */
         retval = -1;
