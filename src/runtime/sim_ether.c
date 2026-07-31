@@ -356,15 +356,18 @@
 
 /* Internal routine - forward declaration */
 static int _eth_get_system_id (char *buf, size_t buf_size);
-static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on);
 t_stat eth_test_dev_command_format (void);
 #if defined(USE_READER_THREAD)
 static void ethq_item_free(sim_tailq_item_t item);
 #endif
 
+#if defined (USE_NETWORK) || defined (USE_LOADED_WINPCAP)
+static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on);
+
 static const uchar_t framer_oui[3] = { 0xaa, 0x00, 0x03 };
        const ETH_MAC eth_mac_any         = {0, 0, 0, 0, 0, 0};
        const ETH_MAC eth_mac_bcast       = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+#endif
 
 /*============================================================================*/
 /*                  OS-independent ethernet routines                          */
@@ -556,6 +559,7 @@ uint32_t eth_crc32(uint32_t crc, const void* vbuf, size_t len)
   return(crc ^ mask);
 }
 
+#if defined (USE_NETWORK) || defined (USE_LOADED_WINPCAP)
 static int eth_get_packet_crc32_data(const uint8_t *msg, int len, uint8_t *crcdata)
 {
   int crc_len;
@@ -572,7 +576,7 @@ static int eth_get_packet_crc32_data(const uint8_t *msg, int len, uint8_t *crcda
   return crc_len;
 }
 
-#if !defined (USE_READER_THREAD)
+#    if !defined(USE_READER_THREAD)
 /* Append Ethernet CRC bytes directly to the packet buffer used by the polled
    receive path.  Threaded receive cannot use this helper because it queues a
    separate copy of the packet and stores generated CRC bytes beside that copy
@@ -588,6 +592,7 @@ static int eth_add_packet_crc32(uint8_t *msg, int len)
   }
   return crc_len;
 }
+#    endif
 #endif
 
 void eth_setcrc(ETH_DEV* dev, int need_crc)
@@ -595,7 +600,7 @@ void eth_setcrc(ETH_DEV* dev, int need_crc)
   dev->need_crc = need_crc;
 }
 
-void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt, int detail, uint32_t reason)
+static void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt, int detail, uint32_t reason)
 {
   if (dev->dptr->dctrl & reason) {
     char src[ETH_MAC_STRING_SIZE];
@@ -641,11 +646,12 @@ void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* 
   }
 }
 
-void eth_packet_trace(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt)
+static void eth_packet_trace(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt)
 {
   eth_packet_trace_ex(dev, msg, len, txt, 0, dev->dbit);
 }
 
+#if defined (USE_NETWORK) || defined (USE_LOADED_WINPCAP)
 static void eth_packet_trace_detail(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt)
 {
   eth_packet_trace_ex(dev, msg, len, txt, 1     , dev->dbit);
@@ -657,6 +663,7 @@ static void eth_zero(ETH_DEV* dev)
   memset(dev, 0, sizeof(ETH_DEV));
   dev->reflections = -1;                          /* not established yet */
 }
+#endif
 
 #if defined(USE_READER_THREAD)
 /* sim_tailq adapter functions for ethernet packet queue
