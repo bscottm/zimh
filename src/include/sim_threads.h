@@ -31,8 +31,11 @@
  */
 
 #if !defined(SIM_THREADS_H)
+#    define SIM_THREADS_H
 
 #    include <stdint.h>
+
+#    include "sim_defs.h"
 
 #    if defined(HAVE_PTHREADS)
 #        include <pthread.h>
@@ -47,7 +50,7 @@ typedef pthread_t sim_thread_t;
 typedef pthread_cond_t sim_cond_t;
 typedef pthread_mutex_t sim_mutex_t;
 #    else
-#        error "No standard threads or pthreads?"
+#        error "No thread support?"
 #    endif
 
 static inline int sim_thread_equal(sim_thread_t left, sim_thread_t right)
@@ -206,5 +209,4 @@ extern t_stat sim_os_get_process_affinity(sim_cpu_set_t *set);
 extern t_stat sim_os_set_thread_affinity(const sim_cpu_set_t *set);
 extern t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, sim_cpu_set_t *sdl_set);
 
-#    define SIM_THREADS_H
 #endif

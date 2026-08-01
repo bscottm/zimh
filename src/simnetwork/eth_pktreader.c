@@ -3,11 +3,12 @@
 
 #include "sim_defs.h"
 #include "sim_ether.h"
+#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_backends.h"
 
 /* Forward decl's: */
 static uint16_t ip_checksum(uint16_t *buffer, int size);
 static uint16_t pseudo_checksum(uint16_t len, uint16_t proto, void *nsrc_addr, void *ndest_addr, uint8_t *buff);
-static int eth_hash_lookup(ETH_MULTIHASH hash, const u_char *data);
 static bool eth_process_loopback(ETH_DEV *dev, const u_char *data, uint32_t len);
 static void eth_fix_ip_xsum_offload(ETH_DEV *dev, const u_char *msg, int len);
 static void eth_fix_ip_jumbo_offload(ETH_DEV *dev, u_char *msg, int len);
@@ -37,7 +38,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 
         return;
     }
-    switch (dev->backend.eth_api) {
+    switch (dev->backend->eth_api) {
     case ETH_API_PCAP:
 #ifdef USE_BPF
         bpf_used = true;
@@ -63,7 +64,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 
     /* detect reception of loopback packet to our physical address */
     if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) || (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
-#ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
         sim_mutex_lock(&dev->self_lock);
 #endif
         dev->loopback_self_rcvd_total++;
@@ -74,7 +75,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             to_me = false;
         } else if (!bpf_used)
             from_me = false;
-#ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
         sim_mutex_unlock(&dev->self_lock);
 #endif
     }
@@ -91,7 +92,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             return;
         }
         if (!eth_process_loopback(dev, data, len)) {
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
             int crc_len = 0;
             uint8_t crc_data[4] = {0, 0, 0, 0};
             uint32_t pkt_len = len;
@@ -119,7 +120,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, pkt_len, crc_len, crc_data, 0);
             ++dev->packets_received;
             free(moved_data);
-#else /* !USE_READER_THREAD */
+#else /* !ETH_THREADING_AVAILABLE */
             /* set data in passed read packet */
             dev->read_packet->len = len;
             memcpy(dev->read_packet->msg, data, len);
@@ -150,31 +151,6 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 #endif
         }
     }
-}
-
-/* Return non-BPF address filter state for a received packet. */
-void eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, bool *to_me, bool *from_me)
-{
-    int i;
-
-    *to_me = false;
-    *from_me = false;
-    for (i = 0; i < dev->addr_count; i++) {
-        *to_me = *to_me || (memcmp(data, dev->filter_address[i], sizeof(ETH_MAC)) == 0);
-        *from_me = *from_me || (memcmp(&data[sizeof(ETH_MAC)], dev->filter_address[i], sizeof(ETH_MAC)) == 0);
-    }
-
-    /* all multicast mode and multicast frame? */
-    if (dev->all_multicast && is_eth_groupmac(data))
-        *to_me = true;
-
-    /* promiscuous mode? */
-    if (dev->promiscuous)
-        *to_me = true;
-
-    /* AUTODIN II hash mode? */
-    if (dev->hash_filter && !*to_me && is_eth_groupmac(data))
-        *to_me = eth_hash_lookup(dev->hash, data) != 0;
 }
 
 /* Recompute the IP header checksum. */
@@ -232,15 +208,6 @@ uint16_t pseudo_checksum(uint16_t len, uint16_t proto, void *nsrc_addr, void *nd
 
     /* Return the bitwise complement of the resulting mishmash  */
     return (uint16_t)(~sum);
-}
-
-/* Ethernet multicast address hashing: */
-int eth_hash_lookup(ETH_MULTIHASH hash, const u_char *data)
-{
-    int key = 0x3f & (eth_crc32(0, data, 6) >> 26);
-
-    key ^= 0x3f;
-    return (hash[key >> 3] & (1 << (key & 0x7)));
 }
 
 /* eth_process_loopback: A bit of a misnomer. This function processes Ethernet

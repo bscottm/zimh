@@ -14,9 +14,19 @@ add_library(simh_regexp INTERFACE)
 # WITH_NETWORK option (and if WITH_NETWORK is FALSE or not set, then simh_network should be a simple interface
 # library.)
 add_library(simh_network STATIC
+    ${SIMH_SIMNETWORK_ROOT}/eth_crc32.c
     ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
     ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_callback.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_open_close.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_read.c
+    ${SIMH_SIMNETWORK_ROOT}/poll_eth_socket.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_open.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_api.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_open.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_api.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/sim_ether_test.c
 )
 
 target_compile_definitions(simh_network PUBLIC
@@ -32,7 +42,7 @@ target_include_directories(simh_network PRIVATE
     "${ZIMH_GENERATED_INCLUDE_DIR}"
 )
 
-## Expose the simnetwork directory as a public include:
+# Expose the simnetwork directory as a public include:
 target_include_directories(simh_network PUBLIC
     "${SIMH_SOURCE_ROOT}"
 )
@@ -42,13 +52,36 @@ target_link_libraries(simh_network PRIVATE
     aio_support
 )
 
+add_executable(show_eth_devices
+    ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
+)
+
+target_compile_definitions(show_eth_devices PRIVATE
+    SHOW_ETH_DEVICES_TARGET
+)
+
+target_include_directories(show_eth_devices PRIVATE
+    "${SIMH_CORE_ROOT}"
+    "${SIMH_COMPAT_ROOT}"
+    "${SIMH_INCLUDE_ROOT}"
+    "${SIMH_RUNTIME_ROOT}"
+    ## "${SIMH_COMPONENTS_ROOT}"
+    "${SIMH_SOURCE_ROOT}"
+)
+
+target_link_libraries(show_eth_devices PRIVATE
+    sim_support
+    aio_support
+)
+
 # =============================================================================
 # Function: find_vcpkg_pkgconfig_target
 # Description: Safely extracts multi-config Release/Debug paths from vcpkg's
-#              pkg-config files and wraps them in an IMPORTED INTERFACE target.
+# pkg-config files and wraps them in an IMPORTED INTERFACE target.
 # =============================================================================
 function(find_vcpkg_pkgconfig_target pkg_prefix pc_filename out_target_var)
     find_package(PkgConfig QUIET)
+
     if(NOT PKG_CONFIG_FOUND)
         return()
     endif()
@@ -109,6 +142,7 @@ if(WITH_NETWORK)
     # Note: This will be headers-only on Windows, full library linkage
     # everywhere else.
     # -----------------------------------------------------------------------------
+    set(ADD_PCAP_SOURCE FALSE)
     if(WIN32)
         # 1. Windows / vcpkg Pipeline
         # vcpkg intercepts find_package(PCAP) and provides its own internal target mapping
@@ -121,7 +155,8 @@ if(WITH_NETWORK)
                 HAVE_PCAP_NETWORK
             )
             target_link_libraries(simh_network PUBLIC PCAP::PCAP)
-            message(STATUS "Network: PCAP configured via vcpkg (Target Linked).")
+            set(ADD_PCAP_SOURCE TRUE)
+            message(STATUS "Network: PCAP configured via vcpkg (dynamically loaded library).")
         endif()
     else()
         # 2. POSIX Pipeline (Linux, FreeBSD, macOS)
@@ -132,20 +167,31 @@ if(WITH_NETWORK)
         if(TARGET PkgConfig::PCAP_PKG)
             target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
             target_link_libraries(simh_network PRIVATE PkgConfig::PCAP_PKG)
+            set(ADD_PCAP_SOURCE TRUE)
             message(STATUS "Network: PCAP configured via pkg-config.")
         else()
             # Absolute fallback if a weird Linux distro doesn't ship libpcap.pc
             find_package(PCAP REQUIRED)
+
             if(TARGET PCAP::PCAP)
                 target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
                 target_link_libraries(simh_network PUBLIC PCAP::PCAP)
+                set(ADD_PCAP_SOURCE TRUE)
             endif()
         endif()
+    endif()
+
+    if (ADD_PCAP_SOURCE)
+        target_sources(simh_network PRIVATE
+            src/simnetwork/eth_pcap/eth_pcap_open.c
+            src/simnetwork/eth_pcap/eth_pcap_api.c
+        )
     endif()
 
     # SLIRP + GLIB2
     # Default: We don' have libslirp.
     set(HAVE_LIBSLIRP FALSE)
+
     if(WITH_SLIRP)
         if(WIN32)
             find_vcpkg_pkgconfig_target(slirp slirp SLIRP_TARGET)
@@ -161,10 +207,11 @@ if(WITH_NETWORK)
                     HAVE_SLIRP_NETWORK
                     USE_SIMH_SLIRP_DEBUG
                 )
-                if (VCPKG_TARGET_TRIPLET MATCHES "-static$")
+
+                if(VCPKG_TARGET_TRIPLET MATCHES "-static$")
                     target_compile_definitions(simh_network PUBLIC LIBSLIRP_STATIC)
-                endif ()
-                
+                endif()
+
                 set(HAVE_LIBSLIRP TRUE)
                 message(STATUS "Network: NAT(SLiRP) configured via multi-config helpers.")
             endif()
@@ -172,6 +219,7 @@ if(WITH_NETWORK)
             # POSIX Pipeline (Linux, FreeBSD, macOS)
             # Fall back to standard system pkgconf tracking where single-config paths are safe.
             find_package(PkgConfig QUIET)
+
             if(PKG_CONFIG_FOUND)
                 pkg_check_modules(GLIB2 QUIET glib-2.0)
                 pkg_check_modules(SLIRP QUIET slirp)
@@ -179,12 +227,15 @@ if(WITH_NETWORK)
                 if(SLIRP_FOUND AND GLIB2_FOUND)
                     target_include_directories(simh_network PUBLIC ${SLIRP_INCLUDE_DIRS} ${GLIB2_INCLUDE_DIRS})
                     target_link_libraries(simh_network PUBLIC ${SLIRP_LIBRARIES} ${GLIB2_LIBRARIES})
+
                     if(SLIRP_LIBRARY_DIRS)
                         target_link_directories(simh_network PUBLIC ${SLIRP_LIBRARY_DIRS})
                     endif()
+
                     if(GLIB2_LIBRARY_DIRS)
                         target_link_directories(simh_network PUBLIC ${GLIB2_LIBRARY_DIRS})
                     endif()
+
                     target_compile_definitions(simh_network PUBLIC
                         HAVE_SLIRP_NETWORK
                         USE_SIMH_SLIRP_DEBUG
@@ -195,25 +246,34 @@ if(WITH_NETWORK)
             endif()
         endif()
 
-        if (HAVE_LIBSLIRP)
+        if(HAVE_LIBSLIRP)
             target_sources(simh_network PRIVATE
-                ${SIMH_SIMNETWORK_ROOT}/slirp/sim_slirp.c
-                ${SIMH_SIMNETWORK_ROOT}/slirp/slirp_poll.c)
-        endif ()
+                ${SIMH_SIMNETWORK_ROOT}/eth_slirp/sim_slirp.c
+                ${SIMH_SIMNETWORK_ROOT}/eth_slirp/slirp_poll.c
+            )
+        endif()
     endif()
 
     # VDE (Non-Windows)
     if(WITH_VDE AND NOT WIN32)
         find_package(PkgConfig QUIET)
+
         if(PKG_CONFIG_FOUND)
             pkg_check_modules(VDE QUIET vdeplug)
+
             if(VDE_FOUND)
+                target_sources(simh_network PRIVATE
+                    ${SIMH_SIMNETWORK_ROOT}/eth_vde/eth_vde_open.c
+                    ${SIMH_SIMNETWORK_ROOT}/eth_vde/eth_vde_api.c
+                )
                 target_compile_definitions(simh_network PUBLIC HAVE_VDE_NETWORK)
                 target_link_libraries(simh_network PUBLIC ${VDE_LIBRARIES})
                 target_include_directories(simh_network PUBLIC ${VDE_INCLUDE_DIRS})
+
                 if(VDE_LIBRARY_DIRS)
                     target_link_directories(simh_network PUBLIC ${VDE_LIBRARY_DIRS})
                 endif()
+
                 message(STATUS "Network: VDE configured.")
             endif()
         endif()
@@ -222,67 +282,76 @@ if(WITH_NETWORK)
     set(HAVE_TAP_NETWORK False)
     set(HAVE_BSDTUNTAP False)
 
-    ## TAP/TUN devices
-    if (WITH_TAP)
+    # # TAP/TUN devices
+    if(WITH_TAP)
         check_include_file(linux/if_tun.h if_tun_found)
 
-        if (NOT if_tun_found)
+        if(NOT if_tun_found)
             check_include_file(net/if_tun.h net_if_tun_found)
-            if (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
+
+            if(net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
                 set(HAVE_BSDTUNTAP True)
-            endif (net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
-        endif (NOT if_tun_found)
+            endif(net_if_tun_found OR EXISTS /Library/Extensions/tap.kext)
+        endif(NOT if_tun_found)
 
-        if (if_tun_found OR net_if_tun_found)
+        if(if_tun_found OR net_if_tun_found)
             set(HAVE_TAP_NETWORK True)
-        endif (if_tun_found OR net_if_tun_found)
-    endif (WITH_TAP)
+        endif(if_tun_found OR net_if_tun_found)
+    endif(WITH_TAP)
 
-    if (HAVE_TAP_NETWORK)
+    if(HAVE_TAP_NETWORK)
         target_compile_definitions(simh_network PUBLIC HAVE_TAP_NETWORK)
+        target_sources(simh_network PRIVATE
+            ${SIMH_SIMNETWORK_ROOT}/eth_tap/eth_tap_open.c
+            ${SIMH_SIMNETWORK_ROOT}/eth_tap/eth_tap_api.c)
     endif()
-    if (HAVE_BSDTUNTAP)
+
+    if(HAVE_BSDTUNTAP)
         target_compile_definitions(simh_network PUBLIC HAVE_BSDTUNTAP)
     endif()
 
     # Set the defines so that the network code gets compiled.
-    if (NOT WIN32
-        AND (HAVE_TAP_NETWORK OR VDE_FOUND OR HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
+    if(NOT WIN32
+        AND(HAVE_TAP_NETWORK OR VDE_FOUND OR HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
         # POSIX/Unixen environments
         target_compile_definitions(simh_network PUBLIC USE_NETWORK)
-    elseif (WIN32 AND (HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
-        ## FIXME: Rethink the USE_LOADED_WINPCAP on the WIN32 path to enable
-        ## network code.
+    elseif(WIN32 AND(HAVE_LIBSLIRP OR TARGET PCAP::PCAP))
+        # # FIXME: Rethink the USE_LOADED_WINPCAP on the WIN32 path to enable
+        # # network code.
         target_compile_definitions(simh_network PUBLIC USE_LOADED_WINPCAP)
-    endif ()
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
 # Video & Graphics
 # -----------------------------------------------------------------------------
 if(WITH_VIDEO)
-    ## Can only enable video iff SDL2 has been found:
+    # # Can only enable video iff SDL2 has been found:
     find_package(SDL2 OPTIONAL_COMPONENTS SDL2main NAMES sdl2 SDL2)
-    if (TARGET SDL2::SDL2-static OR TARGET SDL2::SDL2)
+
+    if(TARGET SDL2::SDL2-static OR TARGET SDL2::SDL2)
         find_package(PNG REQUIRED)
         find_package(Freetype REQUIRED)
         find_package(SDL2_ttf REQUIRED)
 
         target_compile_definitions(simh_video INTERFACE USE_SIM_VIDEO HAVE_LIBSDL)
-        ## NOTE: aio_support also needs to know about SDL2 because the processor affinity code
-        ## will create a CPU affinity set for SDL.
+
+        # # NOTE: aio_support also needs to know about SDL2 because the processor affinity code
+        # # will create a CPU affinity set for SDL.
         target_compile_definitions(aio_support PRIVATE HAVE_LIBSDL)
 
-        if (TARGET PNG::PNG)
+        if(TARGET PNG::PNG)
             target_compile_definitions(simh_video INTERFACE HAVE_LIBPNG)
-        endif ()
-        if (TARGET FreeType::Freetype)
-            ## Not entirely sure this will actually be used -- it's really for SDL2_ttf
-            ## link time.
+        endif()
+
+        if(TARGET FreeType::Freetype)
+            # # Not entirely sure this will actually be used -- it's really for SDL2_ttf
+            # # link time.
             target_compile_definitions(simh_video INTERFACE HAVE_FREETYPE)
-        endif ()
+        endif()
 
         target_link_libraries(simh_video INTERFACE
+
             # Prefer static on Windows if it exists; otherwise default to shared/standard everywhere else
             $<IF:$<AND:$<BOOL:${WIN32}>,$<TARGET_EXISTS:SDL2::SDL2-static>>,SDL2::SDL2-static,SDL2::SDL2>
             $<IF:$<AND:$<BOOL:${WIN32}>,$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf-static>>,SDL2_ttf::SDL2_ttf-static,SDL2_ttf::SDL2_ttf>
@@ -292,9 +361,9 @@ if(WITH_VIDEO)
         )
 
         message(STATUS "Video: PNG, Freetype, SDL2, and SDL2_ttf configured.")
-    else ()
+    else()
         message(STATUS "Video: SDL2 library not found, video not enabled.")
-    endif ()
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------

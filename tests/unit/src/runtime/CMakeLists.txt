@@ -133,8 +133,6 @@ add_unit_test(unit-sim-console
 if (WITH_NETWORK)
     add_unit_test(unit-sim-ether
         LABEL unit
-        DEFINES
-            USE_READER_THREAD
         SOURCES
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sim_ether.c
         INCLUDES

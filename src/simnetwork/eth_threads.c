@@ -3,54 +3,18 @@
 
 /* Ethernet packet reader thread with state machine control flow */
 
-#if !defined(USE_READER_THREAD)
-#    error "eth_threads.c MUST BE compiled with USE_READER_THREAD defined."
-#endif
-
+#include "sim_defs.h"
 #include "sim_ether.h"
-#include "sim_sock.h"
 #include "sim_threads.h"
-#include "poll_compat.h"
 
 #include "sim_ether_internal.h"
+#include "simnetwork/eth_backends.h"
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
 
-// Default socket read timeout. Note: This can be made longer, which only
-// affects how quickly the reader thread exits.
-enum {
-    ETH_READER_POLL_TMO = 250 /* ms */
-};
-
-#if SIM_USE_POLL
-#    define POLL_NORMAL_EVENTS (POLLIN)
-#    if !defined(_WIN32) && !defined(_WIN64)
-#        define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
-#    else
-#        define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
-#    endif
+#if !ETH_THREADING_AVAILABLE
+#  error "eth_threads.c requires pthread support (define HAVE_PTHREAD or _WIN32)"
 #endif
-
-/*============================================================================*/
-/*                 select()/poll() on a single socket                         */
-/*============================================================================*/
-
-static inline int wait_one_socket(SOCKET socket_fd, long timeout_ms)
-{
-#if SIM_USE_SELECT
-    fd_set setl;
-    struct timeval timeout;
-
-    FD_ZERO(&setl);
-    FD_SET(socket_fd, &setl);
-    timeout.tv_sec = 0;
-    timeout.tv_usec = timeout_ms * 1000;
-    return select(socket_fd + 1, &setl, NULL, NULL, &timeout);
-#else
-    sim_pollfd_t fds = {.fd = socket_fd, .events = POLL_NORMAL_EVENTS | POLL_EXTRA_EVENTS, .revents = 0};
-    return poll(&fds, 1, (sim_polltmo_t)timeout_ms);
-#endif
-}
 
 /*============================================================================*/
 /*                    STATE HANDLER IMPLEMENTATIONS                           */
@@ -89,67 +53,16 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 
 /* Forward declarations of API-specific wait handlers */
 
-/* PCAP wait implementation */
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void) dev;
-#if defined(_WIN32)
-    /* Windows: Use event-based waiting */
-    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
-#else
-    return wait_one_socket(pcap_get_selectable_fd(backend->state.pcap), ETH_READER_POLL_TMO);
-#endif
-}
-
-/* TAP wait implementation */
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void)backend;
-
-#if defined(HAVE_TAP_NETWORK)
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
-#else
-    return 1;
-#endif
-}
-
-/* VDE wait implementation */
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void) dev;
-
-#if defined(HAVE_VDE_NETWORK)
-    return wait_one_socket(vde_datafd(backend->state.vde), ETH_READER_POLL_TMO);
-#else
-    return 1;
-#endif
-}
-
-/* UDP wait implementation */
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void) backend;
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
-}
-
 /* NAT (SLiRP) wait implementation */
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)dev;
 #ifdef HAVE_SLIRP_NETWORK
-    return sim_slirp_select(backend->state.slirp, ETH_READER_POLL_TMO);
+    return sim_slirp_select(backend->state.slirp, timeout_ms);
 #else
+    (void)timeout_ms;
     return 1;
 #endif
-}
-
-/* Test API wait implementation */
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev)
-{
-    /* Test API doesn't wait, always return immediately */
-    (void)backend;
-    (void)dev;
-    return 1;
 }
 
 /* None API wait implementation */
@@ -168,9 +81,9 @@ static bool eth_reader_error_handler(ETH_DEV *dev)
 
     /* Attempt to recover if device still attached */
 
-    if (dev->backend.eth_api == ETH_API_PCAP) {
+    if (dev->backend->eth_api == ETH_API_PCAP) {
 #if defined(HAVE_PCAP_NETWORK)
-        if (dev->backend.state.pcap != NULL) {
+        if (dev->backend->state.pcap != NULL) {
             return true; /* Retry */
         }
         /* Fall through... */
@@ -178,7 +91,7 @@ static bool eth_reader_error_handler(ETH_DEV *dev)
     } else {
         /* Not PCAP, retry if socket still valid. */
         /* FIXME: VDE, which doesn't use a socket? */
-        if (dev->fd_handle != INVALID_SOCKET) {
+        if (dev->backend->state.eth_socket != INVALID_SOCKET) {
             return true;
         }
 
@@ -208,8 +121,8 @@ THREAD_FUNC_DEFN(_eth_reader)
     sim_atomic_put(&dev->reader_status, start_status);
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
-        eth_backend_t *backend = &dev->backend;
-        int status = backend->packet_wait(backend, dev);
+        eth_backend_t *backend = dev->backend;
+        int status = backend->packet_wait(backend, dev, ETH_READER_POLL_TMO);
 
         /* Packet available? */
         if (status > 0) {
@@ -277,7 +190,7 @@ static int eth_writer_init(ETH_DEV *dev)
 THREAD_FUNC_DEFN(_eth_writer)
 {
     ETH_DEV *dev = (ETH_DEV *)arg;
-    eth_backend_t *backend = &dev->backend;
+    eth_backend_t *backend = dev->backend;
     ETH_WRITE_REQUEST *local_freelist = NULL; /* Local accumulator for freed buffers */
 
     sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_INIT);
@@ -393,45 +306,129 @@ error_out:
 }
 
 /*============================================================================*/
-/*           THREAD STARTUP - Initialize and start reader/writer threads     */
+/*           THREAD MANAGEMENT FUNCTIONS                                      */
 /*============================================================================*/
 
+/* Initialize threading structures without starting threads */
+t_stat eth_init_threading_structures(ETH_DEV *dev)
+{
+    t_stat r;
+
+    if (!dev || dev->threading_initialized)
+        return SCPE_OK;
+
+    /* Initialize FIFO queues */
+    r = eth_tailq_init(&dev->read_queue, 200);
+    if (r != SCPE_OK)
+        return r;
+
+    r = eth_tailq_init(&dev->write_requests, 200);
+    if (r != SCPE_OK) {
+        eth_tailq_destroy(&dev->read_queue);
+        return r;
+    }
+
+    /* Initialize mutexes and condition variables */
+    sim_mutex_init(&dev->lock);
+    sim_mutex_init(&dev->writer_lock);
+    sim_mutex_init(&dev->self_lock);
+    sim_mutex_init(&dev->startup_lock);
+    sim_cond_init(&dev->writer_cond);
+    sim_cond_init(&dev->startup_cond);
+
+    dev->threading_initialized = true;
+    dev->threads_running = false;
+
+    return SCPE_OK;
+}
+
+/* Stop threads gracefully */
+void eth_stop_threads(ETH_DEV *dev)
+{
+    if (!dev || !dev->threads_running)
+        return;
+
+    /* Signal reader thread to shutdown */
+    sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
+
+    if (dev->backend && dev->backend->reader_shutdown)
+        dev->backend->reader_shutdown(dev->backend, dev);
+
+    sim_thread_join(dev->reader_thread, NULL);
+
+    /* Signal writer thread to shutdown */
+    sim_mutex_lock(&dev->writer_lock);
+    sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
+    sim_cond_signal(&dev->writer_cond);
+    sim_mutex_unlock(&dev->writer_lock);
+
+    if (dev->backend && dev->backend->writer_shutdown)
+        dev->backend->writer_shutdown(dev->backend, dev);
+
+    sim_thread_join(dev->writer_thread, NULL);
+
+    dev->threads_running = false;
+}
+
+/* Clean up threading structures */
+void eth_destroy_threading_structures(ETH_DEV *dev)
+{
+    ETH_WRITE_REQUEST *buffer;
+
+    if (!dev || !dev->threading_initialized)
+        return;
+
+    sim_mutex_destroy(&dev->lock);
+    sim_mutex_destroy(&dev->self_lock);
+    sim_mutex_destroy(&dev->writer_lock);
+    sim_mutex_destroy(&dev->startup_lock);
+    sim_cond_destroy(&dev->writer_cond);
+    sim_cond_destroy(&dev->startup_cond);
+
+    while (NULL != (buffer = dev->write_buffers)) {
+        dev->write_buffers = buffer->next;
+        free(buffer);
+    }
+
+    eth_tailq_destroy(&dev->write_requests);
+    eth_tailq_destroy(&dev->read_queue);
+
+    dev->threading_initialized = false;
+}
+
+/* Start reader/writer threads */
 t_stat eth_start_threads(ETH_DEV *dev)
 {
     int create_status;
     const char *thread_name = "reader";
 
-    if (!dev) {
+    if (!dev)
         return SCPE_ARG;
-    }
 
-    /* Threads are already running */
-    if (dev->threading_initialized) {
+    if (dev->threads_running)
         return SCPE_OK;
-    }
 
-    /* Initialize thread synchronization */
+    if (!dev->threading_initialized)
+        return SCPE_IERR;
+
     dev->threads_ready = 0;
-    dev->threading_initialized = true;
 
-    /* Create reader thread */
     create_status = sim_thread_create(&dev->reader_thread, _eth_reader, (void *)dev);
     if (create_status == 0) {
         thread_name = "writer";
-        /* Create writer thread */
         create_status = sim_thread_create(&dev->writer_thread, _eth_writer, (void *)dev);
         if (create_status == 0) {
-            /* Wait for both threads to signal ready */
             sim_mutex_lock(&dev->startup_lock);
             while (dev->threads_ready < 2) {
                 sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
             }
             sim_mutex_unlock(&dev->startup_lock);
+
+            dev->threads_running = true;
             return SCPE_OK;
         }
     }
 
-    /* Thread creation failed - clean up */
     return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
-                        thread_name, strerror(create_status));
+                       thread_name, strerror(create_status));
 }

@@ -2,10 +2,12 @@
 
 #    if defined(HAVE_SLIRP_NETWORK)
 
+#        include <libslirp.h>
+
 #        include "sim_atomic.h"
-#        include "libslirp.h"
 #        include "poll_compat.h"
 #        include "simnetwork/eth_types.h"
+#        include "simnetwork/eth_threads.h"
 
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 // SLiRP network state and associated data structures
@@ -50,7 +52,7 @@ struct sim_slirp {
 
     char *args;
 
-#        if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     /* Access lock to libslirp. libslirp is not threaded or protected. */
     pthread_mutex_t libslirp_lock;
 
@@ -130,8 +132,7 @@ struct redir_tcp_udp {
 
 typedef struct sim_slirp sim_slirp_network;
 
-sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit, char *errbuf,
-                                  size_t errbuf_size);
+t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit);
 void sim_slirp_close(sim_slirp_network *slirp);
 int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags);
 int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout);

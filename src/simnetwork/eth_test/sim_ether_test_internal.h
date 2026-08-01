@@ -7,7 +7,6 @@
 
 #include "sim_defs.h"
 #include "simnetwork/eth_types.h"
-#include "simnetwork/eth_backends.h"
 
 /* Open a named test backend and return the backend handle to sim_ether.c. */
 t_stat eth_test_open(const char *name, eth_backend_t *backend);

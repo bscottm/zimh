@@ -41,4 +41,7 @@ int eth_test_tx_count(const char *name);
 /* Configure the status returned by future writes through a test backend. */
 t_stat eth_test_set_write_status(const char *name, int status);
 
+/* Append an Ethernet CRC in the same byte order used by the polled backend. */
+uint32_t eth_test_append_crc(uint8_t *msg, uint32_t len);
+
 #endif

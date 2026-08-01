@@ -5,7 +5,10 @@
 #    define SIM_ETH_BACKENDS_H
 
 #    include <stdint.h>
+#    include <stdbool.h>
 
+#    include "sim_defs.h"
+#    include "sim_sock.h"
 #    include "simnetwork/eth_types.h"
 
 /* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
@@ -19,28 +22,14 @@
 #    if defined(HAVE_PCAP_NETWORK)
 #        include <pcap.h>
 #        include <string.h>
-#    endif                   /* HAVE_PCAP_NETWORK */
+#    endif /* HAVE_PCAP_NETWORK */
 
-#    ifdef HAVE_TAP_NETWORK
-#        if defined(__linux) || defined(__linux__)
-#            include <sys/ioctl.h>
-#            include <net/if.h>
-#            include <linux/if_tun.h>
-#        elif defined(HAVE_BSDTUNTAP)
-#            include <sys/types.h>
-#            include <net/if_types.h>
-#            include <net/if.h>
-#        else /* We don't know how to do this on the current platform */
-#            undef HAVE_TAP_NETWORK
-#        endif
-#    endif    /* HAVE_TAP_NETWORK */
-
-#    ifdef HAVE_VDE_NETWORK
+#    if defined(HAVE_VDE_NETWORK)
 #        include <libvdeplug.h>
 #    endif /* HAVE_VDE_NETWORK */
 
-#    ifdef HAVE_SLIRP_NETWORK
-#        include "simnetwork/slirp/sim_slirp.h"
+#    if defined(HAVE_SLIRP_NETWORK)
+#        include "simnetwork/eth_slirp/sim_slirp.h"
 #    endif
 
 /* Ethernet testing backend. */
@@ -55,26 +44,30 @@ typedef struct eth_test_backend {
 /* eth_api_t movde to simnetwork/eth_types.h */
 
 /* Discriminated union for API-specific state. */
-typedef struct eth_backend_s {
+struct eth_backend_s {
     /* API being used to move packets */
     eth_api_t eth_api;
 
     /* API interface: */
 
     /* Wait for a packet's arrival at the reader. This is the poll/select point.
+     * timeout_ms:
+     *   > 0: wait up to this many milliseconds (threaded/async mode)
+     *   = 0: poll immediately, non-blocking (synchronous mode)
+     *   < 0: wait indefinitely (not recommended)
      * Returns:
      * > 0: One or more packets have arrived.
      *   0: No packet arrival, not an error.
      * < 0: Error waiting for packet arrival.
      */
-    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev);
+    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev, int timeout_ms);
     /* Read a packet and queue it for simulator device processing.
      * > 0: Packet read successfully, queued for simulator device.
      *   0: No packet read (not an error, safe to retry)
      * < 0: Error reading packet.
      */
     int (*packet_read)(struct eth_backend_s *backend, ETH_DEV *dev);
-    
+
     /* Housekeeping before invoking write_packet(), optional and may be NULL.
      * Returns true if successful, false on error.
      *
@@ -99,6 +92,8 @@ typedef struct eth_backend_s {
 
     /* Writer-side thread shutdown hook. Optional -- may be NULL. */
     void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+    
+    /* Per-backend state.*/
     union {
 #    ifdef HAVE_PCAP_NETWORK
         pcap_t *pcap;                   /* PCAP handle */
@@ -110,43 +105,44 @@ typedef struct eth_backend_s {
         sim_slirp_network *slirp;       /* SLiRP network state */
 #    endif
         ETH_TEST_BACKEND *test_backend; /* Test backend handle */
-    } state;
-} eth_backend_t;
 
-#endif
+        /* Network socket for UDP and TAP backends.*/
+        SOCKET eth_socket;
+    } state;
+};
+
+// Default socket read timeout. Note: This can be made longer, which only
+// affects how quickly the reader thread exits.
+enum {
+    ETH_READER_POLL_TMO = 500 /* ms */
+};
+
+/* Socket polling function */
+int poll_eth_socket(eth_backend_t *backend, long timeout_ms);
 
 /*--- API functions for eth_backend_t ---*/
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
-
+/* PCAP reader*/
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev);
+/* NAT (libslirp) reader */
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev);
+/* No (null) network reader */
 int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
+/* Test backend reader*/
 int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
 
 /* PCAP writer */
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
-/* TAP writer */
-int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet);
-/* VDE writer */
-int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp mutex acquisition */
 bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 /* libslirp writer */
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp mutex release */
 bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
-/* UDP writer */
-int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet);
-/* Empty/no network writer: This does nothing. Reallly. */
+/* Empty/no network writer: This does nothing. Really. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */
 int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);
@@ -154,3 +150,5 @@ int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp shutdown hooks: */
 void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev);
 void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev);
+
+#endif
