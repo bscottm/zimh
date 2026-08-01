@@ -365,9 +365,11 @@ static void ethq_item_free(sim_tailq_item_t item);
 static void eth_get_nic_hw_addr(ETH_DEV* dev, const char *devname, int set_on);
 
 static const uchar_t framer_oui[3] = { 0xaa, 0x00, 0x03 };
-       const ETH_MAC eth_mac_any         = {0, 0, 0, 0, 0, 0};
-       const ETH_MAC eth_mac_bcast       = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 #endif
+
+/* These need to be externally visible. >sigh!< */
+const ETH_MAC eth_mac_any   = {0, 0, 0, 0, 0, 0};
+const ETH_MAC eth_mac_bcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 /*============================================================================*/
 /*                  OS-independent ethernet routines                          */
@@ -600,7 +602,7 @@ void eth_setcrc(ETH_DEV* dev, int need_crc)
   dev->need_crc = need_crc;
 }
 
-static void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt, int detail, uint32_t reason)
+void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt, int detail, uint32_t reason)
 {
   if (dev->dptr->dctrl & reason) {
     char src[ETH_MAC_STRING_SIZE];
@@ -646,7 +648,7 @@ static void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const
   }
 }
 
-static void eth_packet_trace(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt)
+void eth_packet_trace(ETH_DEV* dev, const uint8_t *msg, int len, const char* txt)
 {
   eth_packet_trace_ex(dev, msg, len, txt, 0, dev->dbit);
 }
