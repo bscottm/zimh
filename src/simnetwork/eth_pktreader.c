@@ -3,6 +3,7 @@
 
 #include "sim_defs.h"
 #include "sim_ether.h"
+#include "simnetwork/eth_backends.h"
 
 /* Forward decl's: */
 static uint16_t ip_checksum(uint16_t *buffer, int size);
@@ -37,7 +38,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 
         return;
     }
-    switch (dev->backend.eth_api) {
+    switch (dev->backend->eth_api) {
     case ETH_API_PCAP:
 #ifdef USE_BPF
         bpf_used = true;

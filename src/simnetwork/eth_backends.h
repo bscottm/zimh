@@ -19,7 +19,7 @@
 #    if defined(HAVE_PCAP_NETWORK)
 #        include <pcap.h>
 #        include <string.h>
-#    endif                   /* HAVE_PCAP_NETWORK */
+#    endif /* HAVE_PCAP_NETWORK */
 
 #    ifdef HAVE_TAP_NETWORK
 #        if defined(__linux) || defined(__linux__)
@@ -55,7 +55,7 @@ typedef struct eth_test_backend {
 /* eth_api_t movde to simnetwork/eth_types.h */
 
 /* Discriminated union for API-specific state. */
-typedef struct eth_backend_s {
+struct eth_backend_s {
     /* API being used to move packets */
     eth_api_t eth_api;
 
@@ -74,7 +74,7 @@ typedef struct eth_backend_s {
      * < 0: Error reading packet.
      */
     int (*packet_read)(struct eth_backend_s *backend, ETH_DEV *dev);
-    
+
     /* Housekeeping before invoking write_packet(), optional and may be NULL.
      * Returns true if successful, false on error.
      *
@@ -110,8 +110,11 @@ typedef struct eth_backend_s {
         sim_slirp_network *slirp;       /* SLiRP network state */
 #    endif
         ETH_TEST_BACKEND *test_backend; /* Test backend handle */
+
+        /* Network socket for UDP and TAP backends.*/
+        SOCKET eth_socket;
     } state;
-} eth_backend_t;
+};
 
 #endif
 

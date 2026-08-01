@@ -7,19 +7,21 @@
 #    error "eth_threads.c MUST BE compiled with USE_READER_THREAD defined."
 #endif
 
+#include "sim_defs.h"
 #include "sim_ether.h"
 #include "sim_sock.h"
 #include "sim_threads.h"
 #include "poll_compat.h"
 
 #include "sim_ether_internal.h"
+#include "simnetwork/eth_backends.h"
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
 
 // Default socket read timeout. Note: This can be made longer, which only
 // affects how quickly the reader thread exits.
 enum {
-    ETH_READER_POLL_TMO = 250 /* ms */
+    ETH_READER_POLL_TMO = 500 /* ms */
 };
 
 #if SIM_USE_POLL
@@ -27,7 +29,8 @@ enum {
 #    if !defined(_WIN32) && !defined(_WIN64)
 #        define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
 #    else
-#        define POLL_EXTRA_EVENTS 0 // Windows rejects POLLPRI, POLLERR, POLLHUP.
+         // Windows rejects POLLPRI, POLLERR, POLLHUP.
+#        define POLL_EXTRA_EVENTS 0
 #    endif
 #endif
 
@@ -92,7 +95,7 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 /* PCAP wait implementation */
 int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
 {
-    (void) dev;
+    (void)dev;
 #if defined(_WIN32)
     /* Windows: Use event-based waiting */
     return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
@@ -107,7 +110,7 @@ int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
     (void)backend;
 
 #if defined(HAVE_TAP_NETWORK)
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
+    return wait_one_socket(backend->state.eth_socket, ETH_READER_POLL_TMO);
 #else
     return 1;
 #endif
@@ -116,7 +119,7 @@ int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
 /* VDE wait implementation */
 int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
 {
-    (void) dev;
+    (void)dev;
 
 #if defined(HAVE_VDE_NETWORK)
     return wait_one_socket(vde_datafd(backend->state.vde), ETH_READER_POLL_TMO);
@@ -128,8 +131,8 @@ int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
 /* UDP wait implementation */
 int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
-    (void) backend;
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
+    (void)backend;
+    return wait_one_socket(backend->state.eth_socket, ETH_READER_POLL_TMO);
 }
 
 /* NAT (SLiRP) wait implementation */
@@ -168,9 +171,9 @@ static bool eth_reader_error_handler(ETH_DEV *dev)
 
     /* Attempt to recover if device still attached */
 
-    if (dev->backend.eth_api == ETH_API_PCAP) {
+    if (dev->backend->eth_api == ETH_API_PCAP) {
 #if defined(HAVE_PCAP_NETWORK)
-        if (dev->backend.state.pcap != NULL) {
+        if (dev->backend->state.pcap != NULL) {
             return true; /* Retry */
         }
         /* Fall through... */
@@ -178,7 +181,7 @@ static bool eth_reader_error_handler(ETH_DEV *dev)
     } else {
         /* Not PCAP, retry if socket still valid. */
         /* FIXME: VDE, which doesn't use a socket? */
-        if (dev->fd_handle != INVALID_SOCKET) {
+        if (dev->backend->state.eth_socket != INVALID_SOCKET) {
             return true;
         }
 
@@ -208,7 +211,7 @@ THREAD_FUNC_DEFN(_eth_reader)
     sim_atomic_put(&dev->reader_status, start_status);
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
-        eth_backend_t *backend = &dev->backend;
+        eth_backend_t *backend = dev->backend;
         int status = backend->packet_wait(backend, dev);
 
         /* Packet available? */
@@ -277,7 +280,7 @@ static int eth_writer_init(ETH_DEV *dev)
 THREAD_FUNC_DEFN(_eth_writer)
 {
     ETH_DEV *dev = (ETH_DEV *)arg;
-    eth_backend_t *backend = &dev->backend;
+    eth_backend_t *backend = dev->backend;
     ETH_WRITE_REQUEST *local_freelist = NULL; /* Local accumulator for freed buffers */
 
     sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_INIT);
@@ -432,6 +435,5 @@ t_stat eth_start_threads(ETH_DEV *dev)
     }
 
     /* Thread creation failed - clean up */
-    return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
-                        thread_name, strerror(create_status));
+    return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n", thread_name, strerror(create_status));
 }

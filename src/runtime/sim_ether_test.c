@@ -187,13 +187,18 @@ t_stat eth_test_set_write_status(const char *name, int status)
 }
 
 /* Open a named test backend and return the backend handle to sim_ether.c. */
-t_stat eth_test_open(const char *name, eth_backend_t *backend)
+t_stat eth_test_open(const char *name, ETH_DEV *dev)
 {
     ETH_TEST_BACKEND *test_backend;
     t_stat status = eth_test_get_backend(name, &test_backend);
 
     if (status != SCPE_OK)
         return status;
+
+    eth_backend_t *backend;
+
+    if ((backend = (eth_backend_t *)calloc(1, sizeof(*backend))) == NULL)
+        return SCPE_MEM;
 
     backend->eth_api = ETH_API_TEST;
     backend->packet_wait = eth_wait_test;
@@ -202,6 +207,8 @@ t_stat eth_test_open(const char *name, eth_backend_t *backend)
     backend->write_packet = eth_writer_test;
     backend->after_packet_write = NULL;
     backend->state.test_backend = test_backend;
+
+    dev->backend = backend;
 
     return SCPE_OK;
 }

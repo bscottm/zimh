@@ -38,9 +38,9 @@ DEBTAB slirp_dbgtable[] = {{"POLL", 0, "Show libslirp polling callback activity"
                            {"SOCKET", 0, "Show libslirp socket registration activity"},
                            {NULL}};
 
-/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * Port redirection management:
- *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+ *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
 static int parse_redirect_port(struct redir_tcp_udp **head, const char *buff, int is_udp)
 {
@@ -132,8 +132,10 @@ static unsigned int collect_slirp_debug(const char *dbg_tokens, int *err)
             slirp_dbg |= SLIRP_DBG_VERBOSE_CALL;
         } else if (!strncasecmp(dbg_tokens, "ALL", 3)) {
             slirp_dbg |= (SLIRP_DBG_CALL | SLIRP_DBG_MISC | SLIRP_DBG_ERROR | SLIRP_DBG_VERBOSE_CALL);
-        } else
+        } else {
+            sim_messagef(SCPE_OPENERR, "Invalid SLIRP debug token: %s\n", dbg_tokens);
             *err = 1;
+        }
 #else
         // libslirp debug is not visible until 4.9. <sigh!>
         *err = 1;
@@ -169,18 +171,26 @@ static int initialize_poll_fds(sim_slirp_network *slirp);
 static slirp_ssize_t sim_slirp_receiver(const void *buf, size_t len, void *opaque);
 static void notify_callback(void *opaque);
 
-sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit, char *errbuf,
-                                  size_t errbuf_size)
+t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
 {
     sim_slirp_network *slirp = (sim_slirp_network *)calloc(1, sizeof(*slirp));
+
+    if (slirp == NULL) {
+        return sim_messagef(SCPE_MEM, "sim_slirp_open: calloc(slirp) memory allocation failure.\n");
+    }
+
     SlirpConfig *cfg = &slirp->slirp_config;
     SlirpCb *cbs = &slirp->slirp_callbacks;
 
     char *targs = strdup(args);
+
+    if (targs == NULL) {
+        return sim_messagef(SCPE_MEM, "sim_slirp_open: strdup(args) memory allocation failure.\n");
+    }
+
     const char *tptr = targs;
     const char *cptr;
     char tbuf[CBUFSIZE], gbuf[CBUFSIZE], abuf[CBUFSIZE];
-    int err;
     struct in6_addr default_ipv6_prefix, default_ipv6_gw;
 
     /* Default IPv6 address -- FIXME */
@@ -211,8 +221,11 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
     /* Version 5 config: nothing used */
 
     /* SIMH state/config */
-    slirp->args = (char *)calloc(1 + strlen(args), sizeof(char));
-    strlcpy(slirp->args, args, 1 + strlen(args));
+    slirp->args = strdup(args);
+    if (slirp->args == NULL) {
+        sim_messagef(SCPE_MEM, "sim_slirp_open: slirp->args memory allocation failure.\n");
+        goto err_cleanup;
+    }
     pthread_mutex_init(&slirp->libslirp_lock, NULL);
     pthread_cond_init(&slirp->no_sockets_cv, NULL);
     pthread_mutex_init(&slirp->no_sockets_lock, NULL);
@@ -224,8 +237,7 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
     slirp->flag_offset = sim_debtab_nelems(slirp->original_debflags);
 
     /* Parse through arguments... */
-    err = 0;
-    while (*tptr && !err) {
+    while (*tptr != '\0') {
         tptr = get_glyph_nc(tptr, tbuf, ',');
         if (!tbuf[0])
             break;
@@ -241,8 +253,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
             if (cptr != NULL && *cptr != '\0')
                 slirp->the_tftp_path = strdup(cptr);
             else {
-                strlcpy(errbuf, "Missing TFTP Path", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing TFTP Path\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -250,8 +262,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
             if (cptr && *cptr)
                 slirp->the_bootfile = strdup(cptr);
             else {
-                strlcpy(errbuf, "Missing DHCP Boot file name", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing DHCP Boot file name\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -259,8 +271,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
             if (cptr && *cptr)
                 inet_pton(AF_INET, cptr, &cfg->vnameserver);
             else {
-                strlcpy(errbuf, "Missing nameserver", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing nameserver\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -282,8 +294,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
                     }
                 } while (NULL != name && *name);
             } else {
-                strlcpy(errbuf, "Missing DNS search list", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing DNS search list\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -294,8 +306,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
                     cfg->vnetmask.s_addr = htonl(~((1 << (32 - atoi(cptr))) - 1));
                 inet_pton(AF_INET, abuf, &cfg->vhost);
             } else {
-                strlcpy(errbuf, "Missing host", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing host\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -306,8 +318,8 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
                     cfg->vnetmask.s_addr = htonl(~((1 << (32 - atoi(cptr))) - 1));
                 inet_pton(AF_INET, abuf, &cfg->vnetwork);
             } else {
-                strlcpy(errbuf, "Missing network", errbuf_size);
-                err = 1;
+                sim_messagef(SCPE_OPENERR, "Missing network\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -316,20 +328,26 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
             continue;
         }
         if (0 == MATCH_CMD(gbuf, "UDP")) {
-            if (cptr && *cptr)
-                err = parse_redirect_port(&slirp->rtcp, cptr, IS_UDP);
-            else {
-                strlcpy(errbuf, "Missing UDP port mapping", errbuf_size);
-                err = 1;
+            if (cptr && *cptr) {
+                if (parse_redirect_port(&slirp->rtcp, cptr, IS_UDP) < 0) {
+                    sim_messagef(SCPE_OPENERR, "Invalid UDP port mapping: %s\n", cptr);
+                    goto err_cleanup;
+                }
+            } else {
+                sim_messagef(SCPE_OPENERR, "Missing UDP port mapping\n");
+                goto err_cleanup;
             }
             continue;
         }
         if (0 == MATCH_CMD(gbuf, "TCP")) {
-            if (cptr && *cptr)
-                err = parse_redirect_port(&slirp->rtcp, cptr, IS_TCP);
-            else {
-                strlcpy(errbuf, "Missing TCP port mapping", errbuf_size);
-                err = 1;
+            if (cptr && *cptr) {
+                if (parse_redirect_port(&slirp->rtcp, cptr, IS_TCP) < 0) {
+                    sim_messagef(SCPE_OPENERR, "Invalid TCP port mapping: %s\n", cptr);
+                    goto err_cleanup;
+                }
+            } else {
+                sim_messagef(SCPE_OPENERR, "Missing TCP port mapping\n");
+                goto err_cleanup;
             }
             continue;
         }
@@ -343,30 +361,30 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
         }
 #if SLIRP_CONFIG_VERSION_MAX >= 6
         if (0 == MATCH_CMD(gbuf, "SLIRP")) {
+            int err = 0;
             unsigned int slirp_dbg = collect_slirp_debug(cptr, &err);
 
             if (!err) {
                 slirp_set_debug(slirp_dbg);
                 continue;
-            }
+            } else
+                goto err_cleanup;
         }
         if (0 == MATCH_CMD(gbuf, "NOSLIRP")) {
+            int err = 0;
             unsigned int slirp_dbg = collect_slirp_debug(cptr, &err);
 
             if (!err) {
                 slirp_reset_debug(slirp_dbg);
                 continue;
+            } else {
+                goto err_cleanup;
             }
         }
 #endif
-        snprintf(errbuf, errbuf_size - 1, "Unexpected NAT argument: %s", gbuf);
-        err = 1;
-    }
 
-    if (err) {
-        sim_slirp_close(slirp);
-        free(targs);
-        return NULL;
+        sim_messagef(SCPE_OPENERR, "Unexpected NAT argument: %s\n", gbuf);
+        goto err_cleanup;
     }
 
     /* Adjust the network prefix, update the guest's configuration. */
@@ -424,7 +442,30 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
     }
 
     free(targs);
-    return slirp;
+
+    eth_backend_t *backend;
+
+    if ((backend = (eth_backend_t *) calloc(1, sizeof(eth_backend_t))) == NULL) {
+        sim_slirp_close(slirp);
+        return sim_messagef(SCPE_MEM, "Eth: Unable to allocate memory for SLiRP backend\n");
+    }
+
+    backend->eth_api = ETH_API_NAT;
+    backend->packet_wait = eth_wait_nat;
+    backend->packet_read = eth_reader_nat;
+    backend->before_packet_write = before_slirp_send;
+    backend->write_packet = eth_writer_nat;
+    backend->after_packet_write = after_slirp_send;
+    backend->reader_shutdown = sim_slirp_reader_shutdown;
+    backend->writer_shutdown = sim_slirp_writer_shutdown;
+    backend->state.slirp = slirp;
+
+    return SCPE_OK;
+
+err_cleanup:
+    sim_slirp_close(slirp);
+    free(targs);
+    return SCPE_OPENERR;
 }
 
 void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev)

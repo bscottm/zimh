@@ -16,18 +16,7 @@
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_PCAP_NETWORK)
-    return pcap_sendpacket(dev->backend.state.pcap, (u_char *)packet->msg, packet->len);
-#else
-    (void)dev;
-    (void)packet;
-    return 0;
-#endif
-}
-
-int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet)
-{
-#if defined(USE_READER_THREAD) && defined(HAVE_TAP_NETWORK)
-    return (((int)packet->len == write(dev->fd_handle, (void *)packet->msg, packet->len)) ? 0 : -1);
+    return pcap_sendpacket(dev->backend->state.pcap, (u_char *)packet->msg, packet->len);
 #else
     (void)dev;
     (void)packet;
@@ -38,7 +27,7 @@ int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet)
 int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
-    int status = vde_send(dev->backend.state.vde, (void *)packet->msg, packet->len, 0);
+    int status = vde_send(dev->backend->state.vde, (void *)packet->msg, packet->len, 0);
     if ((status == (int)packet->len) || (status == 0))
         return 0;
     if ((status == -1) && ((errno == EAGAIN) || (errno == EWOULDBLOCK)))
@@ -54,7 +43,7 @@ int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet)
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
-    sim_slirp_network *slirp = dev->backend.state.slirp;
+    sim_slirp_network *slirp = dev->backend->state.slirp;
     int status;
 
     status = sim_slirp_send(slirp, (char *)packet->msg, (size_t)packet->len, 0);
@@ -69,8 +58,8 @@ int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
 
 int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet)
 {
-    return (((int32_t)packet->len == sim_write_sock(dev->fd_handle, (char *)packet->msg, (int32_t)packet->len)) ? 0
-                                                                                                                : -1);
+    int n_written = sim_write_sock(dev->backend->state.eth_socket, (char *)packet->msg, (int32_t)packet->len);
+    return (((int32_t)packet->len == n_written) ? 0 : -1);
 }
 
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet)
@@ -111,33 +100,13 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 #endif
 }
 
-int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
-{
-#if defined(USE_READER_THREAD) && defined(HAVE_TAP_NETWORK)
-    int len;
-    u_char buf[ETH_MAX_JUMBO_FRAME];
-
-    (void)backend;
-    len = read(dev->fd_handle, buf, sizeof(buf));
-    if (len > 0) {
-        eth_process_received_packet(dev, buf, len, len);
-        return 1;
-    }
-    return (len < 0) ? -1 : 0;
-#else
-    (void)backend;
-    (void)dev;
-    return 0;
-#endif
-}
-
 int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
 
-    len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
+    len = vde_recv(dev->backend->state.vde, buf, sizeof(buf), 0);
     if (len > 0) {
         eth_process_received_packet(dev, buf, len, len);
         return 1;
@@ -153,7 +122,7 @@ int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
-    sim_slirp_network *slirp = dev->backend.state.slirp;
+    sim_slirp_network *slirp = dev->backend->state.slirp;
 
     /* The mutex serializes the reader and the writer threads. */
     pthread_mutex_lock(&slirp->libslirp_lock);
@@ -178,7 +147,7 @@ int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
     u_char buf[ETH_MAX_JUMBO_FRAME];
 
     (void)backend;
-    len = (int)sim_read_sock(dev->fd_handle, (char *)buf, (int32_t)sizeof(buf));
+    len = (int)sim_read_sock(backend->state.eth_socket, (char *)buf, (int32_t)sizeof(buf));
     if (len > 0) {
         eth_process_received_packet(dev, buf, len, len);
         return 1;

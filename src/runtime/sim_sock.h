@@ -27,6 +27,7 @@
 #define SIM_SOCK_H_    1
 
 #if defined (_WIN32) || defined(_WIN64)                 /* Windows */
+// sim_defs.h should have taken care of this for us already...
 #include <winsock2.h>
 #include <winerror.h>
 

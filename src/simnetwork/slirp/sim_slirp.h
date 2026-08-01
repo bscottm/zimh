@@ -130,8 +130,7 @@ struct redir_tcp_udp {
 
 typedef struct sim_slirp sim_slirp_network;
 
-sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit, char *errbuf,
-                                  size_t errbuf_size);
+t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit);
 void sim_slirp_close(sim_slirp_network *slirp);
 int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags);
 int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout);

@@ -28,11 +28,15 @@ struct eth_packet {
     uint32_t crc_len;            /* packet length with CRC */
 };
 
+/* Ethernet item type enumeration */
+typedef enum eth_item_type_e {
+    ETH_ITM_SETUP = 0,
+    ETH_ITM_LOOPBACK = 1,
+    ETH_ITM_NORMAL = 2
+} eth_item_type_t;
+
 struct eth_item {
-    int type; /* receive (0=setup, 1=loopback, 2=normal) */
-#define ETH_ITM_SETUP 0
-#define ETH_ITM_LOOPBACK 1
-#define ETH_ITM_NORMAL 2
+    eth_item_type_t type;
     struct eth_packet packet;
 };
 
@@ -66,12 +70,16 @@ struct eth_list {
     eth_api_t eth_api;
 };
 
+/* Actual struct defined in eth_backends.h */
+typedef struct eth_backend_s eth_backend_t;
+
 typedef uint8_t ETH_MULTIHASH[8];
 typedef struct eth_packet ETH_PACK;
 typedef void (*ETH_PCALLBACK)(int status);
 typedef struct eth_list ETH_LIST;
 typedef struct eth_queue ETH_QUE;
 typedef struct eth_item ETH_ITEM;
+
 struct eth_write_request {
     struct eth_write_request *next;
     ETH_PACK packet;
