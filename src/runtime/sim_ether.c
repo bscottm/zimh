@@ -2437,7 +2437,7 @@ dev->dbit = dbit;
 if (dev->backend.eth_api == ETH_API_TEST)
   dev->reflections = 0;
 
-#if defined (USE_READER_THREAD)
+#    if defined(USE_READER_THREAD)
 if (dev->backend.eth_api != ETH_API_TEST)
 {
   int create_status;
@@ -2481,10 +2481,14 @@ if (dev->backend.eth_api != ETH_API_TEST)
     }
   if (create_status != 0) {
     SOCKET opened_fd = dev->fd_handle;
-    dev->fd_handle = 0;
+
+    /* Don't set dev->fd_handle to 0 until the threads are stopped. The reader
+       thread might start to read from stdin. */
     eth_stop_threads(dev);
     eth_destroy_thread_state(dev);
     _eth_close_port (&dev->backend, opened_fd);
+
+    dev->fd_handle = 0;
     free(dev->name);
     eth_zero(dev);
     return sim_messagef (SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
