@@ -2541,14 +2541,12 @@ return SCPE_OK;
 
 t_stat eth_close(ETH_DEV* dev)
 {
-SOCKET socket_fd;
 
 /* make sure device exists */
 if (dev == NULL) return SCPE_UNATT;
 
 /* close the device */
-socket_fd = dev->fd_handle;                   /* save handle to possibly close later */
-dev->fd_handle = 0;
+SOCKET socket_fd = dev->fd_handle;             /* save handle to possibly close later */
 dev->have_host_nic_phy_addr = 0;
 
 #if defined (USE_READER_THREAD)
@@ -2561,7 +2559,9 @@ if (dev->backend.eth_api != ETH_API_TEST) {
 _eth_close_port (&dev->backend, socket_fd);
 sim_messagef (SCPE_OK, "Eth: closed %s\n", dev->name);
 
-/* clean up the mess */
+/* clean up the mess. Defer setting dev->fd_handle = 0 to here, otherwise,
+ * the reader thread might start reading from stdin. */
+dev->fd_handle = 0;
 free(dev->name);
 free(dev->bpf_filter);
 eth_zero(dev);
