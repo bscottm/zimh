@@ -12,8 +12,9 @@
 #include <limits.h>
 
 #include "sim_defs.h"
-#include "eth_backends/slirp/sim_slirp.h"
-#include "sim_printf_fmts.h"
+#include "sim_sock.h"
+#include "simnetwork/slirp/sim_slirp.h"
+// #include "sim_printf_fmts.h"
 
 /* Forward decl's: */
 static int add_poll_callback(slirp_os_socket fd, int events, void *opaque);

@@ -14,8 +14,8 @@ add_library(simh_regexp INTERFACE)
 # WITH_NETWORK option (and if WITH_NETWORK is FALSE or not set, then simh_network should be a simple interface
 # library.)
 add_library(simh_network STATIC
-    ${SIMH_ETH_BACKENDS_ROOT}/eth_dispatch.c
-    ${SIMH_ETH_BACKENDS_ROOT}/eth_threads.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
 )
 
 target_compile_definitions(simh_network PUBLIC
@@ -31,7 +31,7 @@ target_include_directories(simh_network PRIVATE
     "${ZIMH_GENERATED_INCLUDE_DIR}"
 )
 
-## Expose the eth_backends directory as a public include:
+## Expose the simnetwork directory as a public include:
 target_include_directories(simh_network PUBLIC
     "${SIMH_SOURCE_ROOT}"
 )
@@ -196,8 +196,8 @@ if(WITH_NETWORK)
 
         if (HAVE_LIBSLIRP)
             target_sources(simh_network PRIVATE
-                ${SIMH_ETH_BACKENDS_ROOT}/slirp/sim_slirp.c
-                ${SIMH_ETH_BACKENDS_ROOT}/slirp/slirp_poll.c)
+                ${SIMH_SIMNETWORK_ROOT}/slirp/sim_slirp.c
+                ${SIMH_SIMNETWORK_ROOT}/slirp/slirp_poll.c)
         endif ()
     endif()
 

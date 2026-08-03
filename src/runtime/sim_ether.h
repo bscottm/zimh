@@ -55,11 +55,11 @@
 #endif
 
 #include "sim_defs.h"
-#include "sim_sock.h"
-#include "eth_backends/eth_backends.h"
-#include "eth_backends/eth_types.h"
+// #include "sim_sock.h"
+#include "simnetwork/eth_backends.h"
+#include "simnetwork/eth_types.h"
 #include "sim_atomic.h"
-#include "poll_compat.h"
+// #include "poll_compat.h"
 
 /* make common BSD code a bit easier to read in this file */
 /* OS/X seems to define and compile using one of these BSD types */

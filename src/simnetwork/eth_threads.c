@@ -13,8 +13,8 @@
 #include "poll_compat.h"
 
 #include "sim_ether_internal.h"
-#include "eth_backends/eth_threads.h"
-#include "eth_backends/eth_dispatch.h"
+#include "simnetwork/eth_threads.h"
+#include "simnetwork/eth_dispatch.h"
 
 // Default socket read timeout. Note: This can be made longer, which only
 // affects how quickly the reader thread exits.

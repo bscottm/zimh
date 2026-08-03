@@ -22,8 +22,8 @@
 
 #include "sim_defs.h"
 #include "sim_tailq.h"
-#include "eth_backends/eth_types.h"
-#include "eth_backends/eth_backends.h"
+#include "simnetwork/eth_types.h"
+#include "simnetwork/eth_backends.h"
 #include "sim_slirp.h"
 #include "sim_ether.h"
 #include "sim_printf_fmts.h"

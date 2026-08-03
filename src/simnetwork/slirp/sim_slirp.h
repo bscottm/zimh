@@ -2,7 +2,6 @@
 
 #    if defined(HAVE_SLIRP_NETWORK)
 
-#        include "sim_sock.h"
 #        include "sim_atomic.h"
 #        include "libslirp.h"
 #        include "poll_compat.h"

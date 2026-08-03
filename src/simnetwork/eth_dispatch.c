@@ -6,8 +6,8 @@
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_sock.h"
-#include "eth_backends/eth_backends.h"
-#include "eth_backends/eth_dispatch.h"
+#include "simnetwork/eth_backends.h"
+#include "simnetwork/eth_dispatch.h"
 
 /*============================================================================*/
 /*                         Writer Dispatch Functions                          */

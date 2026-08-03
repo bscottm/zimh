@@ -6,7 +6,7 @@
 
 #    include <stdint.h>
 
-#    include "eth_backends/eth_types.h"
+#    include "simnetwork/eth_types.h"
 
 /* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
  * This prevents redefinition errors on macOS 15.5+ where both net/bpf.h and pcap/bpf.h
@@ -48,7 +48,7 @@ typedef void *pcap_t; /* Pseudo Type to avoid compiler errors */
 #    endif /* HAVE_VDE_NETWORK */
 
 #    ifdef HAVE_SLIRP_NETWORK
-#        include "eth_backends/slirp/sim_slirp.h"
+#        include "simnetwork/slirp/sim_slirp.h"
 #    endif
 
 /* Ethernet testing backend. */

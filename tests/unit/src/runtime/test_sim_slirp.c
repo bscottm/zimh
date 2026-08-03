@@ -9,7 +9,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
-#include "eth_backends/slirp/sim_slirp.h"
+#include "simnetwork/slirp/sim_slirp.h"
 #include "sim_types.h"
 
 enum {
