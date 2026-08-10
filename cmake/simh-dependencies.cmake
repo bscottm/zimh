@@ -16,6 +16,7 @@ add_library(simh_regexp INTERFACE)
 add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
     ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_callback.c
 )
 
 target_compile_definitions(simh_network PUBLIC

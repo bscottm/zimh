@@ -48,10 +48,22 @@ struct eth_queue {
 
 typedef uint8_t ETH_MAC[6];
 
+/* Ethernet API type - designates which network backend is in use. */
+typedef enum eth_api_e {
+    ETH_API_NONE = 0, /* No API in use yet */
+    ETH_API_PCAP = 1, /* Pcap API in use */
+    ETH_API_TAP = 2,  /* tun/tap API in use */
+    ETH_API_VDE = 3,  /* VDE API in use */
+    ETH_API_UDP = 4,  /* UDP API in use */
+    ETH_API_NAT = 5,  /* NAT (SLiRP) API in use */
+    ETH_API_TEST = 6, /* test API in use */
+    ETH_API_COUNT     /* Number of API types (for array sizing) */
+} eth_api_t;
+
 struct eth_list {
     char name[ETH_DEV_NAME_MAX];
     char desc[ETH_DEV_DESC_MAX];
-    int eth_api;
+    eth_api_t eth_api;
 };
 
 typedef uint8_t ETH_MULTIHASH[8];

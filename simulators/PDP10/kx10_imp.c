@@ -2137,7 +2137,7 @@ imp_arp_update(struct imp_device *imp, in_addr_T ipaddr, ETH_MAC ethaddr, int ag
 
         if (tabptr->ipaddr != 0) {
             if (tabptr->ipaddr == ipaddr) {
-                if (0 != eth_mac_cmp(tabptr->ethaddr, ethaddr)) {
+                if (!eth_mac_equal(tabptr->ethaddr, ethaddr)) {
                     eth_copy_mac(tabptr->ethaddr, ethaddr);
                     eth_mac_fmt(ethaddr, mac_buf, sizeof(mac_buf));
                     sim_debug(DEBUG_ARP, &imp_dev,

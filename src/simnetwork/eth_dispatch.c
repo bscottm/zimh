@@ -96,7 +96,7 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
     (void)dev;
 
 #if defined(USE_READER_THREAD) && defined(HAVE_PCAP_NETWORK)
-    return pcap_dispatch(backend->state.pcap, -1, _eth_callback, (u_char *)dev);
+    return pcap_dispatch(backend->state.pcap, -1, eth_callback, (u_char *)dev);
 #else
     (void)backend;
     return 0;
@@ -114,7 +114,7 @@ int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
     len = read(dev->fd_handle, buf, sizeof(buf));
     if (len > 0) {
         header.caplen = header.len = len;
-        _eth_callback((u_char *)dev, &header, buf);
+        eth_callback((u_char *)dev, &header, buf);
         return 1;
     }
     return (len < 0) ? -1 : 0;
@@ -134,7 +134,7 @@ int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
     len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
     if (len > 0) {
         header.caplen = header.len = len;
-        _eth_callback((u_char *)dev, &header, buf);
+        eth_callback((u_char *)dev, &header, buf);
         return 1;
     }
     return (len < 0) ? -1 : 0;
@@ -177,7 +177,7 @@ int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
     len = (int)sim_read_sock(dev->fd_handle, (char *)buf, (int32_t)sizeof(buf));
     if (len > 0) {
         header.caplen = header.len = len;
-        _eth_callback((u_char *)dev, &header, buf);
+        eth_callback((u_char *)dev, &header, buf);
         return 1;
     }
     return (len < 0) ? -1 : 0;

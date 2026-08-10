@@ -13,7 +13,7 @@
 #elif defined(HAVE_PRCTL_SET_NAME)
 #    include <sys/prctl.h>
 #elif defined(HAVE_PTHREAD_SETNAME_NP_CURRENT) || defined(HAVE_PTHREAD_SET_NAME_NP) ||                                 \
-    defined(HAVE_PTHREAD_SETNAME_NP_NETBSD) || defined(HAVE_PTHREAD_SETNAME_NP_GENERIC)
+    defined(HAVE_PTHREAD_SETNAME_NP_GENERIC)
 #    include <pthread.h>
 #    if defined(HAVE_PTHREAD_SET_NAME_NP)
 #        include <pthread_np.h>

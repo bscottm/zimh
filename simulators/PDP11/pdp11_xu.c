@@ -645,8 +645,8 @@ static t_stat xu_process_loopback(CTLR* xu, ETH_PACK* pack)
      OR the Broadcast address OR to a Multicast address we're listening to
      (we may receive others if we're in promiscuous mode, but shouldn't
      respond to them) */
-  if ((0 == (pack->msg[0]&1)) &&           /* Multicast or Broadcast */
-      (0 != eth_mac_cmp(physical_address, pack->msg)))
+  if (!is_eth_groupmac(pack->msg) &&                /* Individual MAC address AND */
+      !eth_mac_equal(physical_address, pack->msg))  /* it's not our MAC address */
       return SCPE_NOFNC;
 
 
@@ -1233,7 +1233,7 @@ static int32_t xu_command(CTLR* xu)
       break;
 
     case FC_RLSA: /* read load server address */
-      if (eth_mac_cmp(xu->var->load_server, eth_mac_any)) {
+      if (!eth_mac_equal(xu->var->load_server, eth_mac_any)) {
         /* not set, use default multicast load address */
         wstatus = Map_WriteB(xu->var->pcbb + 2, 6, (const uint8_t*) mcast_load_server);
       } else {
@@ -1552,7 +1552,7 @@ static void xu_process_transmit(CTLR* xu)
 
       /* was packet self-addressed? */
       for (i=0; i<XU_FILTER_MAX; i++)
-        if (eth_mac_cmp(xu->var->write_buffer.msg, xu->var->setup.macs[i]) == 0)
+        if (eth_mac_equal(xu->var->write_buffer.msg, xu->var->setup.macs[i]))
           xu->var->txhdr[2] |= TXR_MTCH;
 
       /* tell host we transmitted a packet */
@@ -1871,7 +1871,7 @@ t_stat xu_attach(UNIT* uptr, const char* cptr)
     ETH_MAC filters[XU_FILTER_MAX + 1];
 
     for (i = 0; i < XU_FILTER_MAX; i++)
-      if (eth_mac_cmp(eth_mac_any, xu->var->setup.macs[i]))
+      if (!eth_mac_equal(eth_mac_any, xu->var->setup.macs[i]))
         eth_copy_mac (filters[count++], xu->var->setup.macs[i]);
     eth_filter (xu->var->etherface, count, filters, xu->var->setup.multicast, xu->var->setup.promiscuous);
     }

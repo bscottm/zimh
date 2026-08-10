@@ -27,6 +27,7 @@
 #ifndef SIM_TMXR_H_
 #define SIM_TMXR_H_    1
 
+#include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -36,8 +37,9 @@
 typedef struct SERPORT *SERHANDLE;
 #endif
 
-#include "sim_ether.h"
+#include "sim_defs.h"
 #include "sim_sock.h"
+#include "sim_ether.h"
 
 #define TMXR_V_VALID    15
 #define TMXR_VALID      (1 << TMXR_V_VALID)

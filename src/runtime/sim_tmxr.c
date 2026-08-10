@@ -315,6 +315,7 @@
 #include "dynstr.h"
 #include "sim_serial.h"
 #include "sim_sock.h"
+#include "sim_ether.h"
 #include "sim_timer.h"
 #include "sim_tmxr.h"
 #include "sim_tmxr_internal.h"

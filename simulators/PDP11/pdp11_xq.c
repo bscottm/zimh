@@ -1563,7 +1563,7 @@ static t_stat xq_process_setup(CTLR* xq)
   /* set ethernet filter */
   /* eth_copy_mac(filters[count++], xq->mac); */
   for (i = 0; i < XQ_FILTER_MAX; i++)
-    if (eth_mac_cmp(eth_mac_any, xq->var->setup.macs[i]))
+    if (!eth_mac_equal(eth_mac_any, xq->var->setup.macs[i]))
       eth_copy_mac(filters[count++], xq->var->setup.macs[i]);
   eth_filter (xq->var->etherface, count, filters, xq->var->setup.multicast, xq->var->setup.promiscuous);
 
@@ -2116,8 +2116,8 @@ static t_stat xq_process_loopback(CTLR* xq, ETH_PACK* pack)
      OR the Broadcast address OR to a Multicast address we're listening to
      (we may receive others if we're in promiscuous mode, but shouldn't
      respond to them) */
-  if ((0 == (pack->msg[0]&1)) &&           /* Multicast or Broadcast */
-      (0 != eth_mac_cmp(*physical_address, pack->msg)))
+  if (!is_eth_groupmac(pack->msg) &&                    /* Individual address AND */
+      !eth_mac_equal(*physical_address, pack->msg))     /* it's not our MAC */
       return SCPE_NOFNC;
 
   eth_copy_mac (&response.msg[0], &response.msg[offset+2]);
@@ -2278,7 +2278,7 @@ void xq_sw_reset(CTLR* xq)
     /* set ethernet filter */
     /* eth_copy_mac(filters[count++], xq->mac); */
     for (i = 0; i < XQ_FILTER_MAX; i++)
-      if (eth_mac_cmp(eth_mac_any, xq->var->setup.macs[i]))
+      if (!eth_mac_equal(eth_mac_any, xq->var->setup.macs[i]))
         eth_copy_mac(filters[count++], xq->var->setup.macs[i]);
     eth_filter (xq->var->etherface, count, filters, xq->var->setup.multicast, xq->var->setup.promiscuous);
     }
@@ -3046,7 +3046,7 @@ t_stat xq_attach(UNIT* uptr, const char* cptr)
       ETH_MAC filters[XQ_FILTER_MAX + 1];
 
       for (i = 0; i < XQ_FILTER_MAX; i++)
-        if (eth_mac_cmp(eth_mac_any, xq->var->setup.macs[i]))
+        if (!eth_mac_equal(eth_mac_any, xq->var->setup.macs[i]))
           eth_copy_mac(filters[count++], xq->var->setup.macs[i]);
       eth_filter (xq->var->etherface, count, filters, xq->var->setup.multicast, xq->var->setup.promiscuous);
       }

@@ -458,10 +458,9 @@ t_stat eth_mac_scan_ex (ETH_MAC mac, const char* strmac, UNIT *uptr)
       }
 
   /* final check - mac cannot be broadcast or multicast address */
-  if (!eth_mac_cmp(newmac, eth_mac_any) ||        /* broadcast */
-      !eth_mac_cmp(newmac, eth_mac_bcast) ||      /* broadcast */
-      (newmac[0] & 0x01)                          /* multicast */
-     )
+  if (eth_mac_equal(newmac, eth_mac_any) ||       /* all zeros */
+      eth_mac_equal(newmac, eth_mac_bcast) ||     /* broadcast */
+      is_eth_groupmac(newmac))                  /* multicast */
     return sim_messagef (SCPE_ARG, "Can't use Broadcast or MultiCast address as interface MAC address\n");
 
   /* new mac is OK */
@@ -562,42 +561,6 @@ uint32_t eth_crc32(uint32_t crc, const void* vbuf, size_t len)
   return(crc ^ mask);
 }
 
-#if defined (USE_NETWORK) || defined (USE_LOADED_WINPCAP)
-static int eth_get_packet_crc32_data(const uint8_t *msg, int len, uint8_t *crcdata)
-{
-  int crc_len;
-
-  if (len <= ETH_MAX_PACKET) {
-    uint32_t crc = eth_crc32(0, msg, len);                /* calculate CRC */
-    uint32_t ncrc = htonl(crc);                           /* CRC in network order */
-    int size = sizeof(ncrc);                              /* size of crc field */
-    memcpy(crcdata, &ncrc, size);                         /* append crc to packet */
-    crc_len = len + size;                                 /* set packet crc length */
-  } else {
-    crc_len = 0;                                          /* appending crc would destroy packet */
-  }
-  return crc_len;
-}
-
-#    if !defined(USE_READER_THREAD)
-/* Append Ethernet CRC bytes directly to the packet buffer used by the polled
-   receive path.  Threaded receive cannot use this helper because it queues a
-   separate copy of the packet and stores generated CRC bytes beside that copy
-   instead of modifying the callback buffer in place. */
-static int eth_add_packet_crc32(uint8_t *msg, int len)
-{
-  int crc_len;
-
-  if (len <= ETH_MAX_PACKET) {
-    crc_len = eth_get_packet_crc32_data(msg, len, &msg[len]);/* append crc to packet */
-  } else {
-    crc_len = 0;                                          /* appending crc would destroy packet */
-  }
-  return crc_len;
-}
-#    endif
-#endif
-
 void eth_setcrc(ETH_DEV* dev, int need_crc)
 {
   dev->need_crc = need_crc;
@@ -620,7 +583,7 @@ void eth_packet_trace_ex(ETH_DEV* dev, const uint8_t *msg, int len, const char* 
       static const char hex[] = "0123456789ABCDEF";
 
       for (i=same=0; i<len; i += 16) {
-        if ((i > 0) && (0 == eth_mac_cmp(&msg[i], &msg[i-16]))) {
+        if ((i > 0) && eth_mac_equal(&msg[i], &msg[i-16])) {
           ++same;
           continue;
         }
@@ -1856,9 +1819,6 @@ return 0;
 #endif
 
 /* Forward declarations */
-void
-_eth_callback(u_char* info, const struct pcap_pkthdr* header, const u_char* data);
-
 t_stat
 _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
 
@@ -1877,8 +1837,8 @@ struct pcap_pkthdr header;
 sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() received %d bytes\n", len);
 memset(&header, 0, sizeof(header));
 header.caplen = header.len = len;
-_eth_callback((u_char *)opaque, &header, buf);
-sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() delivered to _eth_callback\n");
+eth_callback((u_char *)opaque, &header, buf);
+sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() delivered to eth_callback\n");
 }
 #endif
 
@@ -2647,9 +2607,7 @@ eth_mac_fmt(mac, mac_string, sizeof(mac_string));
 sim_debug(dev->dbit, dev->dptr, "Determining Address Conflict for MAC address: %s\n", mac_string);
 
 /* 00:00:00:00:00:00 or any address with a multi-cast address is invalid */
-if (((mac[0] == 0) && (mac[1] == 0) && (mac[2] == 0) &&
-     (mac[3] == 0) && (mac[4] == 0) && (mac[5] == 0)) ||
-     (mac[0] & 1)) {
+if (eth_mac_equal(mac, eth_mac_any) || is_eth_groupmac(mac)) {
   return sim_messagef (SCPE_ARG, "%s: Invalid NIC MAC Address: %s\n", sim_dname(dev->dptr), mac_string);
   }
 
@@ -2707,7 +2665,7 @@ if (((mac[0] == 0) && (mac[1] == 0) && (mac[2] == 0) &&
    MAC/port relationship for the host NIC's physical address, so loopback
    response packets will be delivered as needed.
 
-   Code in _eth_write and _eth_callback provide the special handling to
+   Code in _eth_write and eth_callback provide the special handling to
    perform the described loopback packet adjustments, and code in
    eth_filter_hash makes sure that the loopback response packets are received.
 
@@ -2782,7 +2740,7 @@ t_stat eth_check_address_conflict (ETH_DEV* dev, const ETH_MAC mac)
 char mac_string[ETH_MAC_STRING_SIZE];
 
 eth_mac_fmt(mac, mac_string, sizeof(mac_string));
-if (0 == eth_mac_cmp (mac, dev->host_nic_phy_hw_addr))
+if (eth_mac_equal(mac, dev->host_nic_phy_hw_addr))
     return sim_messagef (SCPE_OK, "Sharing the host NIC MAC address %s may cause unexpected behavior\n", mac_string);
 return eth_check_address_conflict_ex (dev, mac, NULL, false);
 }
@@ -3027,54 +2985,15 @@ if (routine)
 return dev->write_status;
 #else
 return _eth_write(dev, packet, routine);
-#endif
-}
-
-static int
-_eth_hash_lookup(ETH_MULTIHASH hash, const u_char* data)
-{
-int key = 0x3f & (eth_crc32(0, data, 6) >> 26);
-
-key ^= 0x3f;
-return (hash[key>>3] & (1 << (key&0x7)));
-}
-
-/* Return non-BPF address filter state for a received packet. */
-static void
-eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, int *to_me,
-                         int *from_me)
-{
-    int i;
-
-    *to_me = 0;
-    *from_me = 0;
-    for (i = 0; i < dev->addr_count; i++) {
-        if (memcmp(data, dev->filter_address[i], sizeof(ETH_MAC)) == 0)
-            *to_me = 1;
-        if (memcmp(&data[sizeof(ETH_MAC)], dev->filter_address[i],
-                   sizeof(ETH_MAC)) == 0)
-            *from_me = 1;
-    }
-
-    /* all multicast mode? */
-    if (dev->all_multicast && (data[0] & 0x01))
-        *to_me = 1;
-
-    /* promiscuous mode? */
-    if (dev->promiscuous)
-        *to_me = 1;
-
-    /* AUTODIN II hash mode? */
-    if ((dev->hash_filter) && (!*to_me) && (data[0] & 0x01))
-        *to_me = _eth_hash_lookup(dev->hash, data);
+#    endif
 }
 
 /* Return whether a non-BPF receive path should deliver a packet to dev. */
-int
+bool
 eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data)
 {
-    int to_me;
-    int from_me;
+    bool to_me;
+    bool from_me;
 
     eth_packet_filter_status(dev, data, &to_me, &from_me);
     return to_me && !from_me;
@@ -3134,583 +3053,6 @@ _eth_hash_validate(tMacs, sizeof(tMacs)/sizeof(tMacs[0]), thash);
 }
 #endif
 
-/* The IP header */
-struct IPHeader {
-  uint8_t verhlen;        /* Version & Header Length in dwords */
-#define IP_HLEN(IP) (((IP)->verhlen&0xF)<<2) /* Header Length in Bytes */
-#define IP_VERSION(IP) ((((IP)->verhlen)>>4)&0xF) /* IP Version */
-  uint8_t tos;            /* Type of service */
-  uint16_t total_len;     /* Length of the packet in dwords */
-  uint16_t ident;         /* unique identifier */
-  uint16_t flags;         /* Fragmentation Flags */
-#define IP_DF_FLAG (0x4000)
-#define IP_MF_FLAG (0x2000)
-#define IP_OFFSET_MASK (0x1FFF)
-#define IP_FRAG_DF(IP) (ntohs(((IP)->flags))&IP_DF_FLAG)
-#define IP_FRAG_MF(IP) (ntohs(((IP)->flags))&IP_MF_FLAG)
-#define IP_FRAG_OFFSET(IP) (ntohs(((IP)->flags))&IP_OFFSET_MASK)
-  uint8_t ttl;            /* Time to live */
-  uint8_t proto;          /* Protocol number (TCP, UDP etc) */
-  uint16_t checksum;      /* IP checksum */
-  uint32_t source_ip;     /* Source Address */
-  uint32_t dest_ip;       /* Destination Address */
-  };
-
-/* ICMP header */
-struct ICMPHeader {
-  uint8_t type;        /* ICMP packet type */
-  uint8_t code;        /* Type sub code */
-  uint16_t checksum;   /* ICMP Checksum */
-  uint32_t otherstuff[1];/* optional data */
-  };
-
-struct UDPHeader {
-  uint16_t source_port;
-  uint16_t dest_port;
-  uint16_t length;    /* The length of the entire UDP datagram, including both header and Data fields. */
-  uint16_t checksum;
-  };
-
-struct TCPHeader {
-  uint16_t source_port;
-  uint16_t dest_port;
-  uint32_t sequence_number;
-  uint32_t acknowledgement_number;
-  uint16_t data_offset_and_flags;
-#define TCP_DATA_OFFSET(TCP) ((ntohs((TCP)->data_offset_and_flags)>>12)<<2)
-#define TCP_CWR_FLAG (0x80)
-#define TCP_ECR_FLAG (0x40)
-#define TCP_URG_FLAG (0x20)
-#define TCP_ACK_FLAG (0x10)
-#define TCP_PSH_FLAG (0x08)
-#define TCP_RST_FLAG (0x04)
-#define TCP_SYN_FLAG (0x02)
-#define TCP_FIN_FLAG (0x01)
-#define TCP_FLAGS_MASK (0xFFF)
-  uint16_t window;
-  uint16_t checksum;
-  uint16_t urgent;
-  uint16_t otherstuff[1]; /* The rest of the packet */
-  };
-
-#ifndef IPPROTO_TCP
-#define IPPROTO_TCP             6               /* tcp */
-#endif
-#ifndef IPPROTO_UDP
-#define IPPROTO_UDP             17              /* user datagram protocol */
-#endif
-#ifndef IPPROTO_ICMP
-#define IPPROTO_ICMP            1               /* control message protocol */
-#endif
-
-static uint16_t
-ip_checksum(uint16_t *buffer, int size)
-{
-unsigned long cksum = 0;
-
-/* Sum all the words together, adding the final byte if size is odd  */
-while (size > 1) {
-  cksum += *buffer++;
-  size -= sizeof(*buffer);
-}
-if (size) {
-  uint16_t endword;
-  uint8_t *endbytes = (uint8_t *)&endword;
-
-  endbytes[0] = *((uint8_t *)buffer);
-  endbytes[1] = 0;
-  cksum += endword;
-  }
-
-/* Do a little shuffling  */
-cksum = (cksum >> 16) + (cksum & 0xffff);
-cksum += (cksum >> 16);
-
-/* Return the bitwise complement of the resulting mishmash  */
-return (uint16_t)(~cksum);
-}
-
-/*
- * src_addr and dest_addr are presented in network byte order
- */
-
-static uint16_t
-pseudo_checksum(uint16_t len, uint16_t proto, void *nsrc_addr, void *ndest_addr, uint8_t *buff)
-{
-uint32_t sum;
-uint16_t *src_addr = (uint16_t *)nsrc_addr;
-uint16_t *dest_addr = (uint16_t *)ndest_addr;
-
-/* Sum the data first */
-sum = 0xffff&(~ip_checksum((uint16_t *)buff, len));
-
-/* add the pseudo header which contains the IP source and
-   destination addresses already in network byte order */
-sum += src_addr[0];
-sum += src_addr[1];
-sum += dest_addr[0];
-sum += dest_addr[1];
-/* and the protocol number and the length of the UDP packet */
-sum = sum + htons(proto) + htons(len);
-
-/* Do a little shuffling  */
-sum = (sum >> 16) + (sum & 0xffff);
-sum += (sum >> 16);
-
-/* Return the bitwise complement of the resulting mishmash  */
-return (uint16_t)(~sum);
-}
-
-static void
-_eth_fix_ip_jumbo_offload(ETH_DEV* dev, u_char* msg, int len)
-{
-const unsigned short* proto = (const unsigned short*) &msg[12];
-struct IPHeader *IP;
-struct TCPHeader *TCP = NULL;
-struct UDPHeader *UDP;
-struct ICMPHeader *ICMP;
-uint16_t orig_checksum;
-uint16_t payload_len;
-uint16_t mtu_payload;
-uint16_t ip_flags;
-uint16_t frag_offset;
-struct pcap_pkthdr header;
-uint16_t orig_tcp_flags;
-
-/* Only interested in IP frames */
-if (ntohs(*proto) != 0x0800) {
-  ++dev->jumbo_dropped; /* Non IP Frames are dropped */
-  return;
-  }
-IP = (struct IPHeader *)&msg[14];
-if (IP_VERSION(IP) != 4) {
-  ++dev->jumbo_dropped; /* Non IPv4 jumbo frames are dropped */
-  return;
-  }
-if ((IP_HLEN(IP) > len) || (ntohs(IP->total_len) > len)) {
-  ++dev->jumbo_dropped; /* Bogus header length frames are dropped */
-  return;
-  }
-if (IP_FRAG_OFFSET(IP) || IP_FRAG_MF(IP)) {
-  ++dev->jumbo_dropped; /* Previously fragmented, but currently jumbo sized frames are dropped */
-  return;
-  }
-switch (IP->proto) {
-  case IPPROTO_UDP:
-    UDP = (struct UDPHeader *)(((char *)IP)+IP_HLEN(IP));
-    if (ntohs(UDP->length) > (len-IP_HLEN(IP))) {
-      ++dev->jumbo_dropped; /* Bogus UDP packet length (packet contained length exceeds packet size) frames are dropped */
-      return;
-      }
-    if (UDP->checksum == 0)
-      break; /* UDP Checksums are disabled */
-    orig_checksum = UDP->checksum;
-    UDP->checksum = 0;
-    UDP->checksum = pseudo_checksum(ntohs(UDP->length), IPPROTO_UDP, &IP->source_ip, &IP->dest_ip, (uint8_t *)UDP);
-    if (orig_checksum != UDP->checksum)
-      eth_packet_trace (dev, msg, len, "reading jumbo UDP header Checksum Fixed");
-    break;
-  case IPPROTO_ICMP:
-    ICMP = (struct ICMPHeader *)(((char *)IP)+IP_HLEN(IP));
-    orig_checksum = ICMP->checksum;
-    ICMP->checksum = 0;
-    ICMP->checksum = ip_checksum((uint16_t *)ICMP, ntohs(IP->total_len)-IP_HLEN(IP));
-    if (orig_checksum != ICMP->checksum)
-      eth_packet_trace (dev, msg, len, "reading jumbo ICMP header Checksum Fixed");
-    break;
-  case IPPROTO_TCP:
-    TCP = (struct TCPHeader *)(((char *)IP)+IP_HLEN(IP));
-    if ((TCP_DATA_OFFSET(TCP) > (len-IP_HLEN(IP))) || (TCP_DATA_OFFSET(TCP) < 20)) {
-      ++dev->jumbo_dropped; /* Bogus TCP packet header length (packet contained length exceeds packet size) frames are dropped */
-      return;
-      }
-    /* We don't do anything with the TCP checksum since we're going to resegment the TCP data below */
-    break;
-  default:
-    ++dev->jumbo_dropped; /* We only handle UDP, ICMP and TCP jumbo frames others are dropped */
-    return;
-  }
-/* Reasonable Checksums are now in the jumbo packet, but we've got to actually */
-/* deliver ONLY standard sized ethernet frames.  Our job here is to now act as */
-/* a router might have to and fragment these IPv4 frames as they are delivered */
-/* into the virtual NIC. We do this by walking down the packet and dispatching */
-/* a chunk at a time recomputing an appropriate header for each chunk. For */
-/* datagram oriented protocols (UDP and ICMP) this is done by simple packet */
-/* fragmentation.  For TCP this is done by breaking large packets into separate */
-/* TCP packets. */
-memset(&header, 0, sizeof(header));
-switch (IP->proto) {
-  case IPPROTO_UDP:
-  case IPPROTO_ICMP:
-    ++dev->jumbo_fragmented;
-    /* When we're performing LSO (Large Send Offload), we're given a
-       'template' header which may not include a value being populated
-       in the IP header length (which is only 16 bits).
-       We process as payload everything which isn't known header data. */
-    payload_len = (uint16_t)(len - (14 + IP_HLEN(IP)));
-    mtu_payload = ETH_MIN_JUMBO_FRAME - (14 + IP_HLEN(IP));
-    frag_offset = 0;
-    while (payload_len > 0) {
-      ip_flags = frag_offset;
-      if (payload_len > mtu_payload) {
-        ip_flags |= IP_MF_FLAG;
-        IP->total_len = htons(((mtu_payload>>3)<<3) + IP_HLEN(IP));
-        }
-      else {
-        IP->total_len = htons(payload_len + IP_HLEN(IP));
-        }
-      IP->flags = htons(ip_flags);
-      IP->checksum = 0;
-      IP->checksum = ip_checksum((uint16_t *)IP, IP_HLEN(IP));
-      header.caplen = header.len = 14 + ntohs(IP->total_len);
-      eth_packet_trace (dev, ((u_char *)IP)-14, header.len, "reading Datagram fragment");
-#if ETH_MIN_JUMBO_FRAME < ETH_MAX_PACKET
-      {
-        /* Debugging is easier if we read packets directly with pcap
-           (i.e. we can use Wireshark to verify packet contents)
-           we don't want to do this all the time for 2 reasons:
-             1) sending through pcap involves kernel transitions and
-             2) if the current system reflects sent packets, the
-                receiving side will receive and process 2 copies of
-                any packets sent this way. */
-        ETH_PACK pkt;
-
-        memset(&pkt, 0, sizeof(pkt));
-        memcpy(pkt.msg, ((u_char *)IP)-14, header.len);
-        pkt.len = header.len;
-        _eth_write(dev, &pkt, NULL);
-        }
-#else
-      _eth_callback((u_char *)dev, &header, ((u_char *)IP)-14);
-#endif
-      payload_len -= (ntohs(IP->total_len) - IP_HLEN(IP));
-      frag_offset += (ntohs(IP->total_len) - IP_HLEN(IP))>>3;
-      if (payload_len > 0) {
-        /* Move the MAC and IP headers down to just prior to the next payload segment */
-        memcpy(((u_char *)IP) + ntohs(IP->total_len) - (14 + IP_HLEN(IP)), ((u_char *)IP) - 14, 14 + IP_HLEN(IP));
-        IP = (struct IPHeader *)(((u_char *)IP) + ntohs(IP->total_len) - IP_HLEN(IP));
-        }
-      }
-    break;
-  case IPPROTO_TCP:
-    ++dev->jumbo_fragmented;
-    eth_packet_trace_ex (dev, ((u_char *)IP)-14, len, "Fragmenting Jumbo TCP segment", 1, dev->dbit);
-    TCP = (struct TCPHeader *)(((char *)IP)+IP_HLEN(IP));
-    orig_tcp_flags = ntohs(TCP->data_offset_and_flags);
-    /* When we're performing LSO (Large Send Offload), we're given a
-       'template' header which may not include a value being populated
-       in the IP header length (which is only 16 bits).
-       We process as payload everything which isn't known header data. */
-    payload_len = (uint16_t)(len - (14 + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP)));
-    mtu_payload = ETH_MIN_JUMBO_FRAME - (14 + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP));
-    while (payload_len > 0) {
-      if (payload_len > mtu_payload) {
-        TCP->data_offset_and_flags = htons(orig_tcp_flags&~(TCP_PSH_FLAG|TCP_FIN_FLAG|TCP_RST_FLAG));
-        IP->total_len = htons(mtu_payload + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP));
-        }
-      else {
-        TCP->data_offset_and_flags = htons(orig_tcp_flags);
-        IP->total_len = htons(payload_len + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP));
-        }
-      IP->checksum = 0;
-      IP->checksum = ip_checksum((uint16_t *)IP, IP_HLEN(IP));
-      TCP->checksum = 0;
-      TCP->checksum = pseudo_checksum(ntohs(IP->total_len)-IP_HLEN(IP), IPPROTO_TCP, &IP->source_ip, &IP->dest_ip, (uint8_t *)TCP);
-      header.caplen = header.len = 14 + ntohs(IP->total_len);
-      eth_packet_trace_ex (dev, ((u_char *)IP)-14, header.len, "reading TCP segment", 1, dev->dbit);
-#if ETH_MIN_JUMBO_FRAME < ETH_MAX_PACKET
-      {
-        /* Debugging is easier if we read packets directly with pcap
-           (i.e. we can use Wireshark to verify packet contents)
-           we don't want to do this all the time for 2 reasons:
-             1) sending through pcap involves kernel transitions and
-             2) if the current system reflects sent packets, the
-                receiving side will receive and process 2 copies of
-                any packets sent this way. */
-        ETH_PACK pkt;
-
-        memset(&pkt, 0, sizeof(pkt));
-        memcpy(pkt.msg, ((u_char *)IP)-14, header.len);
-        pkt.len = header.len;
-        _eth_write(dev, &pkt, NULL);
-        }
-#else
-      _eth_callback((u_char *)dev, &header, ((u_char *)IP)-14);
-#endif
-      payload_len -= (ntohs(IP->total_len) - (IP_HLEN(IP) + TCP_DATA_OFFSET(TCP)));
-      if (payload_len > 0) {
-        /* Move the MAC, IP and TCP headers down to just prior to the next payload segment */
-        memcpy(((u_char *)IP) + ntohs(IP->total_len) - (14 + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP)), ((u_char *)IP) - 14, 14 + IP_HLEN(IP) + TCP_DATA_OFFSET(TCP));
-        IP = (struct IPHeader *)(((u_char *)IP) + ntohs(IP->total_len) - (IP_HLEN(IP) + TCP_DATA_OFFSET(TCP)));
-        TCP = (struct TCPHeader *)(((char *)IP)+IP_HLEN(IP));
-        TCP->sequence_number = htonl(mtu_payload + ntohl(TCP->sequence_number));
-        }
-      }
-    break;
-  }
-}
-
-static void
-_eth_fix_ip_xsum_offload(ETH_DEV* dev, const u_char* msg, int len)
-{
-const unsigned short* proto = (const unsigned short*) &msg[12];
-struct IPHeader *IP;
-struct TCPHeader *TCP;
-struct UDPHeader *UDP;
-struct ICMPHeader *ICMP;
-uint16_t orig_checksum;
-
-/* Only need to process locally originated packets */
-if ((!dev->have_host_nic_phy_addr) || (memcmp(msg+6, dev->host_nic_phy_hw_addr, 6)))
-  return;
-/* Only interested in IP frames */
-if (ntohs(*proto) != 0x0800)
-  return;
-IP = (struct IPHeader *)&msg[14];
-if (IP_VERSION(IP) != 4)
-  return; /* Only interested in IPv4 frames */
-if ((IP_HLEN(IP) > len) || (ntohs(IP->total_len) > len))
-  return; /* Bogus header length */
-orig_checksum = IP->checksum;
-IP->checksum = 0;
-IP->checksum = ip_checksum((uint16_t *)IP, IP_HLEN(IP));
-if (orig_checksum != IP->checksum)
-  eth_packet_trace (dev, msg, len, "reading IP header Checksum Fixed");
-if (IP_FRAG_OFFSET(IP) || IP_FRAG_MF(IP))
-  return; /* Insufficient data to compute payload checksum */
-switch (IP->proto) {
-  case IPPROTO_UDP:
-    UDP = (struct UDPHeader *)(((char *)IP)+IP_HLEN(IP));
-    if (ntohs(UDP->length) > (len-IP_HLEN(IP)))
-      return; /* packet contained length exceeds packet size */
-    if (UDP->checksum == 0)
-      return; /* UDP Checksums are disabled */
-    orig_checksum = UDP->checksum;
-    UDP->checksum = 0;
-    UDP->checksum = pseudo_checksum(ntohs(UDP->length), IPPROTO_UDP, &IP->source_ip, &IP->dest_ip, (uint8_t *)UDP);
-    if (orig_checksum != UDP->checksum)
-      eth_packet_trace (dev, msg, len, "reading UDP header Checksum Fixed");
-    break;
-  case IPPROTO_TCP:
-    TCP = (struct TCPHeader *)(((char *)IP)+IP_HLEN(IP));
-    orig_checksum = TCP->checksum;
-    TCP->checksum = 0;
-    TCP->checksum = pseudo_checksum(ntohs(IP->total_len)-IP_HLEN(IP), IPPROTO_TCP, &IP->source_ip, &IP->dest_ip, (uint8_t *)TCP);
-    if (orig_checksum != TCP->checksum)
-      eth_packet_trace (dev, msg, len, "reading TCP header Checksum Fixed");
-    break;
-  case IPPROTO_ICMP:
-    ICMP = (struct ICMPHeader *)(((char *)IP)+IP_HLEN(IP));
-    orig_checksum = ICMP->checksum;
-    ICMP->checksum = 0;
-    ICMP->checksum = ip_checksum((uint16_t *)ICMP, ntohs(IP->total_len)-IP_HLEN(IP));
-    if (orig_checksum != ICMP->checksum)
-      eth_packet_trace (dev, msg, len, "reading ICMP header Checksum Fixed");
-    break;
-  }
-}
-
-static int
-_eth_process_loopback (ETH_DEV* dev, const u_char* data, uint32_t len)
-{
-int protocol = data[12] | (data[13] << 8);
-ETH_PACK  response;
-uint32_t offset, function;
-
-if (protocol != 0x0090)     /* !ethernet loopback */
-  return 0;
-
-if (LOOPBACK_REFLECTION_TEST_PACKET(dev, data))
-  return 0;                 /* Ignore reflection check packet */
-
-offset   = 16 + (data[14] | (data[15] << 8));
-if (offset >= len)
-  return 0;
-function = data[offset] | (data[offset+1] << 8);
-
-if (function != 2) /*forward*/
-  return 0;
-
-/* The only packets we should be responding to are ones which
-   we received due to them being directed to our physical MAC address,
-   OR the Broadcast address OR to a Multicast address we're listening to
-   (we may receive others if we're in promiscuous mode, but shouldn't
-   respond to them) */
-if ((0 == (data[0]&1)) &&           /* Multicast or Broadcast */
-    (0 != eth_mac_cmp(dev->filter_address[0], data)))
-  return 0;
-
-/* Attempts to forward to multicast or broadcast addresses are explicitly
-   ignored by consuming the packet and doing nothing else */
-if (data[offset+2]&1)
-  return 1;
-
-eth_packet_trace (dev, data, len, "rcvd");
-
-sim_debug(dev->dbit, dev->dptr, "_eth_process_loopback()\n");
-
-/* create forward response packet */
-memset(&response, 0, sizeof(response));
-response.len = len;
-memcpy(response.msg, data, len);
-eth_copy_mac(&response.msg[0], &response.msg[offset+2]);
-eth_copy_mac(&response.msg[6], dev->filter_address[0]);
-offset += 8 - 16; /* Account for the Ethernet Header and Offset value in this number  */
-response.msg[14] = offset & 0xFF;
-response.msg[15] = (offset >> 8) & 0xFF;
-
-/* send response packet */
-eth_write(dev, &response, NULL);
-
-eth_packet_trace(dev, response.msg, response.len, "loopbackforward");
-
-++dev->loopback_packets_processed;
-
-return 1;
-}
-
-void
-_eth_callback(u_char* info, const struct pcap_pkthdr* header, const u_char* data)
-{
-ETH_DEV*  dev = (ETH_DEV*) info;
-int to_me;
-int from_me = 0;
-int bpf_used;
-
-if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
-  u_char *datacopy = (u_char *)malloc(header->len);
-
-  /* Since we changed the outgoing loopback packet to have the physical MAC address of the
-     host's interface instead of the programmatically set physical address of this pseudo
-     device, we restore parts of the modified packet back as needed */
-  memcpy(datacopy, data, header->len);
-  eth_copy_mac(datacopy, dev->physical_addr);
-  eth_copy_mac(datacopy+18, dev->physical_addr);
-  _eth_callback(info, header, datacopy);
-  free(datacopy);
-  return;
-}
-switch (dev->backend.eth_api) {
-  case ETH_API_PCAP:
-#ifdef USE_BPF
-    bpf_used = 1;
-    to_me = 1;
-    /* AUTODIN II hash mode? */
-    if ((dev->hash_filter) && (data[0] & 0x01) && (!dev->promiscuous) && (!dev->all_multicast))
-      to_me = _eth_hash_lookup(dev->hash, data);
-    break;
-#endif /* USE_BPF */
-  case ETH_API_TAP:
-  case ETH_API_VDE:
-  case ETH_API_UDP:
-  case ETH_API_NAT:
-    bpf_used = 0;
-    eth_packet_trace (dev, data, header->len, "received");
-    eth_packet_filter_status(dev, data, &to_me, &from_me);
-    break;
-  default:
-    bpf_used = to_me = 0;                           /* Should NEVER happen */
-    abort();
-    break;
-  }
-
-/* detect reception of loopback packet to our physical address */
-if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) ||
-    (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
-#ifdef USE_READER_THREAD
-  sim_mutex_lock (&dev->self_lock);
-#endif
-  dev->loopback_self_rcvd_total++;
-  /* lower reflection count - if already zero, pass it on */
-  if (dev->loopback_self_sent > 0) {
-    eth_packet_trace (dev, data, header->len, "ignored");
-    dev->loopback_self_sent--;
-    to_me = 0;
-    }
-  else
-    if (!bpf_used)
-      from_me = 0;
-#ifdef USE_READER_THREAD
-  sim_mutex_unlock (&dev->self_lock);
-#endif
-  }
-
-if (bpf_used ? to_me : (to_me && !from_me)) {
-  if (header->len > ETH_MIN_JUMBO_FRAME) {
-    if (header->len <= header->caplen) {/* Whole Frame captured? */
-      u_char *datacopy = (u_char *)malloc(header->len);
-      memcpy(datacopy, data, header->len);
-      _eth_fix_ip_jumbo_offload(dev, datacopy, header->len);
-      free(datacopy);
-      }
-    else
-      ++dev->jumbo_truncated;
-    return;
-    }
-  if (_eth_process_loopback(dev, data, header->len))
-    return;
-#if defined (USE_READER_THREAD)
-  {
-    int crc_len = 0;
-    uint8_t crc_data[4] = { 0, 0, 0, 0 };
-    uint32_t len = header->len;
-    u_char *moved_data = NULL;
-
-    if (header->len < ETH_MIN_PACKET) {   /* Pad runt packets before CRC append */
-      moved_data = (u_char *)malloc(ETH_MIN_PACKET);
-      memcpy(moved_data, data, len);
-      memset(moved_data + len, 0, ETH_MIN_PACKET-len);
-      len = ETH_MIN_PACKET;
-      data = moved_data;
-      }
-
-    /* If necessary, fix IP header checksums for packets originated locally */
-    /* but were presumed to be traversing a NIC which was going to handle that task */
-    /* This must be done before any needed CRC calculation */
-    _eth_fix_ip_xsum_offload(dev, (const u_char*)data, len);
-
-    if (dev->need_crc)
-      crc_len = eth_get_packet_crc32_data(data, len, crc_data);
-
-    eth_packet_trace (dev, data, len, "rcvqd");
-
-    /* Lock-free enqueue - sim_tailq_t is SPSC safe */
-    eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, len, crc_len, crc_data, 0);
-    ++dev->packets_received;
-    free(moved_data);
-    }
-#else /* !USE_READER_THREAD */
-  /* set data in passed read packet */
-  dev->read_packet->len = header->len;
-  memcpy(dev->read_packet->msg, data, header->len);
-  /* Handle runt case and pad with zeros.  */
-  /* The real NIC won't hand us runts from the wire, BUT we may be getting */
-  /* some packets looped back before they actually traverse the wire */
-  /* (by an internal bridge device for instance) */
-  if (header->len < ETH_MIN_PACKET) {
-    memset(&dev->read_packet->msg[header->len], 0, ETH_MIN_PACKET-header->len);
-    dev->read_packet->len = ETH_MIN_PACKET;
-    }
-  /* If necessary, fix IP header checksums for packets originated by the local host */
-  /* but were presumed to be traversing a NIC which was going to handle that task */
-  /* This must be done before any needed CRC calculation */
-  _eth_fix_ip_xsum_offload(dev, dev->read_packet->msg, dev->read_packet->len);
-  if (dev->need_crc)
-    dev->read_packet->crc_len = eth_add_packet_crc32(dev->read_packet->msg, dev->read_packet->len);
-  else
-    dev->read_packet->crc_len = 0;
-
-  eth_packet_trace (dev, dev->read_packet->msg, dev->read_packet->len, "reading");
-
-  ++dev->packets_received;
-
-  /* call optional read callback function */
-  if (dev->read_callback)
-    (dev->read_callback)(0);
-#    endif
-  }
-}
-
 int eth_read(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 {
 int status;
@@ -3738,13 +3080,13 @@ do {
 
   switch (dev->backend.eth_api) {
     case ETH_API_PCAP:
-#ifdef HAVE_PCAP_NETWORK
-      status = pcap_dispatch(dev->backend.state.pcap, 1, &_eth_callback, (u_char*)dev);
-#endif
+#        ifdef HAVE_PCAP_NETWORK
+      status = pcap_dispatch(dev->backend.state.pcap, 1, &eth_callback, (u_char*)dev);
+#        endif
       break;
 
     case ETH_API_TAP:
-#ifdef HAVE_TAP_NETWORK
+#        ifdef HAVE_TAP_NETWORK
       {
         struct pcap_pkthdr header;
         int len;
@@ -3755,7 +3097,7 @@ do {
         if (len > 0) {
           status = 1;
           header.caplen = header.len = len;
-          _eth_callback((u_char *)dev, &header, buf);
+          eth_callback((u_char *)dev, &header, buf);
           }
         else {
           if (len < 0)
@@ -3764,18 +3106,18 @@ do {
             status = 0;
           }
         }
-#endif /* HAVE_TAP_NETWORK */
+#        endif /* HAVE_TAP_NETWORK */
       break;
 
     case ETH_API_NAT:
-#ifdef HAVE_SLIRP_NETWORK
+#        ifdef HAVE_SLIRP_NETWORK
       status = -1;
       sim_messagef(SCPE_IERR, "USE_READER_THREAD must be defined to use the SLIRP network API");
-#endif /* HAVE_SLIRP_NETWORK */
+#        endif /* HAVE_SLIRP_NETWORK */
       break;
 
     case ETH_API_VDE:
-#ifdef HAVE_VDE_NETWORK
+#        ifdef HAVE_VDE_NETWORK
       {
         struct pcap_pkthdr header;
         int len;
@@ -3786,7 +3128,7 @@ do {
         if (len > 0) {
           status = 1;
           header.caplen = header.len = len;
-          _eth_callback((u_char *)dev, &header, buf);
+          eth_callback((u_char *)dev, &header, buf);
           }
         else {
           if (len < 0)
@@ -3795,7 +3137,7 @@ do {
             status = 0;
           }
         }
-#endif /* HAVE_VDE_NETWORK */
+#        endif /* HAVE_VDE_NETWORK */
       break;
 
     case ETH_API_UDP:
@@ -3809,7 +3151,7 @@ do {
         if (len > 0) {
           status = 1;
           header.caplen = header.len = len;
-          _eth_callback((u_char *)dev, &header, buf);
+          eth_callback((u_char *)dev, &header, buf);
           }
         else {
           if (len < 0)
@@ -3832,7 +3174,7 @@ if (status < 0) {
   _eth_error (dev, "eth_reader");
   }
 
-#else /* USE_READER_THREAD */
+#    else      /* USE_READER_THREAD */
 
   status = 0;
   /* Lock-free dequeue - sim_tailq_t is SPSC safe */
@@ -3849,7 +3191,7 @@ if (status < 0) {
   }
   if ((status) && (routine))
     routine(0);
-#endif
+#    endif
 
 return status;
 }
@@ -3899,7 +3241,7 @@ if ((addr_count > 0) && (reflections > 0)) {
   buf2_offset = strlen(buf);
   buf2 = &buf[buf2_offset];
   for (i = 0; i < addr_count; i++) {
-    if (filter_address[i][0] & 0x01) continue; /* skip multicast addresses */
+    if (is_eth_groupmac(filter_address[i])) continue; /* skip multicast addresses */
     eth_mac_fmt(filter_address[i], mac, sizeof(mac));
     if (!strstr(buf2, mac))   /* only process each address once */
       strlappendf(buf2, buf_size - buf2_offset, "%s(ether src %s)", (*buf2) ? " or " : "", mac);
@@ -3916,7 +3258,7 @@ if (strlen(buf) > 0)
 /* Preserve packets whose source and destination match the interface's
    physical address so that address-conflict probes are still visible to the
    simulator even when the host reflects locally transmitted traffic. Both
-   eth_write() and _eth_callback() cooperate using loopback_self_sent to
+   eth_write() and eth_callback() cooperate using loopback_self_sent to
    distinguish reflected self-traffic from packets sent by another host with
    the same address. */
 /* check for physical address in filters */
@@ -3960,9 +3302,9 @@ int i;
 char buf[116+66*ETH_FILTER_MAX];
 char mac[20];
 t_stat status;
-#ifdef USE_BPF
+#    ifdef USE_BPF
 struct bpf_program bpf;
-#endif
+#    endif
 
 /* make sure device exists */
 if (dev == NULL) return SCPE_UNATT;
@@ -4017,15 +3359,15 @@ if (dev->dptr->dctrl & dev->dbit) {
     sim_debug(dev->dbit, dev->dptr, "Promiscuous\n");
     }
   }
-#ifdef USE_READER_THREAD
+#    ifdef USE_READER_THREAD
   sim_mutex_lock (&dev->self_lock);
-#endif
+#    endif
 /* Set the desired physical address */
 memset(dev->physical_addr, 0, sizeof(ETH_MAC));
 dev->loopback_self_sent = 0;
 /* Find desired physical address in filters */
 for (i = 0; i < addr_count; i++) {
-  if (dev->filter_address[i][0]&1)
+  if (is_eth_groupmac(dev->filter_address[i]))
     continue;  /* skip all multicast addresses */
   eth_mac_fmt(dev->filter_address[i], mac, sizeof(mac));
   if (strcmp(mac, "00:00:00:00:00:00") != 0) {
@@ -4033,9 +3375,9 @@ for (i = 0; i < addr_count; i++) {
     break;
     }
   }
-#ifdef USE_READER_THREAD
+#    ifdef USE_READER_THREAD
   sim_mutex_unlock (&dev->self_lock);
-#endif
+#    endif
 
 /* setup BPF filters and other fields to minimize packet delivery */
 eth_bpf_filter (dev, dev->addr_count, dev->filter_address,
@@ -4048,7 +3390,7 @@ eth_bpf_filter (dev, dev->addr_count, dev->filter_address,
    in our case isn't actually interesting since the filters we generate
    aren't referencing IP fields, networks or values */
 
-#ifdef USE_BPF
+#    ifdef USE_BPF
 if (dev->backend.eth_api == ETH_API_PCAP) {
   char errbuf[PCAP_ERRBUF_SIZE];
   bpf_u_int32  bpf_subnet, bpf_netmask;
@@ -4099,19 +3441,19 @@ if (dev->backend.eth_api == ETH_API_PCAP) {
         }
       free(dev->bpf_filter);
       dev->bpf_filter = bpf_filter;
-#ifdef USE_SETNONBLOCK
+#        ifdef USE_SETNONBLOCK
       /* set file non-blocking */
       status = pcap_setnonblock (dev->backend.state.pcap, 1, errbuf);
-#endif /* USE_SETNONBLOCK */
+#        endif /* USE_SETNONBLOCK */
       }
     pcap_freecode(&bpf);
     }
-#ifdef USE_READER_THREAD
+#        ifdef USE_READER_THREAD
   /* Lock-free queue clear */
   eth_tailq_clear (&dev->read_queue); /* Empty FIFO Queue when filter list changes */
-#endif
+#        endif
   }
-#endif /* USE_BPF */
+#    endif     /* USE_BPF */
 
 return SCPE_OK;
 }
@@ -4151,7 +3493,7 @@ if (dev->error_reopen_count)
   fprintf(st, "  Error ReOpen Count:      %d\n", dev->error_reopen_count);
 if (dev->loopback_packets_processed)
   fprintf(st, "  Loopback Packets:        %d\n", dev->loopback_packets_processed);
-#if defined(USE_READER_THREAD)
+#    if defined(USE_READER_THREAD)
 fprintf(st, "  Asynch Interrupts:       %s\n", dev->asynch_io?"Enabled":"Disabled");
 if (dev->asynch_io)
   fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
@@ -4160,7 +3502,7 @@ if (dev->throttle_count)
 fprintf(st, "  Read Queue: Count:       %ld\n", (long)sim_tailq_count(&dev->read_queue));
 fprintf(st, "  Read Queue: Allocated:   %ld\n", (long)sim_tailq_allocated(&dev->read_queue));
 fprintf(st, "  Peak Write Queue Size:   %d\n", dev->write_queue_peak);
-#endif
+#    endif
 if (dev->error_needs_reset)
   fprintf(st, "  In Error Needs Reset:    True\n");
 if (dev->error_reopen_count)
@@ -4170,7 +3512,7 @@ if (dev->error_reopen_count)
   char  buffer[ETH_MAC_STRING_SIZE];
 
   for (i = 0; i < ETH_FILTER_MAX; i++) {
-    if (eth_mac_cmp(eth_mac_any, dev->filter_address[i])) {
+    if (!eth_mac_equal(eth_mac_any, dev->filter_address[i])) {
       eth_mac_fmt(dev->filter_address[i], buffer, sizeof(buffer));
       fprintf(st, "  MAC Filter[%2d]: %s\n", count++, buffer);
       }
@@ -4182,10 +3524,10 @@ if (dev->promiscuous)
   fprintf(st, "  Promiscuous mode:        Enabled\n");
 if (dev->bpf_filter)
   fprintf(st, "  BPF Filter: %s\n", dev->bpf_filter);
-#if defined(HAVE_SLIRP_NETWORK)
+#    if defined(HAVE_SLIRP_NETWORK)
 if (dev->backend.eth_api == ETH_API_NAT)
   sim_slirp_show ((sim_slirp_network *)dev->backend.state.slirp, st);
-#endif
+#    endif
 }
 
 static
@@ -4299,7 +3641,7 @@ static
 t_stat eth_test_bpf (DEVICE *dptr)
 {
 int errors = 0;
-#ifdef USE_BPF
+#    ifdef USE_BPF
 t_stat r;
 DEVICE eth_tst;
 ETH_DEV dev;
@@ -4326,28 +3668,30 @@ int bpf_count = 0;
 int bpf_construct_error_count = 0;
 int bpf_compile_error_count = 0;
 int bpf_compile_skip_count = 0;
-#define SIM_PRINT_BPF_ARGUMENTS                                 \
-    do {                                                        \
-      sim_printf ("Eth: Input to BPF string construction:\n");  \
-      sim_printf ("Eth: Reflections: %d\n", reflections);       \
-      sim_printf ("Eth: Filter Set:\n");                        \
-      for (i = 0; i < addr_count; i++) {                        \
-        eth_mac_fmt(filter_address[i], mac, sizeof(mac));       \
-        sim_printf ("Eth:   Addr[%d]: %s\n", i, mac);           \
-        }                                                       \
-      if (all_multicast)                                        \
-        sim_printf ("Eth: All Multicast\n");                    \
-      if (promiscuous)                                          \
-        sim_printf ("Eth: Promiscuous\n");                      \
-      if (hash_list[hash_listindex])                            \
-        sim_printf ("Eth: Multicast Hash: %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\n",\
-                    (*hash_list[hash_listindex])[0], (*hash_list[hash_listindex])[1], (*hash_list[hash_listindex])[2], (*hash_list[hash_listindex])[3], \
-                    (*hash_list[hash_listindex])[4], (*hash_list[hash_listindex])[5], (*hash_list[hash_listindex])[6], (*hash_list[hash_listindex])[7]);\
-      if (host_phy_addr_list[host_phy_addr_listindex]) {        \
-        eth_mac_fmt(*host_phy_addr_list[host_phy_addr_listindex], mac, sizeof(mac));\
-        sim_printf ("Eth: host_nic_phy_hw_addr: %s\n", mac);    \
-        }                                                       \
-    } while (0)
+#        define SIM_PRINT_BPF_ARGUMENTS                                                                                \
+            do {                                                                                                       \
+                sim_printf("Eth: Input to BPF string construction:\n");                                                \
+                sim_printf("Eth: Reflections: %d\n", reflections);                                                     \
+                sim_printf("Eth: Filter Set:\n");                                                                      \
+                for (i = 0; i < addr_count; i++) {                                                                     \
+                    eth_mac_fmt(filter_address[i], mac, sizeof(mac));                                                  \
+                    sim_printf("Eth:   Addr[%d]: %s\n", i, mac);                                                       \
+                }                                                                                                      \
+                if (all_multicast)                                                                                     \
+                    sim_printf("Eth: All Multicast\n");                                                                \
+                if (promiscuous)                                                                                       \
+                    sim_printf("Eth: Promiscuous\n");                                                                  \
+                if (hash_list[hash_listindex])                                                                         \
+                    sim_printf("Eth: Multicast Hash: %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\n",                       \
+                               (*hash_list[hash_listindex])[0], (*hash_list[hash_listindex])[1],                       \
+                               (*hash_list[hash_listindex])[2], (*hash_list[hash_listindex])[3],                       \
+                               (*hash_list[hash_listindex])[4], (*hash_list[hash_listindex])[5],                       \
+                               (*hash_list[hash_listindex])[6], (*hash_list[hash_listindex])[7]);                      \
+                if (host_phy_addr_list[host_phy_addr_listindex]) {                                                     \
+                    eth_mac_fmt(*host_phy_addr_list[host_phy_addr_listindex], mac, sizeof(mac));                       \
+                    sim_printf("Eth: host_nic_phy_hw_addr: %s\n", mac);                                                \
+                }                                                                                                      \
+            } while (0)
 
 
 memset (&eth_tst, 0, sizeof(eth_tst));

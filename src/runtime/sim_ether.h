@@ -55,11 +55,15 @@
 #endif
 
 #include "sim_defs.h"
-// #include "sim_sock.h"
+#include "sim_sock.h"
 #include "simnetwork/eth_backends.h"
 #include "simnetwork/eth_types.h"
 #include "sim_atomic.h"
-// #include "poll_compat.h"
+
+#if defined(USE_READER_THREAD)
+/* sim_mutex_t and thread friends: */
+#include "sim_threads.h"
+#endif
 
 /* make common BSD code a bit easier to read in this file */
 /* OS/X seems to define and compile using one of these BSD types */
@@ -86,7 +90,6 @@
 #define PCAP_READ_TIMEOUT 15
 
 #include "sim_tailq.h"
-#include "sim_threads.h"
 
 #endif /* USE_READER_THREAD */
 
@@ -309,8 +312,13 @@ t_stat eth_mac_scan(ETH_MAC mac,
 t_stat eth_mac_scan_ex(ETH_MAC mac,      /* scan string for mac, put in mac */
                        const char *strmac, UNIT *uptr); /* for specified unit */
 
+/* FIXME: Functions that should be moved into a simnetwork/ header... */
+void eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, bool *to_me, bool *from_me);
+void eth_callback(u_char* info, const struct pcap_pkthdr* header, const uint8_t *data);
+
+
 /* Legacy ETH_QUE functions - always available for test backend */
-t_stat ethq_init(ETH_QUE *que, int max);     /* initialize FIFO queue */
+t_stat ethq_init(ETH_QUE *que, int max); /* initialize FIFO queue */
 void ethq_clear(ETH_QUE *que);               /* clear FIFO queue */
 void ethq_remove(ETH_QUE *que);              /* remove item from FIFO queue */
 void ethq_insert(ETH_QUE *que, int32_t type, /* insert item into FIFO queue */
@@ -367,11 +375,35 @@ static inline void eth_copy_mac(ETH_MAC dst, const ETH_MAC src) {
   memcpy(dst, src, sizeof(ETH_MAC));
 }
 
-/* Type-enforcing MAC comparison function. Helps to avoid subtle memcmp() issues
- * (see above).
- */
-static inline int eth_mac_cmp(const ETH_MAC a, const ETH_MAC b) {
-  return memcmp(a, b, sizeof(ETH_MAC));
+/* Utility Ethernet MAC comparison predicate */
+static inline bool eth_mac_equal(const ETH_MAC a, const ETH_MAC b)
+{
+    return (memcmp(a, b, sizeof(ETH_MAC)) == 0);
+}
+
+/* Test if the source Ethernet MAC address is a group MAC address (sometimes referred to as "multicast".) */
+static inline bool is_eth_groupmac(const uint8_t *data)
+{
+    return ((data[0] & 0x01) != 0);
+}
+
+/* Trivial test if the source Ethernet MAC address is the broadcast address. */
+static inline bool is_broadcast_mac(const uint8_t *data)
+{
+    return eth_mac_equal(data, eth_mac_bcast);
+}
+
+/* Test if the source Ethernet MAC address is either an IPv4 multicast address (01:00:5E:...) or
+ * and IPv6 Ethernet MAC address (33:33:...) */
+static inline bool is_ethernet_mcast(const uint8_t *data)
+{
+    return ((data[0] == 0x01 && data[1] == 00 && data[2] == 0x5e) || (data[0] == 0x33 && data[1] == 0x33));
+}
+
+/* Trivial test if the source Ethernet MAC address is the broadcast address. */
+static inline bool is_ethernet_bcast(const uint8_t *data)
+{
+    return (memcmp(&data[0], eth_mac_bcast, sizeof(eth_mac_bcast)) == 0);
 }
 
 #if !defined(SIM_TEST_INIT) /* Need stubs for test APIs */
