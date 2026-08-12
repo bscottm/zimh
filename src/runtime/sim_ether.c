@@ -338,6 +338,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "sim_ether.h"
 #include "sim_ether_internal.h"
 #include "sim_ether_test_internal.h"
@@ -348,11 +354,6 @@
 #include "sim_time.h"
 #include "sim_timer.h"
 #include "sim_types.h"
-#if defined(_WIN32)
-#include <direct.h>
-#else
-#include <unistd.h>
-#endif
 
 /* Internal routine - forward declaration */
 static int _eth_get_system_id (char *buf, size_t buf_size);

@@ -116,6 +116,16 @@
       }
     },
     {
+      "name": "make-relwithdebinfo",
+      "displayName": "Makefile Release with Debug Info",
+      "description": "Makefile-based Release with Debug Info build",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/make/RelWithDebInfo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
       "name": "make-release",
       "displayName": "Makefile Release",
       "description": "Makefile-based release build",
@@ -276,6 +286,11 @@
       "name": "make-debug",
       "configurePreset": "make-debug",
       "displayName": "Build: Makefile Debug"
+    },
+    {
+      "name": "make-relwithdebinfo",
+      "configurePreset": "make-relwithdebinfo",
+      "displayName": "Build: Makefile RelWithDebInfo"
     },
     {
       "name": "make-release",

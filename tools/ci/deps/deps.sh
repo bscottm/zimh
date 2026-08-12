@@ -88,10 +88,19 @@ install_clang64() {
 	mingw-w64-clang-x86_64-cmocka
 }
 
+install_netbsd_pkgin() {
+    pkgin update
+    pkgin install pkgconf pcre2 png editline SDL2 freetype SDL2_ttf \
+	cmake zlib cmocka ninja bison libslirp
+}
+
 
 case "$1" in
   osx|macports|linux|mingw32|mingw64|ucrt64|clang64)
     install_"$1"
+    ;;
+  netbsd-pkgin)
+    install_netbsd_pkgin
     ;;
   arch-linux)
     install_arch_linux

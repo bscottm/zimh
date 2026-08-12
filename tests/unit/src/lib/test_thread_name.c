@@ -20,7 +20,7 @@
 #    include <pthread.h>
 #    if defined(__linux__)
 #        include <sys/prctl.h>
-#    elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#    elif defined(__FreeBSD__) || defined(__OpenBSD__)
 #        include <pthread_np.h>
 #    endif
 #endif

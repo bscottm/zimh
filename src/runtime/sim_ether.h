@@ -50,6 +50,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#if defined(__NetBSD__)
+#include <sys/ioctl.h>
+#endif
+
 #include "sim_defs.h"
 #include "sim_sock.h"
 #include "eth_backends/eth_backends.h"
