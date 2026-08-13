@@ -252,12 +252,24 @@ void register_poll_socket(slirp_os_socket fd, void *opaque)
     if (i >= slirp->n_fds) {
         /* Resize the array... */
         size_t j = slirp->n_fds;
-        sim_pollfd_t *new_fds;
 
         slirp->n_fds += FDS_ALLOC_INCR;
-        new_fds = (sim_pollfd_t *) realloc(slirp->fds, slirp->n_fds * sizeof(sim_pollfd_t));
+
+        sim_pollfd_t *new_fds = (sim_pollfd_t *) realloc(slirp->fds, slirp->n_fds * sizeof(sim_pollfd_t));
         ASSURE(new_fds != NULL);
-        memset(new_fds + j, 0, (slirp->n_fds - j) * sizeof(sim_pollfd_t));
+
+        /* .fd must be an invalid socket -- setting it to 0 polls stdin. */
+        const sim_pollfd_t poll_initval = {
+            .fd = INVALID_SOCKET,
+            .events = 0,
+            .revents = 0
+        };
+
+        size_t k;
+
+        for (k = j; k < slirp->n_fds; ++k)
+            new_fds[k] = poll_initval;
+
         slirp->fds = new_fds;
     }
 
