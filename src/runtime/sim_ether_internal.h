@@ -24,12 +24,9 @@ bool eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data);
 
 /* Internal functions used by dispatch tables and test backend.
  * Callers must include <pcap.h> before this header when HAVE_PCAP_NETWORK is defined. */
-#if defined(HAVE_PCAP_NETWORK)
-/* Forward declaration at file scope to ensure type compatibility.
- * The full definition comes from <pcap.h> which callers must include first. */
-struct pcap_pkthdr;
-void eth_callback(u_char* info, const struct pcap_pkthdr* header, const uint8_t *data);
-#endif
+
+/* Core packet processing - backend agnostic */
+void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len, uint32_t caplen);
 
 t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
 void _eth_error(ETH_DEV* dev, const char* where);

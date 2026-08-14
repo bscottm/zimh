@@ -5,6 +5,7 @@
 #        include "sim_atomic.h"
 #        include "libslirp.h"
 #        include "poll_compat.h"
+#        include "simnetwork/eth_types.h"
 
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 // SLiRP network state and associated data structures
@@ -24,7 +25,7 @@
 #        endif
 
 #        if SIM_USE_SELECT + SIM_USE_POLL > 1
-#            error "sim_slirp.c: Configuration error: set one of SIM_USE_SELECT, SIM_USE_POLL to 1."
+#            error "sim_slirp.c: Configuration error: set only one of SIM_USE_SELECT, SIM_USE_POLL to 1."
 #        endif
 
 #        if SLIRP_CONFIG_VERSION_MAX < 6
@@ -35,15 +36,11 @@ typedef ssize_t slirp_ssize_t;
 #        endif
 
 #        if SIM_USE_SELECT
-#            define SIM_INVALID_MAX_FD ((slirp_os_socket) - 1)
+#            define SIM_INVALID_MAX_FD ((slirp_os_socket) -1)
 #        endif
 
 /* sim_slirp debugging: */
 enum { DBG_POLL = 0, DBG_SOCKET = 1 };
-
-// Callback for packet reception from the Slirp network. The opaque parameter is the one given to
-// sim_slirp_open(), which is the ETH_DEV pointer.
-typedef void (*packet_callback)(void *opaque, const unsigned char *buf, int len);
 
 // SLiRP network state:
 struct sim_slirp {
@@ -73,9 +70,8 @@ struct sim_slirp {
     char *the_tftp_path;
     /* UDP and TCP ports that SIMH proxies to the Slirp network */
     struct redir_tcp_udp *rtcp;
-    /* SIMH's packet callback and associated packet data. */
-    packet_callback pkt_callback;
-    void *pkt_opaque;
+    /* Associated simulator Ethernet device */
+    ETH_DEV *eth_dev;
 
     /* Debugging bitmasks: */
     DEBTAB *original_debflags;
@@ -124,8 +120,8 @@ struct redir_tcp_udp {
 
 typedef struct sim_slirp sim_slirp_network;
 
-sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_callback pkt_callback, DEVICE *dptr,
-                                  uint32_t dbit, char *errbuf, size_t errbuf_size);
+sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit, char *errbuf,
+                                  size_t errbuf_size);
 void sim_slirp_close(sim_slirp_network *slirp);
 int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags);
 int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout);

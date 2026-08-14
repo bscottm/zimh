@@ -392,3 +392,47 @@ writer_done:
 error_out:
     return THREAD_FUNC_RETURN(0);
 }
+
+/*============================================================================*/
+/*           THREAD STARTUP - Initialize and start reader/writer threads     */
+/*============================================================================*/
+
+t_stat eth_start_threads(ETH_DEV *dev)
+{
+    int create_status;
+    const char *thread_name = "reader";
+
+    if (!dev) {
+        return SCPE_ARG;
+    }
+
+    /* Threads are already running */
+    if (dev->threading_initialized) {
+        return SCPE_OK;
+    }
+
+    /* Initialize thread synchronization */
+    dev->threads_ready = 0;
+    dev->threading_initialized = true;
+
+    /* Create reader thread */
+    create_status = sim_thread_create(&dev->reader_thread, _eth_reader, (void *)dev);
+    if (create_status == 0) {
+        thread_name = "writer";
+        /* Create writer thread */
+        create_status = sim_thread_create(&dev->writer_thread, _eth_writer, (void *)dev);
+        if (create_status == 0) {
+            /* Wait for both threads to signal ready */
+            sim_mutex_lock(&dev->startup_lock);
+            while (dev->threads_ready < 2) {
+                sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
+            }
+            sim_mutex_unlock(&dev->startup_lock);
+            return SCPE_OK;
+        }
+    }
+
+    /* Thread creation failed - clean up */
+    return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
+                        thread_name, strerror(create_status));
+}

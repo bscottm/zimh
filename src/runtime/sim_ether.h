@@ -314,7 +314,8 @@ t_stat eth_mac_scan_ex(ETH_MAC mac,      /* scan string for mac, put in mac */
 
 /* FIXME: Functions that should be moved into a simnetwork/ header... */
 void eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, bool *to_me, bool *from_me);
-void eth_callback(u_char* info, const struct pcap_pkthdr* header, const uint8_t *data);
+/* Core packet processing - backend agnostic */
+void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len, uint32_t caplen);
 
 
 /* Legacy ETH_QUE functions - always available for test backend */

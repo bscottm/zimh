@@ -9,8 +9,12 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "sim_ether.h"
 #include "simnetwork/slirp/sim_slirp.h"
+#include "simnetwork/eth_threads.h"
+#include "simnetwork/eth_dispatch.h"
 #include "sim_types.h"
+#include "sim_tailq.h"
 
 enum {
     ether_addr_len = 6,
@@ -85,6 +89,95 @@ static DEVICE mock_device = {
     .type_ctx = NULL,
 };
 
+/* Mock ETH_DEV for testing */
+static ETH_PACK mock_packet;  /* Storage for read packet */
+static struct callback_capture *current_capture = NULL;  /* Global for callback access */
+
+/* Test callback that captures received packets */
+static void test_packet_callback(int status)
+{
+    (void)status;  /* Unused - this callback is just a notification */
+    /* Copy the packet data from mock_packet to the capture structure */
+    if (current_capture && mock_packet.len <= sizeof(current_capture->last_packet)) {
+        current_capture->packet_count++;
+        current_capture->last_packet_size = (int)mock_packet.len;
+        const uint8_t *data = mock_packet.oversize ? mock_packet.oversize : mock_packet.msg;
+        memcpy(current_capture->last_packet, data, mock_packet.len);
+    }
+}
+
+static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, const uint8_t *mac)
+{
+    memset(dev, 0, sizeof(ETH_DEV));
+    memset(&mock_packet, 0, sizeof(mock_packet));
+
+    dev->dptr = &mock_device;
+    dev->dbit = 0;
+    dev->read_packet = &mock_packet;  /* Point to the mock packet storage */
+    dev->read_callback = test_packet_callback;
+    dev->backend.eth_api = ETH_API_NAT;  /* Set backend type to NAT/slirp */
+
+    if (mac) {
+        memcpy(dev->physical_addr, mac, ether_addr_len);
+    }
+
+    /* Store capture pointer for the callback to use */
+    current_capture = capture;
+
+#if defined(USE_READER_THREAD)
+    /* Initialize the read queue for thread-based operation */
+    eth_tailq_init(&dev->read_queue, 10);
+
+    /* Initialize mutexes and condition variables */
+    sim_mutex_init(&dev->lock);
+    sim_mutex_init(&dev->writer_lock);
+    sim_mutex_init(&dev->self_lock);
+    sim_mutex_init(&dev->startup_lock);
+    sim_cond_init(&dev->writer_cond);
+    sim_cond_init(&dev->startup_cond);
+
+    /* Initialize write queue */
+    eth_tailq_init(&dev->write_requests, 10);
+
+    /* Set up backend function pointers for NAT/slirp.
+     * NOTE: Threads cannot be started yet because backend.state.slirp is NULL.
+     * Threads will be started after sim_slirp_open() initializes the backend. */
+    dev->backend.packet_wait = eth_wait_nat;
+    dev->backend.packet_read = eth_reader_nat;
+#endif
+}
+
+
+/* Helper to dequeue a packet from the ETH_DEV queue and copy to capture */
+static int dequeue_packet_to_capture(ETH_DEV *dev, struct callback_capture *capture)
+{
+#if defined(USE_READER_THREAD)
+    if (!sim_tailq_empty(&dev->read_queue)) {
+        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+        if (item && item->packet.len <= sizeof(capture->last_packet)) {
+            capture->packet_count++;
+            capture->last_packet_size = (int)item->packet.len;
+            const uint8_t *data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
+            memcpy(capture->last_packet, data, item->packet.len);
+            /* Free the oversize buffer if allocated */
+            if (item->packet.oversize)
+                free(item->packet.oversize);
+            /* Free the item itself */
+            free(item);
+            return 1;
+        }
+        if (item) {
+            if (item->packet.oversize)
+                free(item->packet.oversize);
+            free(item);
+        }
+    }
+    return 0;
+#else
+    /* Without reader thread, callback already populated capture */
+    return capture->packet_count > 0;
+#endif
+}
 
 static void assert_ipv4_equal(struct in_addr actual, const char *expected)
 {
@@ -412,7 +505,6 @@ static int is_valid_dns_response(const uint8_t *packet, size_t packet_size,
     uint16_t txid;
     uint16_t flags;
     uint16_t src_port;
-    uint16_t dst_port;
 
     if (packet_size < 42 + 12)
         return 0;
@@ -430,7 +522,6 @@ static int is_valid_dns_response(const uint8_t *packet, size_t packet_size,
 
     /* Verify UDP ports */
     src_port = get_be16(udp);
-    dst_port = get_be16(udp + 2);
     if (src_port != dns_port)
         return 0;
 
@@ -487,6 +578,7 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     static const uint8_t guest_mac[ether_addr_len] = {0x52, 0x54, 0x00,
                                                     0x12, 0x34, 0x56};
     struct callback_capture capture;
+    ETH_DEV mock_eth_dev;
     uint8_t request[42];
     char errbuf[256];
     sim_slirp_network *slirp;
@@ -494,11 +586,11 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     (void)state;
 
     memset(&capture, 0, sizeof(capture));
+    init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     build_arp_request(request, guest_mac, "10.0.2.15", "10.0.2.2");
 
     errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &capture, capture_packet, &mock_device, 0, errbuf,
-                           sizeof(errbuf));
+    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf, sizeof(errbuf));
 
     if (*errbuf != '\0') {
         fprintf(stderr, "sim_slirp_open error: %s\n", errbuf);
@@ -506,9 +598,27 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
 
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
+
+#if defined(USE_READER_THREAD)
+    /* Now that slirp is initialized, start the reader/writer threads */
+    eth_start_threads(&mock_eth_dev);
+#endif
+
     assert_int_equal(
         sim_slirp_send(slirp, (const char *)request, sizeof(request), 0),
         sizeof(request));
+
+    /* With USE_READER_THREAD, responses are asynchronous via the reader thread.
+     * Wait briefly for the reader thread to process the response. */
+    int retries = 0;
+    while (retries < 50 && capture.packet_count == 0) {
+        sim_os_ms_sleep(10);  /* 10ms sleep */
+        dequeue_packet_to_capture(&mock_eth_dev, &capture);
+        retries++;
+    }
+
+    fprintf(stderr, "DEBUG ARP: After %d retries, packet_count=%d, queue_empty=%d\n",
+            retries, capture.packet_count, sim_tailq_empty(&mock_eth_dev.read_queue));
 
     assert_int_equal(capture.packet_count, 1);
     assert_true(capture.last_packet_size >= 42);
@@ -529,6 +639,7 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
                                                     0xab, 0xcd, 0xef};
     const uint32_t xid = 0x12345678;
     struct callback_capture capture;
+    ETH_DEV mock_eth_dev;
     uint8_t request[300];
     const uint8_t *option;
     size_t option_len;
@@ -539,17 +650,33 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     (void)state;
 
     memset(&capture, 0, sizeof(capture));
+    init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     request_len = build_dhcp_discover(request, guest_mac, xid);
 
     errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &capture, capture_packet, &mock_device, 0, errbuf,
+    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
                            sizeof(errbuf));
 
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
+
+#if defined(USE_READER_THREAD)
+    /* Now that slirp is initialized, start the reader/writer threads */
+    eth_start_threads(&mock_eth_dev);
+#endif
+
     assert_int_equal(
         sim_slirp_send(slirp, (const char *)request, request_len, 0),
         request_len);
+
+    /* With USE_READER_THREAD, responses are asynchronous via the reader thread.
+     * Wait briefly for the reader thread to process the response. */
+    int retries = 0;
+    while (retries < 50 && capture.packet_count == 0) {
+        sim_os_ms_sleep(10);  /* 10ms sleep */
+        dequeue_packet_to_capture(&mock_eth_dev, &capture);
+        retries++;
+    }
 
     assert_int_equal(capture.packet_count, 1);
     assert_true(capture.last_packet_size >= dhcp_options_offset + 4);
@@ -603,6 +730,7 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     static const uint8_t guest_mac[ether_addr_len] = {0x52, 0x54, 0x00,
                                                     0x65, 0x43, 0x21};
     struct callback_capture capture;
+    ETH_DEV mock_eth_dev;
     uint8_t host_mac[ether_addr_len];
     uint8_t packet[128];
     size_t packet_len;
@@ -612,15 +740,31 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     (void)state;
 
     memset(&capture, 0, sizeof(capture));
+    init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     build_arp_request(packet, guest_mac, "10.0.2.15", "10.0.2.2");
 
     errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &capture, capture_packet, &mock_device, 0, errbuf,
+    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
                            sizeof(errbuf));
 
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
+
+#if defined(USE_READER_THREAD)
+    /* Now that slirp is initialized, start the reader/writer threads */
+    eth_start_threads(&mock_eth_dev);
+#endif
+
     assert_int_equal(sim_slirp_send(slirp, (const char *)packet, 42, 0), 42);
+
+    /* With USE_READER_THREAD, responses are asynchronous via the reader thread.
+     * Wait briefly for the reader thread to process the ARP response. */
+    int retries = 0;
+    while (retries < 50 && capture.packet_count == 0) {
+        sim_os_ms_sleep(10);  /* 10ms sleep */
+        dequeue_packet_to_capture(&mock_eth_dev, &capture);
+        retries++;
+    }
 
     assert_int_equal(capture.packet_count, 1);
     assert_int_equal(get_be16(capture.last_packet + 12), ether_type_arp);
@@ -630,6 +774,15 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     packet_len = build_icmp_echo_request(packet, guest_mac, host_mac);
     assert_int_equal(sim_slirp_send(slirp, (const char *)packet, packet_len, 0),
                      packet_len);
+
+    /* With USE_READER_THREAD, responses are asynchronous via the reader thread.
+     * Wait briefly for the reader thread to process the ICMP response. */
+    retries = 0;
+    while (retries < 50 && capture.packet_count == 0) {
+        sim_os_ms_sleep(10);  /* 10ms sleep */
+        dequeue_packet_to_capture(&mock_eth_dev, &capture);
+        retries++;
+    }
 
     assert_int_equal(capture.packet_count, 1);
     assert_true(capture.last_packet_size >= 46);
@@ -653,6 +806,7 @@ static void test_slirp_handles_dns_query(void **state)
                                                     0xaa, 0xbb, 0xcc};
     const uint16_t dns_txid = 0x4242;
     struct callback_capture capture;
+    ETH_DEV mock_eth_dev;
     uint8_t packet[512];
     size_t packet_len;
     char errbuf[256];
@@ -661,13 +815,19 @@ static void test_slirp_handles_dns_query(void **state)
     (void)state;
 
     memset(&capture, 0, sizeof(capture));
+    init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
 
     errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &capture, capture_packet, &mock_device, 0, errbuf,
+    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
                            sizeof(errbuf));
 
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
+
+#if defined(USE_READER_THREAD)
+    /* Now that slirp is initialized, start the reader/writer threads */
+    eth_start_threads(&mock_eth_dev);
+#endif
 
     /* Build and send DNS query for example.com */
     packet_len = build_dns_query(packet, guest_mac, "example.com", dns_txid);
@@ -681,6 +841,9 @@ static void test_slirp_handles_dns_query(void **state)
      * We use a longer timeout since DNS queries need network access. */
     sim_slirp_select(slirp, 1000);
     sim_slirp_dispatch_for_test(slirp);
+
+    /* Dequeue any response packet that arrived */
+    dequeue_packet_to_capture(&mock_eth_dev, &capture);
 
     /* Verify we got a response - we don't assert on the actual answer
      * since it depends on external DNS, but we verify:

@@ -19,14 +19,6 @@
 #    if defined(HAVE_PCAP_NETWORK)
 #        include <pcap.h>
 #        include <string.h>
-#    else
-struct pcap_pkthdr {
-    uint32_t caplen;  /* length of portion present */
-    uint32_t len;     /* length this packet (off wire) */
-};
-#        define PCAP_ERRBUF_SIZE 256
-typedef void *pcap_t; /* Pseudo Type to avoid compiler errors */
-#        define DLT_EN10MB 1 /* Dummy Value to avoid compiler errors */
 #    endif                   /* HAVE_PCAP_NETWORK */
 
 #    ifdef HAVE_TAP_NETWORK

@@ -91,12 +91,20 @@ int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet)
 /*                         Reader Dispatch Functions                          */
 /*============================================================================*/
 
+#if defined(HAVE_PCAP_NETWORK)
+/* libpcap's reader callback. */
+static void pcap_eth_callback(u_char *info, const struct pcap_pkthdr *header, const uint8_t *data)
+{
+    eth_process_received_packet((ETH_DEV *)info, data, header->len, header->caplen);
+}
+#endif
+
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 {
     (void)dev;
 
 #if defined(USE_READER_THREAD) && defined(HAVE_PCAP_NETWORK)
-    return pcap_dispatch(backend->state.pcap, -1, eth_callback, (u_char *)dev);
+    return pcap_dispatch(backend->state.pcap, -1, pcap_eth_callback, (u_char *)dev);
 #else
     (void)backend;
     return 0;
@@ -106,19 +114,19 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_TAP_NETWORK)
-    struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
 
-    memset(&header, 0, sizeof(header));
+    (void)backend;
     len = read(dev->fd_handle, buf, sizeof(buf));
     if (len > 0) {
-        header.caplen = header.len = len;
-        eth_callback((u_char *)dev, &header, buf);
+        eth_process_received_packet(dev, buf, len, len);
         return 1;
     }
     return (len < 0) ? -1 : 0;
 #else
+    (void)backend;
+    (void)dev;
     return 0;
 #endif
 }
@@ -126,15 +134,12 @@ int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
 int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
-    struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
 
-    memset(&header, 0, sizeof(header));
     len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
     if (len > 0) {
-        header.caplen = header.len = len;
-        eth_callback((u_char *)dev, &header, buf);
+        eth_process_received_packet(dev, buf, len, len);
         return 1;
     }
     return (len < 0) ? -1 : 0;
@@ -169,15 +174,13 @@ int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
 int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD)
-    struct pcap_pkthdr header;
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
 
-    memset(&header, 0, sizeof(header));
+    (void)backend;
     len = (int)sim_read_sock(dev->fd_handle, (char *)buf, (int32_t)sizeof(buf));
     if (len > 0) {
-        header.caplen = header.len = len;
-        eth_callback((u_char *)dev, &header, buf);
+        eth_process_received_packet(dev, buf, len, len);
         return 1;
     }
     return (len < 0) ? -1 : 0;

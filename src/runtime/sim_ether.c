@@ -1828,20 +1828,6 @@ _eth_close_port(eth_backend_t *backend, SOCKET pcap_fd);
 void
 _eth_error(ETH_DEV* dev, const char* where);
 
-#if defined(HAVE_SLIRP_NETWORK)
-static void _slirp_callback (void *opaque, const uchar_t *buf, int len)
-{
-ETH_DEV *dev = (ETH_DEV *)opaque;
-struct pcap_pkthdr header;
-
-sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() received %d bytes\n", len);
-memset(&header, 0, sizeof(header));
-header.caplen = header.len = len;
-eth_callback((u_char *)opaque, &header, buf);
-sim_debug(dev->dbit, dev->dptr, "NAT: _slirp_callback() delivered to eth_callback\n");
-}
-#endif
-
 #if defined (USE_READER_THREAD)
 /*
  * Stop any ethernet background threads that were successfully started.  The
@@ -1969,7 +1955,7 @@ dev->throttle_mask = (1 << dev->throttle_burst) - 1;
 return SCPE_OK;
 }
 
-static t_stat _eth_open_port(char *savname, size_t savname_size, eth_backend_t *backend, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, void *opaque, DEVICE *dptr, uint32_t dbit)
+static t_stat _eth_open_port(char *savname, size_t savname_size, eth_backend_t *backend, SOCKET *fd_handle, char errbuf[PCAP_ERRBUF_SIZE], char *bpf_filter, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
 {
   (void)savname_size;
 
@@ -2160,7 +2146,7 @@ else { /* !tap: */
 
       while (isspace(*devname))
         ++devname;
-      if ((backend->state.slirp = sim_slirp_open(devname, opaque, &_slirp_callback, dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)) != NULL) {
+      if ((backend->state.slirp = sim_slirp_open(devname, eth_dev,dptr, dbit, errbuf, PCAP_ERRBUF_SIZE)) != NULL) {
           backend->eth_api = ETH_API_NAT;
           backend->packet_wait = eth_wait_nat;
           backend->packet_read = eth_reader_nat;
@@ -2375,7 +2361,7 @@ if (strchr (namebuf, ':')) {
             namebuf[num] = tolower (namebuf[num]);
     }
 savname = namebuf;
-r = _eth_open_port(namebuf, sizeof(namebuf), &dev->backend, &dev->fd_handle, errbuf, NULL, (void *)dev, dptr, dbit);
+r = _eth_open_port(namebuf, sizeof(namebuf), &dev->backend, &dev->fd_handle, errbuf, NULL, dev, dptr, dbit);
 
 if (errbuf[0])
   return sim_messagef (SCPE_OPENERR, "Eth: open error - %s\n", errbuf);
@@ -2401,9 +2387,6 @@ if (dev->backend.eth_api == ETH_API_TEST)
 #    if defined(USE_READER_THREAD)
 if (dev->backend.eth_api != ETH_API_TEST)
 {
-  int create_status;
-  const char *thread_name = "reader";
-
   r = eth_tailq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
   if (r != SCPE_OK) {
     sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
@@ -2425,22 +2408,10 @@ if (dev->backend.eth_api != ETH_API_TEST)
     eth_zero(dev);
     return r;
     }
-  dev->threads_ready = 0;
-  dev->threading_initialized = true;
-  create_status = sim_thread_create (&dev->reader_thread, _eth_reader, (void *)dev);
-  if (create_status == 0) {
-    thread_name = "writer";
-    create_status = sim_thread_create (&dev->writer_thread, _eth_writer, (void *)dev);
-    if (create_status == 0) {
-      /* Wait for both threads to signal ready */
-      sim_mutex_lock(&dev->startup_lock);
-      while (dev->threads_ready < 2) {
-        sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
-      }
-      sim_mutex_unlock(&dev->startup_lock);
-    }
-    }
-  if (create_status != 0) {
+
+  /* Start reader and writer threads */
+  r = eth_start_threads(dev);
+  if (r != SCPE_OK) {
     SOCKET opened_fd = dev->fd_handle;
 
     /* Don't set dev->fd_handle to 0 until the threads are stopped. The reader
@@ -2452,8 +2423,7 @@ if (dev->backend.eth_api != ETH_API_TEST)
     dev->fd_handle = 0;
     free(dev->name);
     eth_zero(dev);
-    return sim_messagef (SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
-                         thread_name, strerror(create_status));
+    return r;
     }
   }
 #endif /* defined (USE_READER_THREAD */
@@ -2849,7 +2819,7 @@ if (dev->error_needs_reset) {
   _eth_close_port(&dev->backend, dev->fd_handle);
   sim_os_sleep (ETH_ERROR_REOPEN_PAUSE);
 
-  r = _eth_open_port(dev->name, strlen(dev->name) + 1, &dev->backend, &dev->fd_handle, errbuf, dev->bpf_filter, (void *)dev, dev->dptr, dev->dbit);
+  r = _eth_open_port(dev->name, strlen(dev->name) + 1, &dev->backend, &dev->fd_handle, errbuf, dev->bpf_filter, dev, dev->dptr, dev->dbit);
   dev->error_needs_reset = false;
   if (r == SCPE_OK)
     sim_printf ("%s ReOpened: %s \n", msg, dev->name);
@@ -3080,24 +3050,19 @@ do {
 
   switch (dev->backend.eth_api) {
     case ETH_API_PCAP:
-#        ifdef HAVE_PCAP_NETWORK
-      status = pcap_dispatch(dev->backend.state.pcap, 1, &eth_callback, (u_char*)dev);
-#        endif
+      status = eth_reader_pcap(&dev->backend, dev);
       break;
 
     case ETH_API_TAP:
 #        ifdef HAVE_TAP_NETWORK
       {
-        struct pcap_pkthdr header;
         int len;
         u_char buf[ETH_MAX_JUMBO_FRAME];
 
-        memset(&header, 0, sizeof(header));
         len = read(dev->fd_handle, buf, sizeof(buf));
         if (len > 0) {
           status = 1;
-          header.caplen = header.len = len;
-          eth_callback((u_char *)dev, &header, buf);
+          eth_process_received_packet(dev, buf, len, len);
           }
         else {
           if (len < 0)
@@ -3119,16 +3084,13 @@ do {
     case ETH_API_VDE:
 #        ifdef HAVE_VDE_NETWORK
       {
-        struct pcap_pkthdr header;
         int len;
         u_char buf[ETH_MAX_JUMBO_FRAME];
 
-        memset(&header, 0, sizeof(header));
         len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
         if (len > 0) {
           status = 1;
-          header.caplen = header.len = len;
-          eth_callback((u_char *)dev, &header, buf);
+          eth_process_received_packet(dev, buf, len, len);
           }
         else {
           if (len < 0)
@@ -3142,16 +3104,13 @@ do {
 
     case ETH_API_UDP:
       {
-        struct pcap_pkthdr header;
         int len;
         u_char buf[ETH_MAX_JUMBO_FRAME];
 
-        memset(&header, 0, sizeof(header));
         len = (int)sim_read_sock (dev->fd_handle, (char *)buf, (int32_t)sizeof(buf));
         if (len > 0) {
           status = 1;
-          header.caplen = header.len = len;
-          eth_callback((u_char *)dev, &header, buf);
+          eth_process_received_packet(dev, buf, len, len);
           }
         else {
           if (len < 0)
@@ -3255,12 +3214,10 @@ if ((addr_count > 0) && (reflections > 0)) {
   }
 if (strlen(buf) > 0)
   strlcat(buf, ")", buf_size);
-/* Preserve packets whose source and destination match the interface's
-   physical address so that address-conflict probes are still visible to the
-   simulator even when the host reflects locally transmitted traffic. Both
-   eth_write() and eth_callback() cooperate using loopback_self_sent to
-   distinguish reflected self-traffic from packets sent by another host with
-   the same address. */
+/* Preserve packets whose source and destination match the interface's physical address so that
+   address-conflict probes are still visible to the simulator even when the host reflects locally transmitted
+   traffic. Both eth_write() and eth_process_received_packet() cooperate using loopback_self_sent to
+   distinguish reflected self-traffic from packets sent by another host with the same address. */
 /* check for physical address in filters */
 if ((!promiscuous) && (addr_count) && (reflections > 0)) {
   eth_mac_fmt(physical_addr, mac, sizeof(mac));

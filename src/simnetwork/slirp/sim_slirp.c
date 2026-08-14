@@ -166,11 +166,11 @@ static void libslirp_guest_error(const char *msg, void *opaque)
 
 /* Forward decl's... */
 static int initialize_poll_fds(sim_slirp_network *slirp);
-static slirp_ssize_t invoke_sim_packet_callback(const void *buf, size_t len, void *opaque);
+static slirp_ssize_t sim_slirp_receiver(const void *buf, size_t len, void *opaque);
 static void notify_callback(void *opaque);
 
-sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_callback pkt_callback, DEVICE *dptr,
-                                  uint32_t dbit, char *errbuf, size_t errbuf_size)
+sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit, char *errbuf,
+                                  size_t errbuf_size)
 {
     sim_slirp_network *slirp = (sim_slirp_network *)calloc(1, sizeof(*slirp));
     SlirpConfig *cfg = &slirp->slirp_config;
@@ -386,13 +386,9 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
     cfg->tftp_path = slirp->the_tftp_path;
 
     /* Initialize the callbacks: */
-    slirp->pkt_callback = pkt_callback;
-    slirp->pkt_opaque = pkt_opaque;
-#if defined(GLIB_H_MINIMAL)
-    glib_set_logging_hooks(&simh_logger);
-#endif
+    slirp->eth_dev = eth_dev;
 
-    cbs->send_packet = invoke_sim_packet_callback;
+    cbs->send_packet = sim_slirp_receiver;
     cbs->guest_error = libslirp_guest_error;
     cbs->clock_get_ns = sim_clock_get_ns;
 #if SLIRP_CONFIG_VERSION_MAX >= 6
@@ -420,10 +416,11 @@ sim_slirp_network *sim_slirp_open(const char *args, void *pkt_opaque, packet_cal
         slirp = NULL;
     } else {
         sim_slirp_show(slirp, stdout);
-        if (sim_log != NULL && sim_log != stdout)
+        if (sim_log != NULL && sim_log != stdout) {
             sim_slirp_show(slirp, sim_log);
-        if (sim_deb != NULL && sim_deb != stdout && sim_deb != sim_log)
-            sim_slirp_show(slirp, sim_deb);
+            if (sim_deb != sim_log)
+                sim_slirp_show(slirp, sim_deb);
+        }
     }
 
     free(targs);
@@ -652,13 +649,16 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
  * output to the guest (the simulator via sim_ether and friends.)
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-/* Invoke the SIMH packet callback. */
-static slirp_ssize_t invoke_sim_packet_callback(const void *buf, size_t len, void *opaque)
+/* Process the incoming IP packet (output from libslirp) */
+ slirp_ssize_t sim_slirp_receiver(const void *buf, size_t len, void *opaque)
 {
     sim_slirp_network *slirp = (sim_slirp_network *)opaque;
+    ETH_DEV *eth_dev = slirp->eth_dev;
 
-    /* Note: Should really range check len for int bounds. */
-    slirp->pkt_callback(slirp->pkt_opaque, buf, (int)len);
+    sim_debug(eth_dev->dbit, eth_dev->dptr, "NAT: _slirp_callback() received %zu bytes\n", len);
+    eth_process_received_packet(eth_dev, buf, len, len);
+    sim_debug(eth_dev->dbit, eth_dev->dptr, "NAT: _slirp_callback() delivered to eth_process_received_packet\n");
+
     /* FIXME: the packet callback should tell us how many octets were written.
      * For the time being, though, assume it was successful. */
     return len;
