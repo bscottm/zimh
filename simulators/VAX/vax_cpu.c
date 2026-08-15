@@ -188,6 +188,7 @@
 #include <stdint.h>
 
 #include "sim_types.h"
+#include "xalloc.h"
 #include "vax_defs.h"
 #include "vax_cis.h"
 #include "vax_cmode.h"
@@ -247,6 +248,7 @@
 
 
 uint32_t *M = NULL;                                     /* memory */
+static size_t M_alloc_size = 0;                         /* allocated size in bytes */
 uint32_t R[16];                                         /* registers */
 uint32_t STK[5];                                        /* stack pointers */
 uint32_t PSL;                                           /* PSL */
@@ -3387,7 +3389,8 @@ if (M == NULL) {                        /* first time init? */
     if (pcq_r == NULL)
         return SCPE_IERR;
     pcq_r->qptr = 0;
-    M = (uint32_t *) calloc (((uint32_t) MEMSIZE) >> 2, sizeof (uint32_t));
+    M_alloc_size = ((uint32_t) MEMSIZE >> 2) * sizeof (uint32_t);
+    M = (uint32_t *) xmalloc_isolated (M_alloc_size);
     if (M == NULL)
         return SCPE_MEM;
     auto_config(NULL, 0);               /* do an initial auto configure */
@@ -3515,15 +3518,17 @@ for (i = val; i < MEMSIZE; i = i + 4)
     mc = mc | M[i >> 2];
 if ((mc != 0) && !get_yn ("Really truncate memory [N]?", false))
     return SCPE_OK;
-nM = (uint32_t *) calloc (uval >> 2, sizeof (uint32_t));
+uval = (uval >> 2) * sizeof (uint32_t);
+nM = (uint32_t *) xmalloc_isolated (uval);
 if (nM == NULL)
     return SCPE_MEM;
-clim = (uint32_t)((uval < MEMSIZE)? uval: MEMSIZE);
-for (i = 0; i < clim; i = i + 4)
+clim = (uint32_t)((uval < M_alloc_size)? uval: M_alloc_size);
+for (i = 0; i < clim; i = i + sizeof (uint32_t))
     nM[i >> 2] = M[i >> 2];
-free (M);
+xfree_isolated (M, M_alloc_size);
 M = nM;
-MEMSIZE = uval;
+M_alloc_size = uval;
+MEMSIZE = val;
 reset_all (0);
 return SCPE_OK;
 }

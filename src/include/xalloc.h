@@ -34,4 +34,19 @@ char *xstrdup(const char *str);
  */
 char *xstrndup(const char *str, size_t max_len);
 
+/*
+ * Allocate isolated memory in a separate address space region. On Unix, uses
+ * anonymous mmap(); on Windows, uses VirtualAlloc(). This provides stronger
+ * isolation than malloc — stray pointers from the simulator cannot corrupt
+ * this memory, and guard pages can catch out-of-bounds accesses.
+ *
+ * Returns NULL on failure. The returned memory is zero-filled and page-aligned.
+ */
+void *xmalloc_isolated(size_t size);
+
+/*
+ * Free memory allocated by xmalloc_isolated(). No-op if ptr is NULL.
+ */
+void xfree_isolated(void *ptr, size_t size);
+
 #endif

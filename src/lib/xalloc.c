@@ -9,6 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+# include <windows.h>
+#else
+# include <sys/mman.h>
+# include <unistd.h>
+#endif
+
 /* Report an allocation contract violation and abort execution. */
 static void xalloc_abort(const char *func, const char *reason)
 {
@@ -86,4 +93,51 @@ char *xstrndup(const char *str, size_t max_len)
     memcpy(copy, str, len);
     copy[len] = '\0';
     return copy;
+}
+
+/*
+ * Allocate isolated memory in a separate address space region.
+ * On Unix: anonymous mmap() with MAP_PRIVATE | MAP_ANON
+ * On Windows: VirtualAlloc() with MEM_COMMIT | MEM_RESERVE
+ * Returns NULL on failure. Memory is zero-filled and page-aligned.
+ */
+void *xmalloc_isolated(size_t size)
+{
+    void *ptr;
+
+    if (size == 0)
+        return NULL;
+
+#if defined(_WIN32)
+    ptr = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (ptr == NULL)
+        return NULL;
+#else
+    /* MAP_ANON is standard BSD (macOS, *BSD); MAP_ANONYMOUS is Linux */
+# if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#  define MAP_ANONYMOUS MAP_ANON
+# endif
+    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED)
+        return NULL;
+#endif
+
+    return ptr;
+}
+
+/*
+ * Free memory allocated by xmalloc_isolated().
+ * No-op if ptr is NULL.
+ */
+void xfree_isolated(void *ptr, size_t size)
+{
+    if (ptr == NULL)
+        return;
+
+#if defined(_WIN32)
+    VirtualFree(ptr, 0, MEM_RELEASE);
+#else
+    munmap(ptr, size);
+#endif
 }
