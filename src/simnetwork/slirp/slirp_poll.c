@@ -111,14 +111,68 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
 static void initialize_poll(sim_slirp_network *slirp, int timeout)
 {
 #if SIM_USE_SELECT
-
     FD_ZERO(&slirp->readfds);
     FD_ZERO(&slirp->writefds);
     FD_ZERO(&slirp->exceptfds);
-
     slirp->max_fd = SIM_INVALID_MAX_FD;
+
+    /* If lut is dirty, resize and copy the snapshot */
+    if (slirp->lut_dirty) {
+        /* Resize lut_copy if needed */
+        if (slirp->lut_copy_alloc < slirp->lut_alloc) {
+            slirp_os_socket *new_lut_copy = (slirp_os_socket *) realloc(slirp->lut_copy,
+                                                                         slirp->lut_alloc * sizeof(slirp_os_socket));
+            ASSURE(new_lut_copy != NULL);
+            slirp->lut_copy = new_lut_copy;
+            slirp->lut_copy_alloc = slirp->lut_alloc;
+        }
+
+        /* Copy the lut to lut_copy */
+        memcpy(slirp->lut_copy, slirp->lut, slirp->lut_alloc * sizeof(slirp_os_socket));
+        slirp->lut_copy_in_use = slirp->lut_in_use;
+
+        /* Clear the dirty flag */
+        slirp->lut_dirty = false;
+    }
+
 #elif SIM_USE_POLL
-    /* Do nothing. */
+    /* If lut is dirty, resize and copy socket descriptors to fds array */
+    if (slirp->lut_dirty) {
+        size_t i;
+
+        /* Ensure fds array matches lut allocation size */
+        if (slirp->n_fds < slirp->lut_alloc) {
+            size_t j = slirp->n_fds;
+
+            sim_pollfd_t *new_fds = (sim_pollfd_t *) realloc(slirp->fds, slirp->lut_alloc * sizeof(sim_pollfd_t));
+            ASSURE(new_fds != NULL);
+
+            /* Initialize new entries */
+            const sim_pollfd_t poll_initval = {
+                .fd = INVALID_SOCKET,
+                .events = 0,
+                .revents = 0
+            };
+
+            for (/* empty */; j < slirp->lut_alloc; ++j)
+                new_fds[j] = poll_initval;
+
+            slirp->fds = new_fds;
+            slirp->n_fds = slirp->lut_alloc;
+        }
+
+        /* Copy socket descriptors from lut to fds, zero out events/revents */
+        for (i = 0; i < slirp->lut_in_use; ++i) {
+            slirp->fds[i].fd = slirp->lut[i];
+            slirp->fds[i].events = 0;
+            slirp->fds[i].revents = 0;
+        }
+
+        slirp->fd_idx = slirp->lut_in_use;
+
+        /* Clear the dirty flag */
+        slirp->lut_dirty = false;
+    }
 #endif
 
     uint32_t slirp_timeout = (timeout < 0) ? 0 : (uint32_t)timeout;
@@ -224,7 +278,7 @@ void register_poll_socket(slirp_os_socket fd, void *opaque)
     sim_slirp_network *slirp = (sim_slirp_network *) opaque;
     size_t i;
 
-#if SIM_USE_SELECT
+    /* Find first available slot in the lut (common for both paths) */
     for (i = 0; i < slirp->lut_alloc; ++i) {
         if (slirp->lut[i] == INVALID_SOCKET) {
             slirp->lut[i] = fd;
@@ -246,40 +300,13 @@ void register_poll_socket(slirp_os_socket fd, void *opaque)
         slirp->lut = new_lut;
         slirp->lut[i] = fd;
     }
-#elif SIM_USE_POLL
-    for (i = 0; i < slirp->fd_idx && have_valid_socket(slirp->fds[i].fd); ++i)
-        /* NOP */;
 
-    if (i >= slirp->n_fds) {
-        /* Resize the array... */
-        size_t j = slirp->n_fds;
+    /* Update lut_in_use to track the max index currently in use */
+    if (i >= slirp->lut_in_use)
+        slirp->lut_in_use = i + 1;
 
-        slirp->n_fds += FDS_ALLOC_INCR;
-
-        sim_pollfd_t *new_fds = (sim_pollfd_t *) realloc(slirp->fds, slirp->n_fds * sizeof(sim_pollfd_t));
-        ASSURE(new_fds != NULL);
-
-        /* .fd must be an invalid socket -- setting it to 0 polls stdin. */
-        const sim_pollfd_t poll_initval = {
-            .fd = INVALID_SOCKET,
-            .events = 0,
-            .revents = 0
-        };
-
-        size_t k;
-
-        for (k = j; k < slirp->n_fds; ++k)
-            new_fds[k] = poll_initval;
-
-        slirp->fds = new_fds;
-    }
-
-    slirp->fds[i].fd = fd;
-    slirp->fds[i].events = slirp->fds[i].revents = 0;
-
-    if (i == slirp->fd_idx)
-        ++slirp->fd_idx;
-#endif
+    /* Mark lut as dirty - snapshot needs to be updated */
+    slirp->lut_dirty = true;
 
     sim_debug(slirp_dbg_mask(slirp, DBG_SOCKET), slirp->dptr,
               "register_poll_socket(%" PRIsocket ") index %zu\n", fd, i);
@@ -304,7 +331,7 @@ void unregister_poll_socket(slirp_os_socket fd, void *opaque)
     sim_slirp_network *slirp = (sim_slirp_network *) opaque;
     size_t i;
 
-#if SIM_USE_SELECT
+    /* Find and invalidate the socket in the lut (common for both paths) */
     for (i = 0; i < slirp->lut_alloc; ++i) {
         if (slirp->lut[i] == fd) {
             slirp->lut[i] = INVALID_SOCKET;
@@ -315,26 +342,16 @@ void unregister_poll_socket(slirp_os_socket fd, void *opaque)
     }
 
     if (i >= slirp->lut_alloc) {
-        sim_messagef(SCPE_OK, "unregister_poll_socket(select %" PRIsocket ") not invalidated.\n", fd);
+        sim_messagef(SCPE_OK, "unregister_poll_socket(%" PRIsocket ") not invalidated.\n", fd);
     }
-#elif SIM_USE_POLL
-    for (i = 0; i < slirp->fd_idx && slirp->fds[i].fd != fd; ++i)
-        /* NOP */;
 
-    if (i < slirp->fd_idx) {
-        slirp->fds[i].fd = INVALID_SOCKET;
-        slirp->fds[i].events = slirp->fds[i].revents = 0;
-        sim_debug(slirp_dbg_mask(slirp, DBG_SOCKET), slirp->dptr,
-                  "unregister_poll_socket(%" PRIsocket ") index %zd\n", fd, i);
-
-        /* Trim fd_idx? */
-        while (slirp->fd_idx > 0 && !have_valid_socket(slirp->fds[slirp->fd_idx - 1].fd)) {
-            --slirp->fd_idx;
-        }
-    } else {
-        sim_messagef(SCPE_OK, "unregister_poll_socket(poll %" PRIsocket ") not invalidated.\n", fd);
+    /* Trim lut_in_use: remove trailing invalid descriptors */
+    while (slirp->lut_in_use > 0 && slirp->lut[slirp->lut_in_use - 1] == INVALID_SOCKET) {
+        --slirp->lut_in_use;
     }
-#endif
+
+    /* Mark lut as dirty - snapshot needs to be updated */
+    slirp->lut_dirty = true;
 
     /* Keep track of the socket count so that sim_slirp_select() blocks if there are no sockets to
      * poll() or select(). */
@@ -392,8 +409,9 @@ static int add_poll_callback(slirp_os_socket fd, int events, void *opaque)
 #if SIM_USE_SELECT
     const int event_mask = (SLIRP_POLL_IN | SLIRP_POLL_OUT | SLIRP_POLL_PRI);
 
-    for (i = 0; i < slirp->lut_alloc; ++i) {
-        if (slirp->lut[i] == fd) {
+    /* Use the lut_copy snapshot for select operations */
+    for (i = 0; i < slirp->lut_copy_in_use; ++i) {
+        if (slirp->lut_copy[i] == fd) {
             if (events & SLIRP_POLL_IN) {
                 FD_SET(fd, &slirp->readfds);
             }
@@ -411,28 +429,30 @@ static int add_poll_callback(slirp_os_socket fd, int events, void *opaque)
 
             break;
         }
-
-        if (sim_deb != NULL && slirp->dptr != NULL && (slirp->dptr->dctrl & dbg_mask)) {
-            sprintf(prefix, "add_poll_callback(%" PRIsocket ")/select (0x%04x)", fd, events & event_mask);
-            poll_debugging(slirp_dbg_mask(slirp, DBG_POLL), slirp->dptr, prefix, events & event_mask);
-        }
     }
+
+    if (sim_deb != NULL && slirp->dptr != NULL && (slirp->dptr->dctrl & dbg_mask)) {
+        sprintf(prefix, "add_poll_callback(%" PRIsocket ")/select (0x%04x)", fd, events & event_mask);
+        poll_debugging(slirp_dbg_mask(slirp, DBG_POLL), slirp->dptr, prefix, events & event_mask);
+    }
+
 #elif SIM_USE_POLL
     short poll_events =
-      ((events & SLIRP_POLL_IN) != 0) * POLLIN +
+      ((events & SLIRP_POLL_IN) != 0) * POLLIN |
       ((events & SLIRP_POLL_OUT) != 0) * POLLOUT;
 
 #  if !defined(_WIN32) && !defined(_WIN64)
     /* Not supported on Windows. Unless you like EINVAL. :-) */
     poll_events +=
-      ((events & SLIRP_POLL_PRI) != 0) * POLLPRI +
-      ((events & SLIRP_POLL_ERR) != 0) * POLLERR +
+      ((events & SLIRP_POLL_PRI) != 0) * POLLPRI |
+      ((events & SLIRP_POLL_ERR) != 0) * POLLERR |
       ((events & SLIRP_POLL_HUP) != 0) * POLLHUP;
 #  endif
 
+    /* Find the fd in the fds array (already copied from lut in initialize_poll) */
     for (i = 0; i < slirp->fd_idx && slirp->fds[i].fd != fd; ++i)
         /* NOP */ ;
-    
+
     if (i >= slirp->fd_idx) {
         sim_messagef(SCPE_IOERR, "add_poll_callback: Unregistered/unknown fd %" PRIsocket "\n", fd);
         return -1;
@@ -443,7 +463,7 @@ static int add_poll_callback(slirp_os_socket fd, int events, void *opaque)
         poll_debugging(slirp_dbg_mask(slirp, DBG_POLL), slirp->dptr, prefix, events);
     }
 
-    slirp->fds[i].fd = fd;
+    /* Update the events mask (fd was already set in initialize_poll) */
     slirp->fds[i].events = poll_events;
     slirp->fds[i].revents = 0;
 
@@ -464,8 +484,9 @@ int slirp_get_events_callback(int idx, void *opaque)
 #if SIM_USE_SELECT
     const int event_mask = (SLIRP_POLL_IN | SLIRP_POLL_OUT | SLIRP_POLL_PRI);
 
-    if (idx >= 0 && (size_t) idx < slirp->lut_alloc) {
-        slirp_os_socket fd = slirp->lut[idx];
+    /* Use the lut_copy snapshot for select operations */
+    if (idx >= 0 && (size_t) idx < slirp->lut_copy_in_use) {
+        slirp_os_socket fd = slirp->lut_copy[idx];
 
         if (FD_ISSET(fd, &slirp->readfds)) {
             event |= SLIRP_POLL_IN;
@@ -483,12 +504,12 @@ int slirp_get_events_callback(int idx, void *opaque)
         }
     }
 #elif SIM_USE_POLL
-    if (idx < slirp->fd_idx) {
+    if (idx >= 0 && (size_t) idx < slirp->fd_idx) {
         event =
-            ((slirp->fds[idx].revents & POLLIN) != 0) * SLIRP_POLL_IN +
-            ((slirp->fds[idx].revents & POLLOUT) != 0) * SLIRP_POLL_OUT +
-            ((slirp->fds[idx].revents & POLLPRI) != 0) * SLIRP_POLL_PRI +
-            ((slirp->fds[idx].revents & POLLERR) != 0) * SLIRP_POLL_ERR +
+            ((slirp->fds[idx].revents & POLLIN) != 0) * SLIRP_POLL_IN|
+            ((slirp->fds[idx].revents & POLLOUT) != 0) * SLIRP_POLL_OUT |
+            ((slirp->fds[idx].revents & POLLPRI) != 0) * SLIRP_POLL_PRI |
+            ((slirp->fds[idx].revents & POLLERR) != 0) * SLIRP_POLL_ERR |
             ((slirp->fds[idx].revents & POLLHUP) != 0) * SLIRP_POLL_HUP;
 
         if (sim_deb != NULL && slirp->dptr != NULL && (slirp->dptr->dctrl & dbg_mask)) {

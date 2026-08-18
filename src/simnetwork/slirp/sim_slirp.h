@@ -78,22 +78,32 @@ struct sim_slirp {
     size_t flag_offset;
 
     /* I/O event tracking/handling (used to be the GPollFD array): */
+
+    /* Lookup table (source of truth for both SELECT and POLL): */
+    slirp_os_socket *lut;
+    size_t lut_alloc;
+    size_t lut_in_use;
+
+    /* Flag indicating lut has changed since last snapshot */
+    bool lut_dirty;
+
 #        if SIM_USE_SELECT
-    /* select() needs a lookup table to map SOCKETs to an integer index. */
+    /* select() needs fd_sets and a snapshot of the lut. */
     fd_set readfds;
     fd_set writefds;
     fd_set exceptfds;
     slirp_os_socket max_fd;
 
-    /* Lookup table: */
-    slirp_os_socket *lut;
-    size_t lut_alloc;
+    /* Snapshot/copy of lut for select operations: */
+    slirp_os_socket *lut_copy;
+    size_t lut_copy_alloc;
+    size_t lut_copy_in_use;
 #        elif SIM_USE_POLL
     /* Next descriptor to use */
     size_t fd_idx;
     /* Total allocated descriptors */
     size_t n_fds;
-    /* Poll file descriptor array */
+    /* Poll file descriptor array (mirrors lut socket descriptors) */
     sim_pollfd_t *fds;
 #        endif
 

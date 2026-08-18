@@ -475,9 +475,13 @@ void sim_slirp_close(sim_slirp_network *slirp)
         slirp->dptr->debflags = slirp->original_debflags;
     }
 
-#if SIM_USE_SELECT
+    /* Free common lut (source of truth) */
     free(slirp->lut);
     slirp->lut = NULL;
+
+#if SIM_USE_SELECT
+    free(slirp->lut_copy);
+    slirp->lut_copy = NULL;
 #elif SIM_USE_POLL
     free(slirp->fds);
     slirp->fds = NULL;
@@ -552,17 +556,24 @@ static int initialize_poll_fds(sim_slirp_network *slirp)
 {
     size_t i;
 
+    /* Common initialization for both paths: lut as source of truth */
+    slirp->lut_alloc = FDS_ALLOC_INIT;
+    slirp->lut = (SOCKET *)malloc(slirp->lut_alloc * sizeof(SOCKET));
+    slirp->lut_in_use = 0;
+    slirp->lut_dirty = true;
+
+    for (i = 0; i < slirp->lut_alloc; ++i)
+        slirp->lut[i] = INVALID_SOCKET;
+
 #if SIM_USE_SELECT
     FD_ZERO(&slirp->readfds);
     FD_ZERO(&slirp->writefds);
     FD_ZERO(&slirp->exceptfds);
 
-    /* Start out with a generous number of LUT slots */
-    slirp->lut_alloc = FDS_ALLOC_INIT;
-    slirp->lut = (SOCKET *)malloc(slirp->lut_alloc * sizeof(SOCKET));
-
-    for (i = 0; i < slirp->lut_alloc; ++i)
-        slirp->lut[i] = INVALID_SOCKET;
+    /* Initialize the lut snapshot (will be allocated on first dirty copy) */
+    slirp->lut_copy = NULL;
+    slirp->lut_copy_alloc = 0;
+    slirp->lut_copy_in_use = 0;
 #elif SIM_USE_POLL
     /* poll()-based file descriptor polling. */
     static const sim_pollfd_t poll_initializer = {INVALID_SOCKET, 0, 0};
@@ -664,35 +675,30 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
     return len;
 }
 
-int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags)
-{
-    SIM_UNUSED_ARG(flags);
-
-    slirp_input(slirp->slirp_cxn, (const uint8_t *)msg, (int)len);
-    return (int)len;
-}
-
 bool before_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
 {
-    sim_slirp_network *slirp = backend->state.slirp;
+    SIM_UNUSED_ARG(dev);
+    sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
 
     pthread_mutex_lock(&slirp->libslirp_lock);
     return true;
 }
 
+int sim_slirp_send(sim_slirp_network *slirp, const char *msg, size_t len, int flags)
+{
+    SIM_UNUSED_ARG(flags);
+
+    slirp_input(slirp->slirp_cxn, (const uint8_t *)msg, (int)len);
+
+    return (int)len;
+}
+
 bool after_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
 {
-    sim_slirp_network *slirp = backend->state.slirp;
-
-    /* Fun fact: libslirp will add immediate responses to the read queue for certain IP messages, such as
-     * ARP, some ICMP requests, DNS replies, ... Instead of waiting for the reader thread to wake up,
-     * dispatch them to the simulator immediately. */
-    if (!sim_tailq_empty(&dev->read_queue)) {
-        sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
-    }
+    SIM_UNUSED_ARG(dev);
+    sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
 
     pthread_mutex_unlock(&slirp->libslirp_lock);
-
     return true;
 }
 

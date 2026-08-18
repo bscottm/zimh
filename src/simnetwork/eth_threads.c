@@ -19,7 +19,7 @@
 // Default socket read timeout. Note: This can be made longer, which only
 // affects how quickly the reader thread exits.
 enum {
-    ETH_READER_POLL_TMO = 500 /* ms */
+    ETH_READER_POLL_TMO = 250 /* ms */
 };
 
 #if SIM_USE_POLL
@@ -213,22 +213,21 @@ THREAD_FUNC_DEFN(_eth_reader)
 
         /* Packet available? */
         if (status > 0) {
+            /* Have backend deliver it. */
             status = backend->packet_read(backend, dev);
+        }
 
-            if (status > 0) {
-                /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll */
-                if (dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
-                    sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
-                    sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
-                }
-            } else if (status < 0 && !eth_reader_error_handler(dev)) {
-                goto error_out;
-            }
-        } else {
-            if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
-                /* Handle select errors */
-                goto error_out;
-            }
+        /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll.
+         *
+         * Note: libslirp is notorious for putting packets on the read queue even if no packets are
+         * actually read from an active socket. Hence the "status >= 0" check, which will succeed and the
+         * check for a non-empty read queue. */
+        if (status >= 0 && dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
+            sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
+            sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
+        } else if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
+            /* Handle select errors */
+            goto error_out;
         }
     }
 
