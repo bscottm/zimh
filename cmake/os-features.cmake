@@ -19,7 +19,10 @@ include(CMakePushCheckState)
 # that are shared across the core and network libraries.
 # =============================================================================
 set(DUMMY_SRC "${CMAKE_CURRENT_BINARY_DIR}/osfeatures_dummy.c")
-file(WRITE ${DUMMY_SRC} "/* Dummy source for sim_support object library */\n")
+if (NOT EXISTS ${DUMMY_SRC})
+    file(WRITE ${DUMMY_SRC} "/* Dummy source for sim_support object library */\n")
+endif ()
+
 add_library(sim_support STATIC ${DUMMY_SRC})
 target_include_directories(sim_support PRIVATE
     "${SIMH_COMPAT_ROOT}"
