@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 
 char sim_name[64] = "InfoServer 1000";
 
@@ -48,7 +49,6 @@ extern DEVICE rz_dev;
 extern DEVICE dz_dev;
 extern DEVICE xs_dev;
 
-extern void WriteB (uint32_t pa, int32_t val);
 extern void rom_wr_B (int32_t pa, int32_t val);
 extern UNIT cpu_unit;
 

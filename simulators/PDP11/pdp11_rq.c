@@ -106,6 +106,9 @@
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "vax_mmu.h"
+#include "pdp11_io_lib.h"
+
 #define RQ_QTIME        100
 #define RQ_XTIME        200
 #define OLDPC           fault_PC

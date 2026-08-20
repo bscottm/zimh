@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 
 char sim_name[] = "VAX 8200 (KA820)";
 
@@ -68,7 +69,6 @@ extern DEVICE ch_dev;
 extern DEVICE uw_dev;
 
 extern UNIT cpu_unit;
-extern void WriteB (uint32_t pa, int32_t val);
 extern void rom_wr_B (int32_t pa, int32_t val);
 
 DEVICE *sim_devices[] = {

@@ -73,6 +73,7 @@
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 #if (UNIBUS)
 #define INIT_TYPE       TQ8_TYPE
 #define INIT_CAP        TQ8_CAP

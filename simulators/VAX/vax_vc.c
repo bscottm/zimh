@@ -46,6 +46,7 @@
 #include "vax_lk.h"
 #include "vax_vc.h"
 #include "vax_vs.h"
+#include "pdp11_io_lib.h"
 
 /* CSR - control/status register */
 

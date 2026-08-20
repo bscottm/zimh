@@ -386,13 +386,6 @@ typedef struct {
 #define WriteIOU(p,v,l)     WriteIO (p, v, l)
 #define WriteRegU(p,v,l)    WriteReg (p, v, l)
 
-#include <stdbool.h>
-#include <stdint.h>
-
-#include "pdp11_io_lib.h"
-
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
+// #include "pdp11_io_lib.h"
 
 #endif

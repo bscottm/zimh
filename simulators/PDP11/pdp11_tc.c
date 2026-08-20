@@ -113,6 +113,8 @@
 
 #if defined (VM_VAX)                                    /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define DMASK           0xFFFF
 
 #else                                                   /* PDP-11 version */

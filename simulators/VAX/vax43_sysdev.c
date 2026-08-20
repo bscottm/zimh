@@ -34,6 +34,7 @@
 
 #include "sim_types.h"
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
 #include "vax43_sysdev.h"
@@ -42,7 +43,7 @@
 #include "vax_lk.h"
 #include "vax_vs.h"
 #include "vax_xs.h"
-#include "sim_ether.h"
+// REMOVE #include "sim_ether.h"
 #include "uint_bits.h"
 
 #ifdef DONT_USE_INTERNAL_ROM

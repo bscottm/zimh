@@ -35,6 +35,7 @@
 
 #include "vax_defs.h"
 #include "vax630_stddev.h"
+#include "pdp11_io_lib.h"
 #include "sim_tmxr.h"
 
 #define TTICSR_IMP      (CSR_DONE + CSR_IE)             /* terminal input */

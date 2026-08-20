@@ -51,6 +51,8 @@
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define DEV_DISI        0
 
 #else                                                   /* PDP-11 version */

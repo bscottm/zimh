@@ -436,10 +436,6 @@ typedef struct {
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pdp11_io_lib.h"
-
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
+// #include "pdp11_io_lib.h"
 
 #endif

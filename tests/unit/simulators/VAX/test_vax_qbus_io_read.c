@@ -4,6 +4,7 @@
 #include "test_cmocka.h"
 
 #include "vax_qbus_internal.h"
+#include "vax_mmu.h"
 #include "vax_va.h"
 #include "vax_vc.h"
 

@@ -30,6 +30,7 @@
 
 #include "vax_defs.h"
 #include "vax610_mem.h"
+#include "pdp11_io_lib.h"
 
 #define MAX_MCTL_COUNT  16
 

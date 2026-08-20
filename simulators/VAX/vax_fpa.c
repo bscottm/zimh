@@ -56,11 +56,12 @@
         - double precision floating point, D and G format
 */
 
-#include "vax_defs.h"
-#include "vax_fpa.h"
-#include <setjmp.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "vax_defs.h"
+#include "vax_mmu.h"
+#include "vax_fpa.h"
 
 #if defined (USE_INT64)
 

@@ -169,6 +169,7 @@ add_simulator(infoserver1000
         is1000_syslist.c
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         IS_1000
@@ -287,6 +288,7 @@ add_simulator(microvax2000
         vax_gpx.c
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         VAX_410
@@ -339,6 +341,7 @@ add_simulator(microvax3100m80
         ${VAX440}
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         VAX_440
@@ -756,6 +759,7 @@ add_simulator(vaxstation3100m76
         vax_vs.c
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         VAX_43
@@ -772,6 +776,7 @@ add_simulator(vaxstation4000m60
         ${VAX440}
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         VAX_440
@@ -788,6 +793,7 @@ add_simulator(vaxstation4000vlc
         ${VAX440}
     INCLUDES
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PDP11D}
     DEFINES
         VM_VAX
         VAX_440

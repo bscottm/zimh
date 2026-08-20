@@ -317,3 +317,73 @@ static const char *tlb_description (DEVICE *dptr)
 
     return "translation buffer";
     }
+
+/* Unaligned reads. Should occur infrequently, in practice. Does not belong as an inlined function. */
+uint32_t Read_Unaligned(uint32_t va, int32_t lnt, int32_t acc, uint32_t pa, uint32_t off) 
+{
+    uint32_t pa1;
+    if (mapen && (off + lnt > VA_PAGSIZE)) {
+        uint32_t vpn2 = VA_GETVPN(va + lnt);
+        uint32_t tbi2 = VA_GETTBI(vpn2);
+        TLBENT xpte2 = (va & VA_S0) ? stlb[tbi2] : ptlb[tbi2];
+
+        if (((xpte2.pte & acc) == 0) || (xpte2.tag != vpn2) || ((acc & TLB_WACC) && !(xpte2.pte & TLB_M))) {
+            xpte2 = fill(va + lnt, lnt, acc, NULL);
+        }
+        pa1 = ((xpte2.pte & TLB_PFN) | VA_GETOFF(va + 4)) & ~3;
+    } else {
+        pa1 = ((pa + 4) & PAMASK) & ~3;
+    }
+
+    uint32_t bo = pa & 3;
+    if (lnt >= L_LONG) {
+        uint32_t sc = bo << 3;
+        uint32_t wl = ReadU(pa, L_LONG - bo);
+        uint32_t wh = ReadU(pa1, bo);
+        return (wl | (wh << (32 - sc))) & LMASK;
+    }
+    if (bo == 1) {
+        return ReadU(pa, L_WORD);
+    }
+    
+    uint32_t wl = ReadU(pa, L_BYTE);
+    uint32_t wh = ReadU(pa1, L_BYTE);
+    return wl | (wh << 8);
+}
+
+/* Unaligned writes. Should occur infrequently in practice. Does not belong as an inlined function. */
+void Write_Unaligned(uint32_t va, int32_t val, int32_t lnt, int32_t acc, uint32_t pa, uint32_t off)
+{
+    uint32_t pa1;
+    if (mapen && (off + lnt > VA_PAGSIZE)) {
+        uint32_t vpn2 = VA_GETVPN(va + 4);
+        uint32_t tbi2 = VA_GETTBI(vpn2);
+        TLBENT xpte2 = (va & VA_S0) ? stlb[tbi2] : ptlb[tbi2];
+
+        bool tlb_miss2 = ((xpte2.pte & acc) == 0) |
+                         (xpte2.tag != vpn2) |
+                         ((xpte2.pte & TLB_M) == 0);
+
+        if (SIM_UNLIKELY(tlb_miss2)) {
+            xpte2 = fill(va + lnt, lnt, acc, NULL);
+        }
+        pa1 = ((xpte2.pte & TLB_PFN) | VA_GETOFF(va + 4)) & ~3;
+    } else {
+        pa1 = ((pa + 4) & PAMASK) & ~3;
+    }
+
+    uint32_t bo = pa & 3;
+    if (lnt >= L_LONG) {
+        uint32_t sc = bo << 3;
+        WriteU(pa, val & insert[L_LONG - bo], L_LONG - bo);
+        WriteU(pa1, (val >> (32 - sc)) & insert[bo], bo);
+        return;
+    }
+    if (bo == 1) {
+        WriteU(pa, val & WMASK, L_WORD);
+        return;
+    }
+
+    WriteU(pa, val & BMASK, L_BYTE);
+    WriteU(pa1, (val >> 8) & BMASK, L_BYTE);
+}

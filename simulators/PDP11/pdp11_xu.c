@@ -103,6 +103,7 @@
 
 #include "pdp11_xu.h"
 #include "sim_types.h"
+#include "pdp11_io_lib.h"
 
 extern int32_t tmxr_poll;
 

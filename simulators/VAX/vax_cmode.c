@@ -43,8 +43,13 @@
 
 #include "vax_defs.h"
 #include "vax_cmode.h"
-#include "vax_cpu.h"
-#include "vax_sys.h"
+
+#if defined(CMPM_VAX)
+#    include "vax_mmu.h"
+#    include "vax_cpu.h"
+#else
+#    include "vax_sys.h"
+#endif
 
 #if defined (CMPM_VAX)
 

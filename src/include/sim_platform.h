@@ -170,6 +170,20 @@
             } while (0)
 #    endif
 
+/* Branch prediction hints. N.B.: These are compiler hints, not processor hints.
+ * They merely hint at the compiler "this is the more (un)likely branch" so that
+ * basic blocks are lengthened when possible. */
+#if defined(__GNUC__) || defined(__clang__)
+    #define SIM_LIKELY(x)   __builtin_expect(!!(x), 1)
+    #define SIM_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#elif defined(_MSC_VER)
+    #define SIM_LIKELY(x)   (x)
+    #define SIM_UNLIKELY(x) (x)
+#else
+    #define SIM_LIKELY(x)   (x)
+    #define SIM_UNLIKELY(x) (x)
+#    endif
+
 // Prefer the type-safe versions of MIN and MAX available if on GNU C and Clang. The MSVC versions are not
 // type-safe, but they are the best available on that platform. The generic versions are provided as a
 // fallback for other compilers.

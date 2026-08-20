@@ -104,6 +104,7 @@ The other test was to configure DECnet on VMS 4.6 and do SET HOST.
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 
 #else                                                   /* PDP-11 version */
 #include "pdp11_defs.h"

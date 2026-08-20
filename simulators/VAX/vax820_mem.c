@@ -30,6 +30,7 @@
 
 #include "vax_defs.h"
 #include "vax820_mem.h"
+#include "vax_bi.h"
 
 /* Memory CSR 1 */
 

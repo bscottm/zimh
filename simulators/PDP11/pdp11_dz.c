@@ -65,6 +65,8 @@
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define DZ_8B_DFLT      TT_MODE_8B
 
 #else                                                   /* PDP-11 version */
