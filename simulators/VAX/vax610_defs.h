@@ -357,10 +357,4 @@ typedef struct {
 
 t_stat cpu_show_leds (FILE *st, UNIT *uptr, int32_t val, const void *desc);
 
-#include "pdp11_io_lib.h"
-
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
-
 #endif

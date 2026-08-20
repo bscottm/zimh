@@ -431,10 +431,6 @@ typedef struct {
 #define CLR_INT(dv)     int_req[IPL_##dv] = int_req[IPL_##dv] & ~(INT_##dv)
 #define IORETURN(f,v)   ((f)? (v): SCPE_OK)             /* cond error return */
 
-#include "pdp11_io_lib.h"
-
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
+// #include "pdp11_io_lib.h"
 
 #endif

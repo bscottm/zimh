@@ -172,6 +172,31 @@
 #        endif
 #    endif
 
+/* Force a function to be inlined. */
+#    if !defined(SIM_FORCE_INLINE)
+#        if defined(__GNUC__) || defined(__clang__)
+#            define SIM_FORCE_INLINE inline __attribute__((always_inline))
+#        elif defined(_MSC_VER)
+#            defined SIM_FORCE_INLINE __forceinline
+#        else
+#            define SIM_FORCE_INLINE inline
+#        endif
+#    endif
+
+/* Branch prediction hints. N.B.: These are compiler hints, not processor hints.
+ * They merely hint at the compiler "this is the more (un)likely branch" so that
+ * basic blocks are lengthened when possible. */
+#if defined(__GNUC__) || defined(__clang__)
+    #define SIM_LIKELY(x)   __builtin_expect(!!(x), 1)
+    #define SIM_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#elif defined(_MSC_VER)
+    #define SIM_LIKELY(x)   (x)
+    #define SIM_UNLIKELY(x) (x)
+#else
+    #define SIM_LIKELY(x)   (x)
+    #define SIM_UNLIKELY(x) (x)
+#    endif
+
 /* Unused argument macro: easier to comprehend than a "(void) var;" statement. */
 #    define SIM_UNUSED_ARG(x) (void)x
 

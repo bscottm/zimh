@@ -1011,34 +1011,34 @@ extern REG cpu_reg[];                                   /* CPU registers */
  * 3: Negative (N)
  */
 
-static inline uint32_t cc_iizz_b(uint32_t r)
+static SIM_FORCE_INLINE uint32_t cc_iizz_b(uint32_t r)
 {
     return (((int8_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
 }
 
-static inline uint32_t cc_iizz_w(uint32_t r)
+static SIM_FORCE_INLINE uint32_t cc_iizz_w(uint32_t r)
 {
   return (((int16_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
 }
 
-static inline uint32_t cc_iizz_l(uint32_t r)
+static SIM_FORCE_INLINE uint32_t cc_iizz_l(uint32_t r)
 {
   return (((int32_t) r < 0) * CC_N) | ((r == 0) * CC_Z);
 }
 
-static inline uint32_t cc_iizz_q(uint32_t rl, uint32_t rh)
+static SIM_FORCE_INLINE uint32_t cc_iizz_q(uint32_t rl, uint32_t rh)
 {
   return (((int32_t) rh < 0) * CC_N) | (((rl | rh) == 0) * CC_Z);
 }
 
-static inline uint32_t cc_iizz_fp(uint32_t r)
+static SIM_FORCE_INLINE uint32_t cc_iizz_fp(uint32_t r)
 {
     // For some reason, and it's not entirely clear, floating point condition
     // codes are set the same as integer word condition codes.
     return cc_iizz_w(r);
 }
 
-static inline uint32_t cc_iizp_o(uint32_t rl, uint32_t rm2, uint32_t rm1, uint32_t rh)
+static SIM_FORCE_INLINE uint32_t cc_iizp_o(uint32_t rl, uint32_t rm2, uint32_t rm1, uint32_t rh)
 {
   return (((int32_t) rh < 0) * CC_N) | (((rl | rm2 | rm1 | rh) == 0) * CC_Z);
 }
@@ -1058,17 +1058,17 @@ static inline uint32_t sub_set_carry(uint32_t cc, uint32_t v1, uint32_t v2)
  * the desired comparison(s) and adds type safety (somewhat clearer in the code's
  * intent.) */
 
-static inline uint32_t cc_cmp_b(uint8_t v1, uint8_t v2)
+static SIM_FORCE_INLINE uint32_t cc_cmp_b(uint8_t v1, uint8_t v2)
 {
-    return (((int8_t) v1 < (int8_t) v2) * CC_N) + ((v1 == v2) * CC_Z) + ((v1 < v2) * CC_C);
+    return (((int8_t) v1 < (int8_t) v2) * CC_N) | ((v1 == v2) * CC_Z) | ((v1 < v2) * CC_C);
 }
 
-static inline uint32_t cc_cmp_w(uint16_t v1, uint16_t v2)
+static SIM_FORCE_INLINE uint32_t cc_cmp_w(uint16_t v1, uint16_t v2)
 {
   return (((int16_t) v1 < (int16_t) v2) * CC_N) | ((v1 == v2) * CC_Z) | ((v1 < v2) * CC_C);
 }
 
-static inline uint32_t cc_cmp_l(uint32_t v1, uint32_t v2)
+static SIM_FORCE_INLINE uint32_t cc_cmp_l(uint32_t v1, uint32_t v2)
 {
     return (((int32_t) v1 < (int32_t) v2) * CC_N) | ((v1 == v2) * CC_Z) | ((v1 < v2) * CC_C);
 }

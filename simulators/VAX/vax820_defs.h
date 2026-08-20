@@ -449,11 +449,7 @@ void cpu_start (int32_t cpu, uint32_t addr);
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "pdp11_io_lib.h"
-#include "vax_bi.h"
-
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
+// #include "pdp11_io_lib.h"
+// #include "vax_bi.h"
 
 #endif

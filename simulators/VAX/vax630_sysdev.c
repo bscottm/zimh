@@ -37,9 +37,11 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
 #include "vax_lk.h"
+#include "pdp11_io_lib.h"
 #include "vax630_sysdev.h"
 #include "vax630_sysdev_internal.h"
 #include "vax_vs.h"

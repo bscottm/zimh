@@ -252,6 +252,7 @@
 
 #if defined (VM_VAX)
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 #endif
 #include "pdp11_xq.h"
 #include "pdp11_xq_bootrom.h"

@@ -6,6 +6,8 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
+#include "vax_bi.h"
 #include "sim_disk.h"
 #include "vax_kdb50.h"
 #include "vax_kdb50_internal.h"

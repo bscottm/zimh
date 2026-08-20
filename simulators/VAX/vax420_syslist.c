@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 
 #if defined (VAX_411)
 char sim_name[64] = "InfoServer 100 (KA41-1)";
@@ -80,7 +81,6 @@ extern DEVICE ve_dev;
 extern DEVICE lk_dev;
 extern DEVICE vs_dev;
 
-extern void WriteB (uint32_t pa, int32_t val);
 extern void rom_wr_B (int32_t pa, int32_t val);
 extern UNIT cpu_unit;
 

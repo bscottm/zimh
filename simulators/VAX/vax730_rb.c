@@ -47,6 +47,7 @@
 #include "vax_defs.h"
 #include "vax730_rb.h"
 #include "vax730_uba.h"
+#include "pdp11_io_lib.h"
 
 /* Constants */
 

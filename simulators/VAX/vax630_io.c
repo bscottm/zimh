@@ -35,6 +35,8 @@
 #include "sim_types.h"
 #include "uint_bits.h"
 #include "vax_qbus_internal.h"
+#include "vax_mmu.h"
+#include "pdp11_io_lib.h"
 #include "vax630_io.h"
 
 /* Qbus IPC register */

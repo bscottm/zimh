@@ -36,6 +36,7 @@
 
 #elif defined (VM_VAX)
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 
 #else
 #error The CH11 device only works with Unibus machines.

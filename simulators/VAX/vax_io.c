@@ -56,6 +56,7 @@
 
 #include "sim_types.h"
 #include "uint_bits.h"
+#include "vax_mmu.h"
 #include "vax_qbus_internal.h"
 
 /* CQBIC system configuration register */

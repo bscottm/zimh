@@ -85,6 +85,7 @@ Rank:       32
 
 #if defined (VM_VAX)
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 #endif
 
 #if defined (VM_PDP11)

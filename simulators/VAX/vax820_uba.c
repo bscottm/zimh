@@ -32,7 +32,10 @@
 
 #include "uint_bits.h"
 #include "vax_defs.h"
+#include "vax_mmu.h"
+#include "vax_bi.h"
 #include "vax820_uba.h"
+#include "pdp11_io_lib.h"
 
 /* Unibus adapter */
 

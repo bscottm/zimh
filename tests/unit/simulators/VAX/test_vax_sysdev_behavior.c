@@ -7,6 +7,7 @@
 #include "test_cmocka.h"
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
 #include "vax_sysdev_internal.h"
@@ -38,8 +39,6 @@ int32_t ibcnt;
 int32_t ppc;
 int32_t mapen;
 int32_t int_req[IPL_HLVL];
-TLBENT stlb[VA_TBSIZE];
-TLBENT ptlb[VA_TBSIZE];
 DEVICE cpu_dev;
 UNIT cpu_unit;
 UNIT clk_unit;
@@ -49,15 +48,25 @@ DEVICE lk_dev;
 DEVICE vs_dev;
 jmp_buf save_env;
 
-TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
-{
-    /* Stubbed MMU fill for uncalled memory access paths. */
-    (void)va;
-    (void)lnt;
-    (void)acc;
-    (void)stat;
+// ptlb, stlb and fill are all provided by vax_mmu.c.
+uint32_t SBR, SLR;                               /* S0 mem mgt */
+uint32_t P0BR, P0LR;                             /* P0 mem mgt */
+uint32_t P1BR, P1LR;                             /* P1 mem mgt */
 
-    return (TLBENT){0, 0};
+int32_t ReadIO(uint32_t pa, int32_t lnt)
+{
+    (void)pa;
+    (void)lnt;
+
+    return 0;
+}
+
+int32_t ReadIOU(uint32_t pa, int32_t lnt)
+{
+    (void)pa;
+    (void)lnt;
+
+    return 0;
 }
 
 void WriteIO(uint32_t pa, int32_t val, int32_t lnt)

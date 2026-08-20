@@ -4,8 +4,9 @@
 
 #include "test_cmocka.h"
 
-#include "vax_cpu.h"
 #include "vax_defs.h"
+#include "vax_mmu.h"
+#include "vax_cpu.h"
 #include "vax_kdb50_internal.h"
 #include "test_simh_personality.h"
 
@@ -29,11 +30,14 @@ int32_t cpu_msk = 1;
 int32_t in_ie;
 int32_t mapen;
 uint32_t mchk_va;
-TLBENT stlb[VA_TBSIZE];
-TLBENT ptlb[VA_TBSIZE];
 jmp_buf save_env;
 UNIT cpu_unit;
 DEVICE cpu_dev;
+
+// ptlb, stlb and fill are all provided by vax_mmu.c.
+uint32_t SBR, SLR;                               /* S0 mem mgt */
+uint32_t P0BR, P0LR;                             /* P0 mem mgt */
+uint32_t P1BR, P1LR;                             /* P1 mem mgt */
 
 static UNIT kdb50_units[2];
 static DIB kdb50_dib = {
@@ -187,18 +191,6 @@ void fl_wr(int32_t pa, int32_t val, int32_t lnt)
     (void)pa;
     (void)val;
     (void)lnt;
-}
-
-TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
-{
-    TLBENT ent = {0};
-
-    (void)va;
-    (void)lnt;
-    (void)acc;
-    if (stat != NULL)
-        *stat = 0;
-    return ent;
 }
 
 static int32_t intexc(int32_t vec, int32_t cc, int32_t ipl, int ei)

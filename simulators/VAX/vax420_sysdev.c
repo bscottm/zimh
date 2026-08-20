@@ -36,6 +36,7 @@
 #include "vax_defs.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
+#include "vax_mmu.h"
 #include "vax420_sysdev.h"
 #include "vax420_sysdev_internal.h"
 #include "vax4xx_rom_patch.h"

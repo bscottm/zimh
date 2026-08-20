@@ -45,6 +45,7 @@
 #include "vax_va_internal.h"
 #include "vax_vs.h"
 #include "vax_vcb02_bin.h"
+#include "pdp11_io_lib.h"
 
 /* QBus memory space offsets */
 

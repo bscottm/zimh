@@ -325,8 +325,4 @@ typedef struct {
 #define XS_WRITEW       Map_WriteW
 #define XS_ADRMBO       (0)
 
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
-
 #endif
