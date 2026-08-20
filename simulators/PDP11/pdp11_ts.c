@@ -94,6 +94,8 @@
 
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define TS_DIS          0                               /* on by default */
 #define DMASK           0xFFFF
 

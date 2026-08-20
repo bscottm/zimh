@@ -31,6 +31,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_bi.h"
 #include "vax820_ka.h"
 
 #define PCSR_RSTH       0x80000000                      /* restart halt */

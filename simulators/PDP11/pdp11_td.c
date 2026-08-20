@@ -449,6 +449,7 @@ OP CODE 11 (Resened)
 
 #if defined (VM_VAX)                                    /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
 
 #else                                                   /* PDP-11 version */
 #include "pdp11_defs.h"

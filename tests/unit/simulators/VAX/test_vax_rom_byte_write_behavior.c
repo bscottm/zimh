@@ -7,6 +7,7 @@
 #include "test_cmocka.h"
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
 #include "vax_watch.h"
@@ -74,8 +75,6 @@ int32_t in_ie;
 int32_t ibcnt;
 int32_t ppc;
 int32_t mapen;
-TLBENT stlb[VA_TBSIZE];
-TLBENT ptlb[VA_TBSIZE];
 DEVICE cpu_dev;
 UNIT cpu_unit;
 UNIT clk_unit;
@@ -86,16 +85,10 @@ DEVICE lk_dev;
 DEVICE vs_dev;
 jmp_buf save_env;
 
-TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
-{
-    /* Stubbed MMU fill for uncalled memory access paths. */
-    (void)va;
-    (void)lnt;
-    (void)acc;
-    (void)stat;
-
-    return (TLBENT){0, 0};
-}
+// ptlb, stlb and fill are all provided by vax_mmu.c.
+uint32_t SBR, SLR;                               /* S0 mem mgt */
+uint32_t P0BR, P0LR;                             /* P0 mem mgt */
+uint32_t P1BR, P1LR;                             /* P1 mem mgt */
 
 t_stat show_mapped_addr(FILE *st, UNIT *uptr, int32_t val, const void *desc)
 {
@@ -165,6 +158,24 @@ void qbmem_wr(int32_t pa, int32_t val, int32_t lnt)
     (void)pa;
     (void)val;
     (void)lnt;
+}
+
+int32_t ReadIO(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIO");
+    return 0;
+}
+
+int32_t ReadIOU(uint32_t pa, int32_t lnt)
+{
+    /* Stubbed unaligned I/O read for uncalled memory access paths. */
+    (void)pa;
+    (void)lnt;
+    fail_msg("unexpected ReadIOU");
+    return 0;
 }
 
 void WriteIO(uint32_t pa, int32_t val, int32_t lnt)

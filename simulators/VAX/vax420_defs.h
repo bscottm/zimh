@@ -389,8 +389,4 @@ typedef struct {
 #define XS_ADRMBO       ((MEMSIZE -1) & 0xFF000000)     /* bits 31:24 have pull-ups */
 #endif
 
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
-
 #endif

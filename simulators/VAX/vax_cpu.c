@@ -190,6 +190,7 @@
 #include "sim_types.h"
 #include "xalloc.h"
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cis.h"
 #include "vax_cmode.h"
 #include "vax_cpu.h"
@@ -197,6 +198,9 @@
 #include "vax_fpa.h"
 #include "vax_octa.h"
 #include "vax_sys.h"
+
+#include "pdp11_io_lib.h"
+
 
 #define UNIT_V_CONH     (UNIT_V_UF + 0)                 /* halt to console */
 #define UNIT_V_MSIZE    (UNIT_V_UF + 1)                 /* dummy */

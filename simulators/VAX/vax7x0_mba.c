@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 
 /* Massbus */
 

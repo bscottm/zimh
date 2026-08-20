@@ -219,6 +219,8 @@
 #define AIECO_REQ       (1)                             /* Requires Augmented Image ECO */
 #elif defined (VM_VAX)                                  /* VAX version */
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define IPL_CD          (IPL_CR)                        /* use same for CD */
 #define INT_V_CD        (INT_V_CR)
 #define INT_CD          (INT_CR)

@@ -63,6 +63,7 @@ add_unit_test(unit-vax410-sysdev-behavior
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax4xx_sysdev_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax410_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -78,6 +79,7 @@ add_unit_test(unit-vax420-sysdev-behavior
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax4xx_sysdev_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax420_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -94,6 +96,7 @@ add_unit_test(unit-vax-sysdev-behavior
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax_sysdev_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -108,6 +111,7 @@ add_unit_test(unit-vax43-sysdev-behavior
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax43_sysdev_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax43_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -123,6 +127,7 @@ add_unit_test(unit-vax440-sysdev-behavior
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax440_sysdev_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax440_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -152,6 +157,7 @@ add_unit_test(unit-vax820-boot
     LABEL unit
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax820_boot.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX
@@ -216,6 +222,7 @@ add_unit_test(unit-vax630-rom-byte-write
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_vax_rom_byte_write_behavior.c
         ${PROJECT_SOURCE_DIR}/simulators/VAX/vax630_sysdev.c
+        ${PROJECT_SOURCE_DIR}/simulators/VAX/vax_mmu.c
     INCLUDES
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/simulators/VAX

@@ -55,6 +55,9 @@
    End of tape is two consecutive end of file marks.
 */
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #if defined (VM_PDP10)
 #error "PDP-10 uses pdp10_tu.c!"
 
@@ -64,14 +67,14 @@
 
 #elif defined (VM_VAX)
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define DEV_DIS_INIT    0
 #if (!UNIBUS)
 #error "Qbus not supported!"
 #endif
 
 #endif
-#include <stdbool.h>
-#include <stdint.h>
 
 #include "sim_tape.h"
 

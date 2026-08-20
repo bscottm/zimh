@@ -500,8 +500,4 @@ int32_t ReadRegU (uint32_t pa, int32_t lnt);
 void WriteIOU (uint32_t pa, int32_t val, int32_t lnt);
 void WriteRegU (uint32_t pa, int32_t val, int32_t lnt);
 
-/* Function prototypes for virtual and physical memory interface (inlined) */
-
-#include "vax_mmu.h"
-
 #endif

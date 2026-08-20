@@ -78,6 +78,7 @@
 #include <stdint.h>
 
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cmode.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"

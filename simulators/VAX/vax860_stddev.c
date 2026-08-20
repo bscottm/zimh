@@ -38,6 +38,7 @@
 
 #include "vax_defs.h"
 #include "vax860_stddev.h"
+#include "pdp11_io_lib.h"
 #include "sim_tmxr.h"
 
 /* Terminal definitions */

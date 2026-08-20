@@ -62,6 +62,8 @@
 
 #elif defined (VM_VAX)
 #include "vax_defs.h"
+#include "pdp11_io_lib.h"
+
 #define INIT_DTYPE      RP06_DTYPE
 #define INIT_SIZE       RP06_SIZE
 #define DMASK           0xFFFF

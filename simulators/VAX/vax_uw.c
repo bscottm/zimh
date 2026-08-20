@@ -38,6 +38,7 @@
 #include "vax_defs.h"
 #include "sim_tmxr.h"
 #include "vax_uw_internal.h"
+#include "pdp11_io_lib.h"
 
 #define UW_UNITS 1
 #define IOLN_UW 16

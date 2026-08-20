@@ -32,8 +32,13 @@
 #include <stdint.h>
 
 #include "uint_bits.h"
+#ifdef VAX_QBUS_TEST_RECORD_WRITES
+#    include "vax_qbus_internal.h"
+#endif
+#include "vax_mmu.h"
 #include "vax_qbus_internal.h"
 #include "vax610_io.h"
+#include "pdp11_io_lib.h"
 
 int32_t int_req[IPL_HLVL] = { 0 };                      /* intr, IPL 14-17 */
 int32_t int_vec_set[IPL_HLVL][32] = { 0 };              /* bits to set in vector */

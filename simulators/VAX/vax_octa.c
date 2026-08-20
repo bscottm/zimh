@@ -50,6 +50,7 @@
 #include "vax_defs.h"
 #include "vax_octa.h"
 #include "vax_sys.h"
+#include "vax_mmu.h"
 
 #define WORDSWAP(x)     ((((x) & WMASK) << 16) | (((x) >> 16) & WMASK))
 

@@ -72,6 +72,7 @@ extern uint32_t cpu_opt;
 #include <stdint.h>
 
 #include "sim_disk.h"
+#include "pdp11_io_lib.h"
 
 #define HK_NUMDR        8                               /* #drives */
 #define HK_NUMCY6       411                             /* cyl/drive */

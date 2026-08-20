@@ -62,6 +62,7 @@
 #include "sim_types.h"
 #include "uint_bits.h"
 #include "vax_defs.h"
+#include "vax_mmu.h"
 #include "vax_cpu.h"
 #include "vax_cpu1.h"
 #include "vax_lk.h"
