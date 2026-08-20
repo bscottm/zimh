@@ -177,7 +177,7 @@
 #        if defined(__GNUC__) || defined(__clang__)
 #            define SIM_FORCE_INLINE inline __attribute__((always_inline))
 #        elif defined(_MSC_VER)
-#            defined SIM_FORCE_INLINE __forceinline
+#            define SIM_FORCE_INLINE __forceinline
 #        else
 #            define SIM_FORCE_INLINE inline
 #        endif
