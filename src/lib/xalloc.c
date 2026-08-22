@@ -10,10 +10,13 @@
 #include <string.h>
 
 #if defined(_WIN32)
-# include <windows.h>
+#    include <windows.h>
 #else
-# include <sys/mman.h>
-# include <unistd.h>
+#    include <sys/mman.h>
+#    include <unistd.h>
+#    if defined(__APPLE__)
+#        include <mach/mach_vm.h>
+#    endif
 #endif
 
 /* Report an allocation contract violation and abort execution. */
@@ -109,18 +112,49 @@ void *xmalloc_isolated(size_t size)
         return NULL;
 
 #if defined(_WIN32)
+    /* Windows: Try large pages first, fall back to normal pages */
+    SIZE_T min_large_page_size = GetLargePageMinimum();
+
+    /* Only attempt large pages if they're supported (min_large_page_size > 0)
+     * and size is at least as large or larger than the min_large_page_size.
+     */
+    if (min_large_page_size > 0 && size >= min_large_page_size) {
+        ptr = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE | MEM_LARGE_PAGES, PAGE_READWRITE);
+        if (ptr != NULL)
+            return ptr;
+        /* Fall through to normal allocation if large pages fail */
+    }
+
+    /* Normal page allocation */
     ptr = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (ptr == NULL)
         return NULL;
-#else
-    /* MAP_ANON is standard BSD (macOS, *BSD); MAP_ANONYMOUS is Linux */
-# if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
-#  define MAP_ANONYMOUS MAP_ANON
-# endif
-    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE,
-               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+#elif defined(__APPLE__) && defined(__MACH__)
+    /* macOS: Use VM_FLAGS_SUPERPAGE_SIZE_ANY in fd parameter for superpage promotion */
+    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, VM_FLAGS_SUPERPAGE_SIZE_ANY, 0);
     if (ptr == MAP_FAILED)
         return NULL;
+
+#else
+    /* Linux/BSD: Standard mmap followed by madvise for huge pages */
+#    if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#        define MAP_ANONYMOUS MAP_ANON
+#    endif
+
+    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED)
+        return NULL;
+
+    /* Advise kernel to use huge pages if possible (Linux 2.6.38+) */
+    /* Ignore return value - if it fails, we still have normal pages */
+#    if defined(MADV_HUGEPAGE)
+    (void)madvise(ptr, size, MADV_HUGEPAGE);
+#    endif
+#    if defined(MADV_RANDOM)
+    (void)madvise(ptr, size, MADV_RANDOM);
+#    endif
+
 #endif
 
     return ptr;
