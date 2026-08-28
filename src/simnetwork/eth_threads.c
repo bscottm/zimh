@@ -18,43 +18,6 @@
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
 
-// Default socket read timeout. Note: This can be made longer, which only
-// affects how quickly the reader thread exits.
-enum {
-    ETH_READER_POLL_TMO = 500 /* ms */
-};
-
-#if SIM_USE_POLL
-#    define POLL_NORMAL_EVENTS (POLLIN)
-#    if !defined(_WIN32) && !defined(_WIN64)
-#        define POLL_EXTRA_EVENTS (POLLPRI | POLLERR | POLLHUP)
-#    else
-         // Windows rejects POLLPRI, POLLERR, POLLHUP.
-#        define POLL_EXTRA_EVENTS 0
-#    endif
-#endif
-
-/*============================================================================*/
-/*                 select()/poll() on a single socket                         */
-/*============================================================================*/
-
-static inline int wait_one_socket(SOCKET socket_fd, long timeout_ms)
-{
-#if SIM_USE_SELECT
-    fd_set setl;
-    struct timeval timeout;
-
-    FD_ZERO(&setl);
-    FD_SET(socket_fd, &setl);
-    timeout.tv_sec = 0;
-    timeout.tv_usec = timeout_ms * 1000;
-    return select(socket_fd + 1, &setl, NULL, NULL, &timeout);
-#else
-    sim_pollfd_t fds = {.fd = socket_fd, .events = POLL_NORMAL_EVENTS | POLL_EXTRA_EVENTS, .revents = 0};
-    return poll(&fds, 1, (sim_polltmo_t)timeout_ms);
-#endif
-}
-
 /*============================================================================*/
 /*                    STATE HANDLER IMPLEMENTATIONS                           */
 /*============================================================================*/
@@ -100,39 +63,8 @@ int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
     /* Windows: Use event-based waiting */
     return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
 #else
-    return wait_one_socket(pcap_get_selectable_fd(backend->state.pcap), ETH_READER_POLL_TMO);
+    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
 #endif
-}
-
-/* TAP wait implementation */
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void)backend;
-
-#if defined(HAVE_TAP_NETWORK)
-    return wait_one_socket(backend->state.eth_socket, ETH_READER_POLL_TMO);
-#else
-    return 1;
-#endif
-}
-
-/* VDE wait implementation */
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void)dev;
-
-#if defined(HAVE_VDE_NETWORK)
-    return wait_one_socket(vde_datafd(backend->state.vde), ETH_READER_POLL_TMO);
-#else
-    return 1;
-#endif
-}
-
-/* UDP wait implementation */
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void)backend;
-    return wait_one_socket(backend->state.eth_socket, ETH_READER_POLL_TMO);
 }
 
 /* NAT (SLiRP) wait implementation */

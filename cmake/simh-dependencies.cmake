@@ -19,7 +19,9 @@ add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
     ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
     ${SIMH_SIMNETWORK_ROOT}/eth_read.c
+    ${SIMH_SIMNETWORK_ROOT}/poll_eth_socket.c
     ${SIMH_SIMNETWORK_ROOT}/udp_tunnel/eth_udp_open.c
+    ${SIMH_SIMNETWORK_ROOT}/udp_tunnel/udp_poll.c
 )
 
 target_compile_definitions(simh_network PUBLIC
@@ -223,6 +225,7 @@ if(WITH_NETWORK)
             if(VDE_FOUND)
                 target_sources(simh_network PRIVATE
                     ${SIMH_SIMNETWORK_ROOT}/vde/eth_vde_open.c
+                    ${SIMH_SIMNETWORK_ROOT}/vde/vde_poll.c
                 )
                 target_compile_definitions(simh_network PUBLIC HAVE_VDE_NETWORK)
                 target_link_libraries(simh_network PUBLIC ${VDE_LIBRARIES})

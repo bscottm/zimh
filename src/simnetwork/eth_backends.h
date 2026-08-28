@@ -5,7 +5,10 @@
 #    define SIM_ETH_BACKENDS_H
 
 #    include <stdint.h>
+#    include <stdbool.h>
 
+#    include "sim_defs.h"
+#    include "sim_sock.h"
 #    include "simnetwork/eth_types.h"
 
 /* On BSD/macOS, include net/bpf.h BEFORE any pcap headers to establish BPF definitions.
@@ -20,20 +23,6 @@
 #        include <pcap.h>
 #        include <string.h>
 #    endif /* HAVE_PCAP_NETWORK */
-
-#    ifdef HAVE_TAP_NETWORK
-#        if defined(__linux) || defined(__linux__)
-#            include <sys/ioctl.h>
-#            include <net/if.h>
-#            include <linux/if_tun.h>
-#        elif defined(HAVE_BSDTUNTAP)
-#            include <sys/types.h>
-#            include <net/if_types.h>
-#            include <net/if.h>
-#        else /* We don't know how to do this on the current platform */
-#            undef HAVE_TAP_NETWORK
-#        endif
-#    endif    /* HAVE_TAP_NETWORK */
 
 #    ifdef HAVE_VDE_NETWORK
 #        include <libvdeplug.h>
@@ -99,6 +88,8 @@ struct eth_backend_s {
 
     /* Writer-side thread shutdown hook. Optional -- may be NULL. */
     void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+    
+    /* Per-backend state.*/
     union {
 #    ifdef HAVE_PCAP_NETWORK
         pcap_t *pcap;                   /* PCAP handle */
@@ -116,39 +107,33 @@ struct eth_backend_s {
     } state;
 };
 
-#endif
+// Default socket read timeout. Note: This can be made longer, which only
+// affects how quickly the reader thread exits.
+enum {
+    ETH_READER_POLL_TMO = 500 /* ms */
+};
+
+/* Socket polling function */
+int poll_eth_socket(eth_backend_t *backend, long timeout_ms);
 
 /*--- API functions for eth_backend_t ---*/
-
 int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev);
 int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev);
 int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
 
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev);
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev);
 int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
 int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
 
 /* PCAP writer */
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
-/* TAP writer */
-int eth_writer_tap(ETH_DEV *dev, const ETH_PACK *packet);
-/* VDE writer */
-int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp mutex acquisition */
 bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 /* libslirp writer */
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp mutex release */
 bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
-/* UDP writer */
-int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet);
 /* Empty/no network writer: This does nothing. Reallly. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */
@@ -157,3 +142,5 @@ int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp shutdown hooks: */
 void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev);
 void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev);
+
+#endif

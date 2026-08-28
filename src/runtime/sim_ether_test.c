@@ -218,7 +218,7 @@ int eth_test_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 {
     ETH_TEST_BACKEND *backend = dev->backend.state.test_backend;
 
-    if (!backend)
+    if (backend == 0)
         return 0;
 
     while (backend->rx_to_guest.count > 0) {

@@ -10,9 +10,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
-#include "sim_ether.h"
-#include "sim_ether_internal.h"
-#include "simnetwork/eth_backends.h"
+#include "simnetwork/unix_tap/unix_tap.h"
 
 // Open a TAP device and configure it for use with the simulator. The device name is specified in the devname
 // parameter, and the resulting device name is stored in the savname parameter. The savname parameter must be

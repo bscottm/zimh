@@ -4,8 +4,6 @@
 #include "sim_ether_internal.h"
 #include "simnetwork/eth_backends.h"
 
-#include <libvdeplug.h>
-
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
     char vdeswitch_s[CBUFSIZE]; /* VDE switch name */

@@ -3,7 +3,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
-#include "sim_ether.h"
+#include "simnetwork/udp_tunnel/udp_tunnel.h"
 
 #include "simnetwork/eth_backends.h"
 

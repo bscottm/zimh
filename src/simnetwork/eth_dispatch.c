@@ -24,22 +24,6 @@ int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet)
 #endif
 }
 
-int eth_writer_vde(ETH_DEV *dev, const ETH_PACK *packet)
-{
-#if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
-    int status = vde_send(dev->backend->state.vde, (void *)packet->msg, packet->len, 0);
-    if ((status == (int)packet->len) || (status == 0))
-        return 0;
-    if ((status == -1) && ((errno == EAGAIN) || (errno == EWOULDBLOCK)))
-        return 0;
-    return 1;
-#else
-    (void)dev;
-    (void)packet;
-    return 0;
-#endif
-}
-
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
@@ -54,12 +38,6 @@ int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
     (void)packet;
     return 0;
 #endif
-}
-
-int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet)
-{
-    int n_written = sim_write_sock(dev->backend->state.eth_socket, (char *)packet->msg, (int32_t)packet->len);
-    return (((int32_t)packet->len == n_written) ? 0 : -1);
 }
 
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet)
@@ -100,25 +78,6 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 #endif
 }
 
-int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)
-{
-#if defined(USE_READER_THREAD) && defined(HAVE_VDE_NETWORK)
-    int len;
-    u_char buf[ETH_MAX_JUMBO_FRAME];
-
-    len = vde_recv(dev->backend->state.vde, buf, sizeof(buf), 0);
-    if (len > 0) {
-        eth_process_received_packet(dev, buf, len, len);
-        return 1;
-    }
-    return (len < 0) ? -1 : 0;
-#else
-    (void)backend;
-    (void)dev;
-    return 0;
-#endif
-}
-
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
 #if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
@@ -133,26 +92,6 @@ int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
      * whether packets arrived. But packets delivered via _slirp_callback()
      * are queued to dev->read_queue, so check if the queue is non-empty. */
     return sim_tailq_empty(&dev->read_queue) ? 0 : 1;
-#else
-    (void)backend;
-    (void)dev;
-    return 0;
-#endif
-}
-
-int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
-{
-#if defined(USE_READER_THREAD)
-    int len;
-    u_char buf[ETH_MAX_JUMBO_FRAME];
-
-    (void)backend;
-    len = (int)sim_read_sock(backend->state.eth_socket, (char *)buf, (int32_t)sizeof(buf));
-    if (len > 0) {
-        eth_process_received_packet(dev, buf, len, len);
-        return 1;
-    }
-    return (len < 0) ? -1 : 0;
 #else
     (void)backend;
     (void)dev;
