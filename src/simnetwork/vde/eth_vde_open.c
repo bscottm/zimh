@@ -1,8 +1,7 @@
-#include "sim_defs.h"
-#include "sim_sock.h"
-#include "sim_ether.h"
-#include "sim_ether_internal.h"
-#include "simnetwork/eth_backends.h"
+// SPDX-FileCopyrightText: 2026 The ZIMH Project
+// SPDX-License-Identifier: MIT
+
+#include "simnetwork/vde/sim_vde.h"
 
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
@@ -10,7 +9,6 @@ t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
     char vdeport_s[CBUFSIZE];   /* VDE switch port (optional), numeric */
 
     struct vde_open_args voa;
-    const char *devname = savname + 4;
 
     memset(&voa, 0, sizeof(voa));
     voa.mode = 0600;
@@ -48,7 +46,7 @@ t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
     backend->after_packet_write = NULL;
     backend->state.vde = vde;
 
-    eth_dev->backend = backend;
+    dev->backend = backend;
 
     return SCPE_OK;
 }
