@@ -224,8 +224,8 @@ if(WITH_NETWORK)
 
             if(VDE_FOUND)
                 target_sources(simh_network PRIVATE
-                    ${SIMH_SIMNETWORK_ROOT}/vde/eth_vde_open.c
-                    ${SIMH_SIMNETWORK_ROOT}/vde/vde_poll.c
+                    ${SIMH_SIMNETWORK_ROOT}/eth_vde/eth_vde_open.c
+                    ${SIMH_SIMNETWORK_ROOT}/eth_vde/eth_vde_api.c
                 )
                 target_compile_definitions(simh_network PUBLIC HAVE_VDE_NETWORK)
                 target_link_libraries(simh_network PUBLIC ${VDE_LIBRARIES})
@@ -262,7 +262,7 @@ if(WITH_NETWORK)
 
     if(HAVE_TAP_NETWORK)
         target_compile_definitions(simh_network PUBLIC HAVE_TAP_NETWORK)
-        target_sources(simh_network PRIVATE 
+        target_sources(simh_network PRIVATE
             ${SIMH_SIMNETWORK_ROOT}/unix_tap/eth_tap_open.c
             ${SIMH_SIMNETWORK_ROOT}/unix_tap/tap_poll.c)
     endif()

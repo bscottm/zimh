@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The ZIMH Project
 // SPDX-License-Identifier: MIT
 
-#include "simnetwork/vde/sim_vde.h"
+#include "simnetwork/eth_vde/eth_vde.h"
 
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
