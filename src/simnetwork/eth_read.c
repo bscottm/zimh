@@ -25,8 +25,11 @@ int eth_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         return 0;
 
     packet->len = 0;
+
+#if 0
     if (dev->backend->eth_api == ETH_API_TEST)
         return eth_test_read(dev, packet, routine);
+#endif
 
 #if !defined(USE_READER_THREAD)
     /* set read packet */

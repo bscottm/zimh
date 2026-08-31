@@ -3,7 +3,7 @@
 
 /* Ethernet emulation API functions for UDP point-to-point tunnels. */
 
-#include "simnetwork/udp_tunnel/udp_tunnel.h"
+#include "simnetwork/eth_udp/eth_udp.h"
 
 /* UDP wait implementation */
 int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)

@@ -29,7 +29,7 @@
 #    endif /* HAVE_VDE_NETWORK */
 
 #    ifdef HAVE_SLIRP_NETWORK
-#        include "simnetwork/slirp/sim_slirp.h"
+#        include "simnetwork/eth_slirp/sim_slirp.h"
 #    endif
 
 /* Ethernet testing backend. */

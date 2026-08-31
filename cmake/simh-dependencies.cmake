@@ -18,10 +18,13 @@ add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
     ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
     ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_open_close.c
     ${SIMH_SIMNETWORK_ROOT}/eth_read.c
     ${SIMH_SIMNETWORK_ROOT}/poll_eth_socket.c
-    ${SIMH_SIMNETWORK_ROOT}/udp_tunnel/eth_udp_open.c
-    ${SIMH_SIMNETWORK_ROOT}/udp_tunnel/udp_poll.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_open.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_api.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_open.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_api.c
 )
 
 target_compile_definitions(simh_network PUBLIC
@@ -37,7 +40,7 @@ target_include_directories(simh_network PRIVATE
     "${ZIMH_GENERATED_INCLUDE_DIR}"
 )
 
-# # Expose the simnetwork directory as a public include:
+# Expose the simnetwork directory as a public include:
 target_include_directories(simh_network PUBLIC
     "${SIMH_SOURCE_ROOT}"
 )
@@ -115,6 +118,7 @@ if(WITH_NETWORK)
     # Note: This will be headers-only on Windows, full library linkage
     # everywhere else.
     # -----------------------------------------------------------------------------
+    set(ADD_PCAP_SOURCE FALSE)
     if(WIN32)
         # 1. Windows / vcpkg Pipeline
         # vcpkg intercepts find_package(PCAP) and provides its own internal target mapping
@@ -127,6 +131,7 @@ if(WITH_NETWORK)
                 HAVE_PCAP_NETWORK
             )
             target_link_libraries(simh_network PUBLIC PCAP::PCAP)
+            set(ADD_PCAP_SOURCE TRUE)
             message(STATUS "Network: PCAP configured via vcpkg (dynamically loaded library).")
         endif()
     else()
@@ -138,6 +143,7 @@ if(WITH_NETWORK)
         if(TARGET PkgConfig::PCAP_PKG)
             target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
             target_link_libraries(simh_network PRIVATE PkgConfig::PCAP_PKG)
+            set(ADD_PCAP_SOURCE TRUE)
             message(STATUS "Network: PCAP configured via pkg-config.")
         else()
             # Absolute fallback if a weird Linux distro doesn't ship libpcap.pc
@@ -146,8 +152,16 @@ if(WITH_NETWORK)
             if(TARGET PCAP::PCAP)
                 target_compile_definitions(simh_network PUBLIC HAVE_PCAP_NETWORK)
                 target_link_libraries(simh_network PUBLIC PCAP::PCAP)
+                set(ADD_PCAP_SOURCE TRUE)
             endif()
         endif()
+    endif()
+
+    if (ADD_PCAP_SOURCE)
+        target_sources(simh_network PRIVATE
+            src/simnetwork/eth_pcap/eth_pcap_open.c
+            src/simnetwork/eth_pcap/eth_pcap_api.c
+        )
     endif()
 
     # SLIRP + GLIB2
@@ -210,8 +224,9 @@ if(WITH_NETWORK)
 
         if(HAVE_LIBSLIRP)
             target_sources(simh_network PRIVATE
-                ${SIMH_SIMNETWORK_ROOT}/slirp/sim_slirp.c
-                ${SIMH_SIMNETWORK_ROOT}/slirp/slirp_poll.c)
+                ${SIMH_SIMNETWORK_ROOT}/eth_slirp/sim_slirp.c
+                ${SIMH_SIMNETWORK_ROOT}/eth_slirp/slirp_poll.c
+            )
         endif()
     endif()
 

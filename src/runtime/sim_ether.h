@@ -313,6 +313,9 @@ t_stat sim_ether_test(DEVICE *dptr, const char *cptr); /* unit test routine */
 /* Backend open functions: */
 t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
+t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
+t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
+t_stat eth_test_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
 
 /* Well-known Ethernet MAC addresses:
  *

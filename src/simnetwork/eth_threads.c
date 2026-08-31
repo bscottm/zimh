@@ -55,18 +55,6 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 
 /* Forward declarations of API-specific wait handlers */
 
-/* PCAP wait implementation */
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
-{
-    (void)dev;
-#if defined(_WIN32)
-    /* Windows: Use event-based waiting */
-    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
-#else
-    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
-#endif
-}
-
 /* NAT (SLiRP) wait implementation */
 int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
@@ -76,15 +64,6 @@ int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
 #else
     return 1;
 #endif
-}
-
-/* Test API wait implementation */
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev)
-{
-    /* Test API doesn't wait, always return immediately */
-    (void)backend;
-    (void)dev;
-    return 1;
 }
 
 /* None API wait implementation */
