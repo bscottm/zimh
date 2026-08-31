@@ -10,7 +10,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
-#include "simnetwork/unix_tap/unix_tap.h"
+#include "simnetwork/eth_tap/eth_tap.h"
 
 // Open a TAP device and configure it for use with the simulator. The device name is specified in the devname
 // parameter, and the resulting device name is stored in the savname parameter. The savname parameter must be
@@ -69,7 +69,7 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
             memmove(savname, devname, strlen(devname) + 1);
         }
 
-            #    if defined(__APPLE__)
+#    if defined(__APPLE__)
         if (tun >= 0) { /* Good so far? */
             struct ifreq ifr;
             int s;

@@ -3,7 +3,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
-#include "simnetwork/unix_tap/unix_tap.h"
+#include "simnetwork/eth_tap/eth_tap.h"
 
 /* TAP wait implementation */
 int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
@@ -14,7 +14,7 @@ int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
 int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)
 {
     int len;
-    u_char buf[ETH_MAX_JUMBO_FRAME];
+    uint8_t buf[ETH_MAX_JUMBO_FRAME];
 
     (void)backend;
     len = read(backend->state.eth_socket, buf, sizeof(buf));

@@ -263,8 +263,8 @@ if(WITH_NETWORK)
     if(HAVE_TAP_NETWORK)
         target_compile_definitions(simh_network PUBLIC HAVE_TAP_NETWORK)
         target_sources(simh_network PRIVATE
-            ${SIMH_SIMNETWORK_ROOT}/unix_tap/eth_tap_open.c
-            ${SIMH_SIMNETWORK_ROOT}/unix_tap/tap_poll.c)
+            ${SIMH_SIMNETWORK_ROOT}/eth_tap/eth_tap_open.c
+            ${SIMH_SIMNETWORK_ROOT}/eth_tap/eth_tap_api.c)
     endif()
 
     if(HAVE_BSDTUNTAP)
