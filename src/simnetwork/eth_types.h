@@ -4,6 +4,8 @@
 #if !defined(SIM_ETH_TYPES_H)
 #define SIM_ETH_TYPES_H
 
+#include <stdint.h>
+
 /* structure declarations */
 
 #define ETH_PROMISC 1             /* promiscuous mode = true */

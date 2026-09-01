@@ -121,9 +121,13 @@ int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
 int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
 int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
 
+/* PCAP reader*/
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
+/* NAT (libslirp) reader */
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
+/* No (null) network reader */
 int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
+/* Test backend reader*/
 int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
 
 /* PCAP writer */
@@ -134,7 +138,7 @@ bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
 /* libslirp mutex release */
 bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
-/* Empty/no network writer: This does nothing. Reallly. */
+/* Empty/no network writer: This does nothing. Really. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */
 int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet);

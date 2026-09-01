@@ -6,6 +6,7 @@
 #include "sim_defs.h"
 #include "sim_sock.h"
 #include "sim_ether.h"
+#include "simnetwork/eth_funcs.h"
 #include "simnetwork/eth_backends.h"
 
 // ETH_DEV initializer
@@ -124,7 +125,7 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     if ((strlen(name) == 4 || strlen(name) == 5) && (tolower(name[0]) == 'e') && (tolower(name[1]) == 't') &&
         (tolower(name[2]) == 'h') && isdigit(name[3]) && (strlen(name) == 4 || isdigit(name[4]))) {
         num = atoi(&name[3]);
-        savname = _eth_getname(num, temp, sizeof(temp), desc, sizeof(desc));
+        savname = eth_getname(num, temp, sizeof(temp), desc, sizeof(desc));
         if (savname == NULL) /* didn't translate */
             return SCPE_OPENERR;
     } else if (eth_is_explicit_pseudo_device(name)) {
@@ -151,7 +152,7 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
                 namebuf[num] = tolower(namebuf[num]);
     }
     savname = namebuf;
-    r = eth_open_port(namebuf, sizeof(namebuf), dev->backend, dev, dptr, dbit);
+    r = eth_open_port(namebuf, sizeof(namebuf), dev, dptr, dbit);
 
     if (errbuf[0])
         return sim_messagef(SCPE_OPENERR, "Eth: open error - %s\n", errbuf);

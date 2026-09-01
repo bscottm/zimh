@@ -44,6 +44,9 @@
 #    endif
 #endif
 
+#include "sim_defs.h"
+#include "sim_ether.h"
+
 /* Match the existing ETH_LIST structure from sim_ether.h */
 #define ETH_DEV_NAME_MAX 256
 #define ETH_DEV_DESC_MAX 256
@@ -298,7 +301,7 @@ static int eth_devices_native_unix(int max, ETH_LIST *list)
  *
  * Returns: number of devices found
  */
-int eth_devices_native(int max, ETH_LIST *list)
+int eth_devices(int max, ETH_LIST *list)
 {
     int used;
 
@@ -317,6 +320,114 @@ int eth_devices_native(int max, ETH_LIST *list)
     return used;
 }
 
+const char *eth_getname(int number, char *name, size_t name_size, char *desc, size_t desc_size)
+{
+    ETH_LIST list[ETH_MAX_DEVICE];
+    int count = eth_devices(ETH_MAX_DEVICE, list, false);
+
+    if ((number < 0) || (count <= number))
+        return NULL;
+    if (list[number].eth_api != ETH_API_PCAP) {
+        sim_printf("Eth: Pcap capable device not found.  You may need to run as root\n");
+        return NULL;
+    }
+
+    strlcpy(name, list[number].name, name_size);
+    strlcpy(desc, list[number].desc, desc_size);
+    return name;
+}
+
+const char *eth_getname_bydesc(const char *desc, char *name, size_t name_size, char *ndesc, size_t ndesc_size)
+{
+    ETH_LIST list[ETH_MAX_DEVICE];
+    int count = eth_devices(ETH_MAX_DEVICE, list, false);
+    int i;
+    size_t j = strlen(desc);
+
+    for (i = 0; i < count; i++) {
+        int found = 1;
+        size_t k = strlen(list[i].desc);
+
+        if (j != k)
+            continue;
+        for (k = 0; k < j; k++)
+            if (tolower(list[i].desc[k]) != tolower(desc[k]))
+                found = 0;
+        if (found == 0)
+            continue;
+
+        /* found a case-insensitive description match */
+        strlcpy(name, list[i].name, name_size);
+        strlcpy(ndesc, list[i].desc, ndesc_size);
+        return name;
+    }
+    /* not found */
+    return NULL;
+}
+
+const char *eth_getname_byname(const char *name, char *temp, size_t temp_size, char *desc, size_t desc_size)
+{
+    ETH_LIST list[ETH_MAX_DEVICE];
+    int count = eth_devices(ETH_MAX_DEVICE, list, false);
+    size_t n;
+    int i, found;
+
+    found = 0;
+    n = strlen(name);
+    for (i = 0; i < count && !found; i++) {
+        if ((n == strlen(list[i].name)) && (strncasecmp(name, list[i].name, n) == 0)) {
+            found = 1;
+            strlcpy(temp, list[i].name, temp_size); /* only case might be different */
+            strlcpy(desc, list[i].desc, desc_size);
+        }
+    }
+    return (found ? temp : NULL);
+}
+
+const char *eth_getdesc_byname(char *name, char *temp, size_t temp_size)
+{
+    ETH_LIST list[ETH_MAX_DEVICE];
+    int count = eth_devices(ETH_MAX_DEVICE, list, false);
+    size_t n;
+    int i, found;
+
+    found = 0;
+    n = strlen(name);
+    for (i = 0; i < count && !found; i++) {
+        if ((n == strlen(list[i].name)) && (strncasecmp(name, list[i].name, n) == 0)) {
+            found = 1;
+            strlcpy(temp, list[i].desc, temp_size);
+        }
+    }
+    return (found ? temp : NULL);
+}
+
+static ETH_DEV **eth_open_devices = NULL;
+static int eth_open_device_count = 0;
+
+void _eth_add_to_open_list(ETH_DEV *dev)
+{
+    ETH_DEV **tmp = (ETH_DEV **)realloc(eth_open_devices, (eth_open_device_count + 1) * sizeof(*eth_open_devices));
+    if (tmp != NULL) {
+        eth_open_devices = tmp;
+        eth_open_devices[eth_open_device_count++] = dev;
+    }
+}
+
+void _eth_remove_from_open_list(ETH_DEV *dev)
+{
+    int i, j;
+
+    for (i = 0; i < eth_open_device_count; ++i)
+        if (eth_open_devices[i] == dev) {
+            for (j = i + 1; j < eth_open_device_count; ++j)
+                eth_open_devices[j - 1] = eth_open_devices[j];
+            --eth_open_device_count;
+            break;
+        }
+}
+
+#if 0
 /*============================================================================*/
 /*                    Example Usage / Test Program                            */
 /*============================================================================*/
@@ -357,3 +468,4 @@ int main(void)
 
     return 0;
 }
+#endif
