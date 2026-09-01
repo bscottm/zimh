@@ -9,7 +9,7 @@
 #include "simnetwork/eth_backends.h"
 
 /* UDP tunnel wait implementation */
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 /* UDP tunnel reader */
 int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev);
 /* UDP tunnel writer */

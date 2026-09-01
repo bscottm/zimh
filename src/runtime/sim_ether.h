@@ -59,6 +59,7 @@
 #    include "sim_tailq.h"
 /* #    include "simnetwork/eth_backends.h" */
 #    include "simnetwork/eth_types.h"
+#    include "simnetwork/eth_threads.h"
 #    include "sim_atomic.h"
 
 /* make common BSD code a bit easier to read in this file */
@@ -77,15 +78,15 @@
 #        define PCAP_READ_TIMEOUT 1
 #    endif
 
-#    if defined(USE_READER_THREAD)
-#        if defined(USE_SETNONBLOCK)
-#            undef USE_SETNONBLOCK
-#        endif /* USE_SETNONBLOCK */
-#        undef PCAP_READ_TIMEOUT
-#        define PCAP_READ_TIMEOUT 15
-#        include "sim_threads.h"
-#        include "sim_tailq.h"
-#    endif /* USE_READER_THREAD */
+#if ETH_THREADING_AVAILABLE
+#    if defined(USE_SETNONBLOCK)
+#        undef USE_SETNONBLOCK
+#    endif /* USE_SETNONBLOCK */
+#    undef PCAP_READ_TIMEOUT
+#    define PCAP_READ_TIMEOUT 15
+#    include "sim_threads.h"
+#    include "sim_tailq.h"
+#endif /* ETH_THREADING_AVAILABLE */
 
 /* give priority to USE_NETWORK over USE_LOADED_WINPCAP */
 #    if defined(USE_NETWORK) && defined(USE_LOADED_WINPCAP)
@@ -203,14 +204,18 @@ struct eth_device {
     uint32_t throttle_events;      /* keeps track of packet arrival values */
     uint32_t throttle_packet_time; /* time last packet was transmitted */
     uint32_t throttle_count;       /* Total Throttle Delays */
-#    if defined(USE_READER_THREAD)
-    bool asynch_io;                /* Asynchronous Interrupt scheduling enabled */
+
+    /* Threading availability and state */
+    bool asynch_io;                /* Asynchronous I/O enabled for this device */
     int asynch_io_latency;         /* instructions to delay pending interrupt */
+
+#if ETH_THREADING_AVAILABLE
+    bool threading_initialized;    /* Threading structures (queues, mutexes) initialized */
+    bool threads_running;          /* Reader/writer threads are actively running */
 
     sim_mutex_t lock;
     sim_thread_t reader_thread;    /* Reader Thread Id */
     sim_thread_t writer_thread;    /* Writer Thread Id */
-    bool threading_initialized;    /* Thread state needs cleanup */
 
     /* Startup synchronization barrier */
     sim_mutex_t startup_lock;
@@ -232,7 +237,7 @@ struct eth_device {
     /* Thread status: */
     sim_atomic_value_t reader_status; /* Current reader state (atomically accessed) */
     sim_atomic_value_t writer_status; /* Current writer state (atomically accessed) */
-#    endif
+#endif
 };
 
 /* prototype declarations*/
@@ -296,7 +301,7 @@ void ethq_insert_data(ETH_QUE *que, int32_t type, /* insert item into FIFO queue
                       int32_t status);
 t_stat ethq_destroy(ETH_QUE *que);                /* release FIFO queue */
 
-#    if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
 /* Adapter functions for lock-free SPSC queue - only used internally in
  * sim_ether.c */
 t_stat eth_tailq_init(sim_tailq_t *que, int max);          /* initialize lock-free queue */

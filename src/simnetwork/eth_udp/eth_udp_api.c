@@ -6,9 +6,10 @@
 #include "simnetwork/eth_udp/eth_udp.h"
 
 /* UDP wait implementation */
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
-    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
+    (void)dev;
+    return poll_eth_socket(backend, timeout_ms);
 }
 
 /* UDP packet writer */
@@ -21,7 +22,7 @@ int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet)
 /* UDP packet reader */
 int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     int len;
     u_char buf[ETH_MAX_JUMBO_FRAME];
 

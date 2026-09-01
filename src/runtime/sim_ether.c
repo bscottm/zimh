@@ -358,7 +358,7 @@
 /* Internal routine - forward declaration */
 static int _eth_get_system_id(char *buf, size_t buf_size);
 t_stat eth_test_dev_command_format(void);
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
 static void ethq_item_free(sim_tailq_item_t item);
 #endif
 
@@ -873,7 +873,7 @@ t_stat sim_ether_test(DEVICE *dptr, const char *cptr)
 
 const char *eth_capabilities(void)
 {
-#    if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     return "Threaded "
 #    else
     return "Polled "
@@ -1648,7 +1648,7 @@ static t_stat _eth_close_port(eth_backend_t *backend, SOCKET pcap_fd);
 
 void _eth_error(ETH_DEV *dev, const char *where);
 
-#    if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
 /*
  * Stop any ethernet background threads that were successfully started.  The
  * startup path can fail after creating only the reader thread, so shutdown must
@@ -1713,54 +1713,55 @@ static void eth_destroy_thread_state(ETH_DEV *dev)
  */
 t_stat eth_set_async(ETH_DEV *dev, int latency)
 {
-#    if !defined(USE_READER_THREAD) || !defined(SIM_ASYNCH_IO)
-    /* Public API signature.
-       This build variant does not use every parameter. */
-    (void)dev;
-    (void)latency;
-
-    char *msg = "Eth: Can't operate asynchronously, must poll.\n"
-                " *** Build with USE_READER_THREAD defined and link with pthreads for asynchronous operation. ***\n";
-    return sim_messagef(SCPE_NOFNC, "%s", msg);
-#    else
-
     if (dev == NULL)
         return SCPE_UNATT;
-    if (dev->backend->eth_api == ETH_API_TEST)
+
+#if !ETH_THREADING_AVAILABLE
+    (void)latency;
+    return sim_messagef(SCPE_NOFNC,
+        "Eth: Async I/O not available on this platform\n");
+#else
+    /* Already async? */
+    if (dev->asynch_io)
         return SCPE_OK;
 
-    dev->asynch_io = (sim_asynch_enabled != 0);
+    /* Simulator doesn't support async I/O globally */
+    if (!sim_asynch_enabled)
+        return sim_messagef(SCPE_NOFNC,
+            "Eth: Async I/O disabled (simulator needs SIM_ASYNCH_IO)\n");
+
+    /* Start threads for ALL backends */
+    t_stat r = eth_start_threads(dev);
+    if (r != SCPE_OK)
+        return r;
+
+    dev->asynch_io = true;
     dev->asynch_io_latency = latency;
-    /* Lock-free queue check */
+
     if (!sim_tailq_empty(&dev->read_queue)) {
         sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
         sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
     }
-#    endif
+
     return SCPE_OK;
+#endif
 }
 
-/* eth_clr_async
- *
- * Turn off receiver processing
- */
 t_stat eth_clr_async(ETH_DEV *dev)
 {
-#    if !defined(USE_READER_THREAD) || !defined(SIM_ASYNCH_IO)
-    /* Public API signature.
-       This build variant does not use every parameter. */
-    (void)dev;
-
-    return SCPE_NOFNC;
-#    else
-
-    /* make sure device exists */
     if (dev == NULL)
         return SCPE_UNATT;
 
+    if (!dev->asynch_io)
+        return SCPE_OK;
+
+#if ETH_THREADING_AVAILABLE
+    eth_stop_threads(dev);
     dev->asynch_io = false;
+#endif
+
     return SCPE_OK;
-#    endif
+}
 }
 
 t_stat eth_set_throttle(ETH_DEV *dev, uint32_t time, uint32_t burst, uint32_t delay)
@@ -1810,32 +1811,36 @@ static t_stat _eth_close_port(eth_backend_t *backend, SOCKET socket_fd)
 
 t_stat eth_close(ETH_DEV *dev)
 {
-
     /* make sure device exists */
     if (dev == NULL)
         return SCPE_UNATT;
+    if (dev->backend->eth_api == ETH_API_NONE)
+        return SCPE_OK;
 
     /* close the device */
-    SOCKET socket_fd = dev->backend->state.eth_socket; /* save handle to possibly close later */
+    SOCKET socket_fd = dev->backend->state.eth_socket;
     dev->have_host_nic_phy_addr = 0;
 
-#    if defined(USE_READER_THREAD)
-    if (dev->backend->eth_api != ETH_API_TEST) {
+#if ETH_THREADING_AVAILABLE
+    /* Stop threads if running */
+    if (dev->threads_running)
         eth_stop_threads(dev);
-        eth_destroy_thread_state(dev);
-    }
-#    endif
 
-    _eth_close_port(&dev->backend, socket_fd);
+    /* Clean up threading structures */
+    if (dev->threading_initialized)
+        eth_destroy_threading_structures(dev);
+#endif
+
+    _eth_close_port(dev->backend, socket_fd);
     sim_messagef(SCPE_OK, "Eth: closed %s\n", dev->name);
 
-    /* clean up the mess. Defer setting dev->backend->state.eth_socket = 0 to here, otherwise,
-     * the reader thread might start reading from stdin. */
+    /* Clean up device resources */
     dev->backend->state.eth_socket = 0;
     free(dev->name);
     free(dev->bpf_filter);
     eth_zero(dev);
     _eth_remove_from_open_list(dev);
+
     return SCPE_OK;
 }
 
@@ -2121,7 +2126,7 @@ void _eth_error(ETH_DEV *dev, const char *where)
         sim_err_sock(INVALID_SOCKET, msg);
         break;
     }
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
     sim_mutex_lock(&dev->lock);
     ++dev->error_waiting_threads;
     if (!dev->error_needs_reset)
@@ -2143,7 +2148,7 @@ void _eth_error(ETH_DEV *dev, const char *where)
  seconds, but normally would be about once every 1.5*ETH_ERROR_REOPEN_THRESHOLD
  seconds (ONLY when the error condition exists).
  */
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
     sim_mutex_lock(&dev->lock);
     if ((dev->error_waiting_threads == 2) && (dev->error_needs_reset)) {
 #    else
@@ -2160,7 +2165,7 @@ void _eth_error(ETH_DEV *dev, const char *where)
             sim_printf("%s ReOpened: %s \n", msg, dev->name);
         ++dev->error_reopen_count;
     }
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
     --dev->error_waiting_threads;
     sim_mutex_unlock(&dev->lock);
 #    endif
@@ -2194,12 +2199,12 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
                 eth_copy_mac(&packet->msg[18], dev->host_nic_phy_hw_addr);
                 eth_packet_trace(dev, packet->msg, packet->len, "writing-fixed");
             }
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
             sim_mutex_lock(&dev->self_lock);
 #    endif
             dev->loopback_self_sent += dev->reflections;
             dev->loopback_self_sent_total++;
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
             sim_mutex_unlock(&dev->self_lock);
 #    endif
         }
@@ -2210,12 +2215,12 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         ++dev->packets_sent; /* basic bookkeeping */
         /* On error, correct loopback bookkeeping */
         if ((status != 0) && loopback_self_frame) {
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
             sim_mutex_lock(&dev->self_lock);
 #    endif
             dev->loopback_self_sent -= dev->reflections;
             dev->loopback_self_sent_total--;
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
             sim_mutex_unlock(&dev->self_lock);
 #    endif
         }
@@ -2238,61 +2243,63 @@ t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
     if (dev && dev->backend->eth_api == ETH_API_TEST)
         return eth_test_write(dev, packet, routine);
 
-#    ifdef USE_READER_THREAD
-    ETH_WRITE_REQUEST *request;
-
     /* make sure device exists */
     if (dev == NULL || (dev->backend->eth_api == ETH_API_NONE))
         return SCPE_UNATT;
     if (packet == NULL)
         return SCPE_ARG;
 
-    if (packet->len > sizeof(packet->msg)) /* packet oversized? */
-        return SCPE_IERR;                  /* that's no good! */
+    if (packet->len > sizeof(packet->msg))
+        return SCPE_IERR;
 
-    /* Get a buffer */
-    sim_mutex_lock(&dev->writer_lock);
-    if (NULL != (request = dev->write_buffers))
-        dev->write_buffers = request->next;
+    if (dev->asynch_io) {
+#if ETH_THREADING_AVAILABLE
+        /* Async mode: queue for writer thread */
+        ETH_WRITE_REQUEST *request;
 
-    if (NULL == request && (request = (ETH_WRITE_REQUEST *)malloc(sizeof(*request))) == NULL) {
+        /* Get a buffer */
+        sim_mutex_lock(&dev->writer_lock);
+        if (NULL != (request = dev->write_buffers))
+            dev->write_buffers = request->next;
+
+        if (NULL == request && (request = (ETH_WRITE_REQUEST *)malloc(sizeof(*request))) == NULL) {
+            sim_mutex_unlock(&dev->writer_lock);
+            return SCPE_MEM;
+        }
+
+        /* Copy buffer contents */
+        request->next = NULL;
+        request->packet.len = packet->len;
+        request->packet.used = packet->used;
+        request->packet.status = packet->status;
+        request->packet.crc_len = packet->crc_len;
+        memcpy(request->packet.msg, packet->msg, packet->len);
+
+        /* Insert buffer at the end of the write queue */
+        int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
+
+        sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
+
+        if (write_queue_size > dev->write_queue_peak)
+            dev->write_queue_peak = write_queue_size;
+
+        /* Awaken writer thread if queue was nearly empty */
+        if (write_queue_size <= 2)
+            sim_cond_signal(&dev->writer_cond);
+
         sim_mutex_unlock(&dev->writer_lock);
-        return SCPE_MEM; /* no memory for buffer */
+
+        /* Return with a status from some prior write */
+        if (routine)
+            (routine)(dev->write_status);
+        return dev->write_status;
+#else
+        return SCPE_IERR; /* Should never reach here */
+#endif
+    } else {
+        /* Sync mode: write directly */
+        return _eth_write(dev, packet, routine);
     }
-
-    /* Copy buffer contents */
-    request->next = NULL;
-    request->packet.len = packet->len;
-    request->packet.used = packet->used;
-    request->packet.status = packet->status;
-    request->packet.crc_len = packet->crc_len;
-    memcpy(request->packet.msg, packet->msg, packet->len);
-
-    /* Insert buffer at the end of the write queue */
-    int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
-
-    sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
-
-    if (write_queue_size > dev->write_queue_peak) {
-        dev->write_queue_peak = write_queue_size;
-    }
-
-    /* Awaken writer thread to perform actual write. Don't bang on the condition signal
-     * for every packet -- only if the queue depth is 2 or less (possible previous packet
-     * and the one we just added == 2.) */
-    if (write_queue_size <= 2) {
-        sim_cond_signal(&dev->writer_cond);
-    }
-
-    sim_mutex_unlock(&dev->writer_lock);
-
-    /* Return with a status from some prior write */
-    if (routine)
-        (routine)(dev->write_status);
-    return dev->write_status;
-#    else
-    return _eth_write(dev, packet, routine);
-#    endif
 }
 
 /* Return whether a non-BPF receive path should deliver a packet to dev. */
@@ -2508,7 +2515,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
             sim_debug(dev->dbit, dev->dptr, "Promiscuous\n");
         }
     }
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
     sim_mutex_lock(&dev->self_lock);
 #    endif
     /* Set the desired physical address */
@@ -2524,7 +2531,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
             break;
         }
     }
-#    ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
     sim_mutex_unlock(&dev->self_lock);
 #    endif
 
@@ -2592,7 +2599,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
             }
             pcap_freecode(&bpf);
         }
-#        ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
         /* Lock-free queue clear */
         eth_tailq_clear(&dev->read_queue); /* Empty FIFO Queue when filter list changes */
 #        endif
@@ -2637,7 +2644,7 @@ void eth_show_dev(FILE *st, ETH_DEV *dev)
         fprintf(st, "  Error ReOpen Count:      %d\n", dev->error_reopen_count);
     if (dev->loopback_packets_processed)
         fprintf(st, "  Loopback Packets:        %d\n", dev->loopback_packets_processed);
-#    if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     fprintf(st, "  Asynch Interrupts:       %s\n", dev->asynch_io ? "Enabled" : "Disabled");
     if (dev->asynch_io)
         fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);

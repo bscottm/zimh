@@ -15,7 +15,7 @@
 
 int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
+#if ETH_THREADING_AVAILABLE && defined(HAVE_SLIRP_NETWORK)
     sim_slirp_network *slirp = dev->backend->state.slirp;
     int status;
 
@@ -49,7 +49,7 @@ int eth_writer_test(ETH_DEV *dev, const ETH_PACK *packet)
 
 int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
 {
-#if defined(USE_READER_THREAD) && defined(HAVE_SLIRP_NETWORK)
+#if ETH_THREADING_AVAILABLE && defined(HAVE_SLIRP_NETWORK)
     sim_slirp_network *slirp = dev->backend->state.slirp;
 
     /* The mutex serializes the reader and the writer threads. */

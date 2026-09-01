@@ -10,7 +10,7 @@
 #include "simnetwork/eth_types.h"
 #include "simnetwork/eth_backends.h"
 
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
 

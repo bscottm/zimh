@@ -3,8 +3,8 @@
 
 /* Ethernet packet reader thread with state machine control flow */
 
-#if !defined(USE_READER_THREAD)
-#    error "eth_threads.c MUST BE compiled with USE_READER_THREAD defined."
+#if !ETH_THREADING_AVAILABLE
+#  error "eth_threads.c requires pthread support (define HAVE_PTHREAD)"
 #endif
 
 #include "sim_defs.h"
@@ -56,12 +56,13 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 /* Forward declarations of API-specific wait handlers */
 
 /* NAT (SLiRP) wait implementation */
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)dev;
 #ifdef HAVE_SLIRP_NETWORK
-    return sim_slirp_select(backend->state.slirp, ETH_READER_POLL_TMO);
+    return sim_slirp_select(backend->state.slirp, timeout_ms);
 #else
+    (void)timeout_ms;
     return 1;
 #endif
 }
@@ -123,7 +124,7 @@ THREAD_FUNC_DEFN(_eth_reader)
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
         eth_backend_t *backend = dev->backend;
-        int status = backend->packet_wait(backend, dev);
+        int status = backend->packet_wait(backend, dev, ETH_READER_POLL_TMO);
 
         /* Packet available? */
         if (status > 0) {
@@ -307,44 +308,129 @@ error_out:
 }
 
 /*============================================================================*/
-/*           THREAD STARTUP - Initialize and start reader/writer threads     */
+/*           THREAD MANAGEMENT FUNCTIONS                                      */
 /*============================================================================*/
 
+/* Initialize threading structures without starting threads */
+t_stat eth_init_threading_structures(ETH_DEV *dev)
+{
+    t_stat r;
+
+    if (!dev || dev->threading_initialized)
+        return SCPE_OK;
+
+    /* Initialize FIFO queues */
+    r = eth_tailq_init(&dev->read_queue, 200);
+    if (r != SCPE_OK)
+        return r;
+
+    r = eth_tailq_init(&dev->write_requests, 200);
+    if (r != SCPE_OK) {
+        eth_tailq_destroy(&dev->read_queue);
+        return r;
+    }
+
+    /* Initialize mutexes and condition variables */
+    sim_mutex_init(&dev->lock);
+    sim_mutex_init(&dev->writer_lock);
+    sim_mutex_init(&dev->self_lock);
+    sim_mutex_init(&dev->startup_lock);
+    sim_cond_init(&dev->writer_cond);
+    sim_cond_init(&dev->startup_cond);
+
+    dev->threading_initialized = true;
+    dev->threads_running = false;
+
+    return SCPE_OK;
+}
+
+/* Stop threads gracefully */
+void eth_stop_threads(ETH_DEV *dev)
+{
+    if (!dev || !dev->threads_running)
+        return;
+
+    /* Signal reader thread to shutdown */
+    sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
+
+    if (dev->backend && dev->backend->reader_shutdown)
+        dev->backend->reader_shutdown(dev->backend, dev);
+
+    sim_thread_join(dev->reader_thread, NULL);
+
+    /* Signal writer thread to shutdown */
+    sim_mutex_lock(&dev->writer_lock);
+    sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
+    sim_cond_signal(&dev->writer_cond);
+    sim_mutex_unlock(&dev->writer_lock);
+
+    if (dev->backend && dev->backend->writer_shutdown)
+        dev->backend->writer_shutdown(dev->backend, dev);
+
+    sim_thread_join(dev->writer_thread, NULL);
+
+    dev->threads_running = false;
+}
+
+/* Clean up threading structures */
+void eth_destroy_threading_structures(ETH_DEV *dev)
+{
+    ETH_WRITE_REQUEST *buffer;
+
+    if (!dev || !dev->threading_initialized)
+        return;
+
+    sim_mutex_destroy(&dev->lock);
+    sim_mutex_destroy(&dev->self_lock);
+    sim_mutex_destroy(&dev->writer_lock);
+    sim_mutex_destroy(&dev->startup_lock);
+    sim_cond_destroy(&dev->writer_cond);
+    sim_cond_destroy(&dev->startup_cond);
+
+    while (NULL != (buffer = dev->write_buffers)) {
+        dev->write_buffers = buffer->next;
+        free(buffer);
+    }
+
+    eth_tailq_destroy(&dev->write_requests);
+    eth_tailq_destroy(&dev->read_queue);
+
+    dev->threading_initialized = false;
+}
+
+/* Start reader/writer threads */
 t_stat eth_start_threads(ETH_DEV *dev)
 {
     int create_status;
     const char *thread_name = "reader";
 
-    if (!dev) {
+    if (!dev)
         return SCPE_ARG;
-    }
 
-    /* Threads are already running */
-    if (dev->threading_initialized) {
+    if (dev->threads_running)
         return SCPE_OK;
-    }
 
-    /* Initialize thread synchronization */
+    if (!dev->threading_initialized)
+        return SCPE_IERR;
+
     dev->threads_ready = 0;
-    dev->threading_initialized = true;
 
-    /* Create reader thread */
     create_status = sim_thread_create(&dev->reader_thread, _eth_reader, (void *)dev);
     if (create_status == 0) {
         thread_name = "writer";
-        /* Create writer thread */
         create_status = sim_thread_create(&dev->writer_thread, _eth_writer, (void *)dev);
         if (create_status == 0) {
-            /* Wait for both threads to signal ready */
             sim_mutex_lock(&dev->startup_lock);
             while (dev->threads_ready < 2) {
                 sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
             }
             sim_mutex_unlock(&dev->startup_lock);
+
+            dev->threads_running = true;
             return SCPE_OK;
         }
     }
 
-    /* Thread creation failed - clean up */
-    return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n", thread_name, strerror(create_status));
+    return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
+                       thread_name, strerror(create_status));
 }

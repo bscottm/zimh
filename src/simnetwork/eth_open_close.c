@@ -172,51 +172,41 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     /* save debugging information */
     dev->dptr = dptr;
     dev->dbit = dbit;
+
+    /* Test backend doesn't generate self-reflections */
     if (dev->backend->eth_api == ETH_API_TEST)
         dev->reflections = 0;
 
-#    if defined(USE_READER_THREAD)
-    if (dev->backend->eth_api != ETH_API_TEST) {
-        r = eth_tailq_init(&dev->read_queue, 200); /* initialize FIFO queue */
-        if (r != SCPE_OK) {
-            sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
-            _eth_close_port(&dev->backend, dev->backend->state.eth_socket);
-            free(dev->name);
-            eth_zero(dev);
-            return r;
-        }
-        sim_mutex_init(&dev->lock);
-        sim_mutex_init(&dev->writer_lock);
-        sim_mutex_init(&dev->self_lock);
-        sim_mutex_init(&dev->startup_lock);
-        sim_cond_init(&dev->writer_cond);
-        sim_cond_init(&dev->startup_cond);
-        r = eth_tailq_init(&dev->write_requests, 200);
-        if (r != SCPE_OK) {
-            _eth_close_port(&dev->backend, dev->backend->state.eth_socket);
-            free(dev->name);
-            eth_zero(dev);
-            return r;
-        }
+#if ETH_THREADING_AVAILABLE
+    /* Always initialize threading structures if platform supports it */
+    r = eth_init_threading_structures(dev);
+    if (r != SCPE_OK) {
+        _eth_close_port(dev->backend, dev->backend->state.eth_socket);
+        free(dev->name);
+        eth_zero(dev);
+        return r;
+    }
 
-        /* Start reader and writer threads */
+    /* Start threads ONLY if sim_asynch_enabled is true */
+    if (sim_asynch_enabled) {
         r = eth_start_threads(dev);
         if (r != SCPE_OK) {
-            SOCKET opened_fd = dev->backend->state.eth_socket;
-
-            /* Don't set dev->backend->state.eth_socket to 0 until the threads are stopped. The reader
-               thread might start to read from stdin. */
-            eth_stop_threads(dev);
-            eth_destroy_thread_state(dev);
-            _eth_close_port(&dev->backend, opened_fd);
-
-            dev->backend->state.eth_socket = 0;
-            free(dev->name);
-            eth_zero(dev);
-            return r;
+            sim_printf("Eth: Warning - failed to start async threads, "
+                      "falling back to synchronous mode\n");
+            dev->asynch_io = false;
+        } else {
+            dev->asynch_io = true;
+            dev->asynch_io_latency = 1000; /* Default 1ms */
         }
+    } else {
+        /* sim_asynch_enabled is false - use synchronous mode */
+        dev->asynch_io = false;
     }
-#    endif     /* defined (USE_READER_THREAD */
+#else
+    /* Platform doesn't support threading - always synchronous */
+    dev->asynch_io = false;
+#endif
+
     _eth_add_to_open_list(dev);
     /*
      * install a total filter on a newly opened interface and let the device

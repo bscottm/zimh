@@ -16,7 +16,7 @@
 
 #include "sim_time.h"
 #include "sim_types.h"
-#if defined(SIM_ASYNCH_IO) || defined(USE_READER_THREAD)
+#if defined(SIM_ASYNCH_IO) || ETH_THREADING_AVAILABLE
 #include <pthread.h>
 #endif
 

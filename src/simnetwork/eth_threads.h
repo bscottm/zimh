@@ -6,9 +6,20 @@
 #ifndef ETH_THREADS_H
 #define ETH_THREADS_H
 
-#include "sim_ether.h"
+#include "sim_defs.h"
 
-#if defined(USE_READER_THREAD)
+/* Forward declaration */
+struct eth_device;
+typedef struct eth_device ETH_DEV;
+
+/* Check if threading support is available at compile time */
+#if defined(HAVE_PTHREAD) || defined(_WIN32)
+#  define ETH_THREADING_AVAILABLE 1
+#else
+#  define ETH_THREADING_AVAILABLE 0
+#endif
+
+#if ETH_THREADING_AVAILABLE
 
 /* Threads abstractions. */
 #include "sim_threads.h"
@@ -18,11 +29,22 @@ THREAD_FUNC_DEFN(_eth_reader);
 /* Writer thread entry point */
 THREAD_FUNC_DEFN(_eth_writer);
 
-/* Initialize threading infrastructure and start reader/writer threads.
- * Requires that dev->backend is already initialized and queues/mutexes are set up.
- * Returns SCPE_OK on success, or an error code on failure. */
+/* Initialize threading structures (queues, mutexes) without starting threads.
+ * Always called during eth_open() when ETH_THREADING_AVAILABLE. */
+t_stat eth_init_threading_structures(ETH_DEV *dev);
+
+/* Start reader/writer threads.
+ * Called when switching to async mode. */
 t_stat eth_start_threads(ETH_DEV *dev);
 
-#endif /* USE_READER_THREAD */
+/* Stop threads gracefully.
+ * Called when switching to sync mode or during eth_close(). */
+void eth_stop_threads(ETH_DEV *dev);
+
+/* Clean up threading structures.
+ * Called during eth_close() after threads are stopped. */
+void eth_destroy_threading_structures(ETH_DEV *dev);
+
+#endif /* ETH_THREADING_AVAILABLE */
 
 #endif /* ETH_THREADS_H */

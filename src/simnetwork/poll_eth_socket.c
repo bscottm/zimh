@@ -3,8 +3,8 @@
 
 /* Ethernet packet reader thread with state machine control flow */
 
-#if !defined(USE_READER_THREAD)
-#    error "eth_threads.c MUST BE compiled with USE_READER_THREAD defined."
+#if !ETH_THREADING_AVAILABLE
+#    error "eth_threads.c MUST BE compiled with ETH_THREADING_AVAILABLE."
 #endif
 
 #include "sim_defs.h"

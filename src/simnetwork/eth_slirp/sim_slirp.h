@@ -50,7 +50,7 @@ struct sim_slirp {
 
     char *args;
 
-#        if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     /* Access lock to libslirp. libslirp is not threaded or protected. */
     pthread_mutex_t libslirp_lock;
 

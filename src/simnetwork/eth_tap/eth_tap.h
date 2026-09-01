@@ -21,7 +21,7 @@
 #    include "simnetwork/eth_backends.h"
 
 /* TAP wait implementation */
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 /* TAP reader */
 int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev);
 /* TAP writer */

@@ -64,7 +64,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 
     /* detect reception of loopback packet to our physical address */
     if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) || (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
-#ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
         sim_mutex_lock(&dev->self_lock);
 #endif
         dev->loopback_self_rcvd_total++;
@@ -75,7 +75,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             to_me = false;
         } else if (!bpf_used)
             from_me = false;
-#ifdef USE_READER_THREAD
+#if ETH_THREADING_AVAILABLE
         sim_mutex_unlock(&dev->self_lock);
 #endif
     }
@@ -92,7 +92,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             return;
         }
         if (!eth_process_loopback(dev, data, len)) {
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
             int crc_len = 0;
             uint8_t crc_data[4] = {0, 0, 0, 0};
             uint32_t pkt_len = len;
@@ -120,7 +120,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, pkt_len, crc_len, crc_data, 0);
             ++dev->packets_received;
             free(moved_data);
-#else /* !USE_READER_THREAD */
+#else /* !ETH_THREADING_AVAILABLE */
             /* set data in passed read packet */
             dev->read_packet->len = len;
             memcpy(dev->read_packet->msg, data, len);

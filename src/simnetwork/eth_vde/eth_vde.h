@@ -13,7 +13,7 @@
 #    include "simnetwork/eth_backends.h"
 
 /* VDE wait implementation */
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 /* VDE reader */
 int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev);
 /* VDE writer */

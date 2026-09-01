@@ -8,11 +8,10 @@
 #include "simnetwork/eth_vde/eth_vde.h"
 
 /* VDE wait implementation */
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)dev;
-
-    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
+    return poll_eth_socket(backend, timeout_ms);
 }
 
 int eth_reader_vde(eth_backend_t *backend, ETH_DEV *dev)

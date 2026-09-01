@@ -51,12 +51,16 @@ struct eth_backend_s {
     /* API interface: */
 
     /* Wait for a packet's arrival at the reader. This is the poll/select point.
+     * timeout_ms:
+     *   > 0: wait up to this many milliseconds (threaded/async mode)
+     *   = 0: poll immediately, non-blocking (synchronous mode)
+     *   < 0: wait indefinitely (not recommended)
      * Returns:
      * > 0: One or more packets have arrived.
      *   0: No packet arrival, not an error.
      * < 0: Error waiting for packet arrival.
      */
-    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev);
+    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev, int timeout_ms);
     /* Read a packet and queue it for simulator device processing.
      * > 0: Packet read successfully, queued for simulator device.
      *   0: No packet read (not an error, safe to retry)
@@ -117,9 +121,9 @@ enum {
 int poll_eth_socket(eth_backend_t *backend, long timeout_ms);
 
 /*--- API functions for eth_backend_t ---*/
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 
 /* PCAP reader*/
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);

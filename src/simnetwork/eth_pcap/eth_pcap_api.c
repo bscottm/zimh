@@ -4,14 +4,14 @@
 #include "simnetwork/eth_pcap/eth_pcap.h"
 
 /* PCAP wait implementation */
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)dev;
 #if defined(_WIN32)
     /* Windows: Use event-based waiting */
-    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
+    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), timeout_ms) ? 1 : 0);
 #else
-    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
+    return poll_eth_socket(backend, timeout_ms);
 #endif
 }
 
@@ -27,7 +27,7 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
         return 0;
     }
 
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     if (backend == NULL || backend->state.pcap == NULL) {
         return 0;
     }
@@ -41,7 +41,7 @@ int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev)
 
 int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet)
 {
-#if defined(USE_READER_THREAD)
+#if ETH_THREADING_AVAILABLE
     return pcap_sendpacket(dev->backend->state.pcap, (u_char *)packet->msg, packet->len);
 #else
     (void)dev;

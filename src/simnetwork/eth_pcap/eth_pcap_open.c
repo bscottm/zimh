@@ -45,7 +45,7 @@ if (pcap == NULL) /* can't open device */
     }
 #endif
 
-#if !defined(USE_READER_THREAD)
+#if !ETH_THREADING_AVAILABLE
 #    ifdef USE_SETNONBLOCK
     /* set ethernet device non-blocking so pcap_dispatch() doesn't hang */
     if (pcap_setnonblock(backend->state.pcap, 1, errbuf) == -1) {
@@ -63,7 +63,7 @@ if (pcap == NULL) /* can't open device */
         ioctl(pcap_fileno(backend->state.pcap), BIOCIMMEDIATE, &v);
     }
 #    endif /* defined (__APPLE__) */
-#endif     /* !defined (USE_READER_THREAD) */
+#endif     /* !defined (ETH_THREADING_AVAILABLE) */
 
 #ifdef USE_BPF
     /* dev->bpf_filter may have been initialized previously, since the device was opened earlier and this is

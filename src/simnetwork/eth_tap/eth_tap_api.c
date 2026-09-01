@@ -6,9 +6,10 @@
 #include "simnetwork/eth_tap/eth_tap.h"
 
 /* TAP wait implementation */
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
-    return poll_eth_socket(backend, ETH_READER_POLL_TMO);
+    (void)dev;
+    return poll_eth_socket(backend, timeout_ms);
 }
 
 int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev)

@@ -5,11 +5,12 @@
 
 
 /* Test Ethernet emulation select/poll wait API. */
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     /* Test API doesn't wait, always return immediately */
     (void)backend;
     (void)dev;
+    (void)timeout_ms;
     return 1;
 }
 
