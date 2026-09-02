@@ -48,10 +48,11 @@
 #ifndef VAX_MMU_H_
 #define VAX_MMU_H_ 1
 
-#include "vax_defs.h"
 #include <setjmp.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "vax_defs.h"
 
 typedef struct {
     uint32_t    tag;                                    /* tag */
@@ -66,9 +67,7 @@ extern int32_t mapen;                                   /* map enable */
 extern uint32_t mchk_va, mchk_ref;                      /* for mcheck */
 extern TLBENT stlb[VA_TBSIZE], ptlb[VA_TBSIZE];
 
-static const uint32_t insert[4] = {
-    0x00000000, 0x000000FF, 0x0000FFFF, 0x00FFFFFF
-    };
+extern const uint32_t uint32_insert_mask[4];
 
 void zap_tb (int stb);
 void zap_tb_ent (uint32_t va);
@@ -230,8 +229,8 @@ else
 bo = pa & 3;
 if (lnt >= L_LONG) {
     sc = bo << 3;
-    WriteU (pa, val & insert[L_LONG - bo], L_LONG - bo);
-    WriteU (pa1, (val >> (32 - sc)) & insert[bo], bo);
+    WriteU (pa, val & uint32_insert_mask[L_LONG - bo], L_LONG - bo);
+    WriteU (pa1, (val >> (32 - sc)) & uint32_insert_mask[bo], bo);
     }
 else if (bo == 1)                                       /* read within lw */
     WriteU (pa, val & WMASK, L_WORD);
@@ -349,7 +348,7 @@ else {
     else
         dat = ReadRegU (pa, lnt);
     }
-return ((dat >> sc) & insert[lnt]);
+return ((dat >> sc) & uint32_insert_mask[lnt]);
 }
 
 /* Write aligned physical (in virtual context, unless indicated)
@@ -441,9 +440,9 @@ static inline void WriteU (uint32_t pa, int32_t val, int32_t lnt)
 if (ADDR_IS_MEM (pa)) {
     uint32_t bo = pa & 3;
     uint32_t sc = bo << 3;
-    uint32_t mask = insert[lnt] << sc;
+    uint32_t mask = uint32_insert_mask[lnt] << sc;
     M[pa >> 2] = (M[pa >> 2] & ~mask) |
-        ((((uint32_t) val) & insert[lnt]) << sc);
+        ((((uint32_t) val) & uint32_insert_mask[lnt]) << sc);
     }
 else {
     mchk_ref = REF_V;
