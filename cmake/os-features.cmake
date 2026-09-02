@@ -345,8 +345,8 @@ if(NOT MSVC AND NOT(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_C_COMPILER_ID
     target_link_libraries(sim_support INTERFACE m)
 endif()
 
-if(TARGET PTW::PTW OR TARGET Threads::Threads OR HAVE_C11_THREADS)
-    target_compile_definitions(aio_support PUBLIC "SIM_ASYNCH_IO" "USE_READER_THREAD")
+if(TARGET PTW::PTW OR TARGET Threads::Threads)
+    target_compile_definitions(aio_support PUBLIC "SIM_ASYNCH_IO")
 
     # =============================================================================
     # Thread naming capability detection
