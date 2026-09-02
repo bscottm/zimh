@@ -87,6 +87,12 @@ static t_stat tlb_dep (t_value val, t_addr addr, UNIT *uptr, int32_t sw);
 static t_stat tlb_reset (DEVICE *dptr);
 static const char *tlb_description (DEVICE *dptr);
 
+/* Note: uint32_insert_mask[] replaced the static constant insert[] in vax_mmu.h. Only one
+ * definition is needed and it can't be constant-folded. */
+
+/* Value insertion mask: */
+const uint32_t uint32_insert_mask[4] = {0x00000000, 0x000000FF, 0x0000FFFF, 0x00FFFFFF};
+
 /* TLB data structures
 
    tlb_dev      pager device descriptor

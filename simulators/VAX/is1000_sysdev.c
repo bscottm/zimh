@@ -739,7 +739,7 @@ void WriteRegU (uint32_t pa, int32_t val, int32_t lnt)
 int32_t sc = (pa & 03) << 3;
 int32_t dat = ReadReg (pa & ~03, L_LONG);
 
-dat = (dat & ~(insert[lnt] << sc)) | ((val & insert[lnt]) << sc);
+dat = (dat & ~(uint32_insert_mask[lnt] << sc)) | ((val & uint32_insert_mask[lnt]) << sc);
 WriteReg (pa & ~03, dat, L_LONG);
 return;
 }
