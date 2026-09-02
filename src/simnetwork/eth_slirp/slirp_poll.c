@@ -59,6 +59,7 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
 
     n_sockets = sim_atomic_get(&slirp->n_sockets);
     if (n_sockets > 0) {
+#if ETH_THREADING_AVAILABLE
         /* Note: It's a generally good practice to acquire a mutex and hold it until an operation
         * completes. In this case, though, poll()/select() will block and prevent outbound writes
         * via sim_slirp_send(), which itself blocks waiting for the mutex.
@@ -66,6 +67,7 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
         * Hold the mutex only when calling libslirp functions, reacquire when needed.
         */
         pthread_mutex_lock(&slirp->libslirp_lock);
+#endif
 
         /* Check on expiring libslirp timers. */
         simh_timer_check(slirp->slirp_cxn);
@@ -73,7 +75,9 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
         /* Ask libslirp to poll for I/O events. */
         initialize_poll(slirp, ms_timeout);
 
+#if ETH_THREADING_AVAILABLE
         pthread_mutex_unlock(&slirp->libslirp_lock);
+#endif
 
         tv.tv_sec = ms_timeout / 1000;
         tv.tv_usec = (ms_timeout % 1000) * 1000;
@@ -83,6 +87,7 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
             report_error(slirp);
         }
     } else if (n_sockets == 0) {
+#if ETH_THREADING_AVAILABLE
         /* Block on the condvar until there's at least one socket registered by libslirp. */
         pthread_mutex_lock(&slirp->no_sockets_lock);
         pthread_cond_wait(&slirp->no_sockets_cv, &slirp->no_sockets_lock);
@@ -95,6 +100,10 @@ int sim_slirp_select(sim_slirp_network *slirp, int ms_timeout)
             /* Reader thread is shutting down. */
             return 0;
         }
+#else
+        /* Not threaded, but nothing available. */
+        return 0;
+#endif
     } else {
         /* Error or shutting down... make the reader thread exit. */
         retval = -1;
@@ -310,6 +319,7 @@ void register_poll_socket(slirp_os_socket fd, void *opaque)
     sim_debug(slirp_dbg_mask(slirp, DBG_SOCKET), slirp->dptr,
               "register_poll_socket(%" PRIsocket ") index %zu\n", fd, i);
 
+#if ETH_THREADING_AVAILABLE
     if (sim_atomic_inc(&slirp->n_sockets) == 1) {
         /* Wake up the reader thread. */
 	    pthread_mutex_lock(&slirp->no_sockets_lock);
@@ -319,6 +329,7 @@ void register_poll_socket(slirp_os_socket fd, void *opaque)
         sim_debug(slirp_dbg_mask(slirp, DBG_SOCKET), slirp->dptr,
                   "register_poll_socket(%" PRIsocket ") waking up reader thread.\n", fd);
     }
+#endif
 
     sim_debug(slirp_dbg_mask(slirp, DBG_SOCKET), slirp->dptr,
               "register_poll_socket(%" PRIsocket ") n_sockets = %ld.\n", fd, sim_atomic_get(&slirp->n_sockets));

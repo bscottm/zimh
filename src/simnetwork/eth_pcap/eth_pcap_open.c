@@ -6,7 +6,7 @@
 t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
     pcap_t *pcap;
-    const int bufsz = ETH_BUF_SIZE;
+    const int bufsz = ETH_MAX_JUMBO_FRAME;
     char errbuf[PCAP_ERRBUF_SIZE];
 
     pcap = pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);

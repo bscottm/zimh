@@ -2,10 +2,12 @@
 
 #    if defined(HAVE_SLIRP_NETWORK)
 
+#        include <libslirp.h>
+
 #        include "sim_atomic.h"
-#        include "libslirp.h"
 #        include "poll_compat.h"
 #        include "simnetwork/eth_types.h"
+#        include "simnetwork/eth_threads.h"
 
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 // SLiRP network state and associated data structures

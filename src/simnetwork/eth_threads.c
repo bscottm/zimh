@@ -3,20 +3,18 @@
 
 /* Ethernet packet reader thread with state machine control flow */
 
-#if !ETH_THREADING_AVAILABLE
-#  error "eth_threads.c requires pthread support (define HAVE_PTHREAD)"
-#endif
-
 #include "sim_defs.h"
 #include "sim_ether.h"
-#include "sim_sock.h"
 #include "sim_threads.h"
-#include "poll_compat.h"
 
 #include "sim_ether_internal.h"
 #include "simnetwork/eth_backends.h"
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
+
+#if !ETH_THREADING_AVAILABLE
+#  error "eth_threads.c requires pthread support (define HAVE_PTHREAD or _WIN32)"
+#endif
 
 /*============================================================================*/
 /*                    STATE HANDLER IMPLEMENTATIONS                           */

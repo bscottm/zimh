@@ -3,20 +3,8 @@
 
 /* Ethernet packet reader thread with state machine control flow */
 
-#if !ETH_THREADING_AVAILABLE
-#    error "eth_threads.c MUST BE compiled with ETH_THREADING_AVAILABLE."
-#endif
-
-#include "sim_defs.h"
-#include "sim_ether.h"
-#include "sim_sock.h"
-#include "sim_threads.h"
-#include "poll_compat.h"
-
-#include "sim_ether_internal.h"
 #include "simnetwork/eth_backends.h"
-#include "simnetwork/eth_threads.h"
-#include "simnetwork/eth_dispatch.h"
+#include "poll_compat.h"
 
 #if SIM_USE_POLL
 #    define POLL_NORMAL_EVENTS (POLLIN)

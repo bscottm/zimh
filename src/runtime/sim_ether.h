@@ -57,7 +57,6 @@
 #    include "sim_defs.h"
 #    include "sim_sock.h"
 #    include "sim_tailq.h"
-/* #    include "simnetwork/eth_backends.h" */
 #    include "simnetwork/eth_types.h"
 #    include "simnetwork/eth_threads.h"
 #    include "sim_atomic.h"
@@ -320,7 +319,7 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
 t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
 t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
-t_stat eth_test_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
+t_stat eth_test_open(const char *test_label, ETH_DEV *dev);
 
 /* Well-known Ethernet MAC addresses:
  *

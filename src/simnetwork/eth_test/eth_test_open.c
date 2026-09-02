@@ -10,10 +10,10 @@ enum {
 };
 
 /* Open a named test backend and return the backend handle to sim_ether.c. */
-t_stat eth_test_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_test_open(const char *test_label, ETH_DEV *dev)
 {
     ETH_TEST_BACKEND *test_backend;
-    t_stat status = eth_test_get_backend(name, &test_backend);
+    t_stat status = eth_test_get_backend(test_label, &test_backend);
 
     if (status != SCPE_OK)
         return status;

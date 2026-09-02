@@ -16,21 +16,16 @@ static t_stat eth_open_port(char *savname, size_t savname_size, ETH_DEV *eth_dev
 {
     (void)savname_size;
 
-    int bufsz = (BUFSIZ < ETH_MAX_PACKET) ? ETH_MAX_PACKET : BUFSIZ;
-
-    if (bufsz < ETH_MAX_JUMBO_FRAME)
-        bufsz = ETH_MAX_JUMBO_FRAME; /* Enable handling of jumbo frames */
-
     /* attempt to connect device */
     if (0 == strncmp("test:", savname, 5)) {
-        const char *devname = savname + 5;
+        const char *test_label = savname + 5;
         t_stat status;
 
-        while (isspace(*devname))
-            ++devname;
-        if (*devname == '\0')
-            return sim_messagef(SCPE_OPENERR, "Eth: Must specify test backend name\n");
-        status = eth_test_open(devname, eth_dev, savname, savname_size);
+        while (isspace(*test_label))
+            ++test_label;
+        if (*test_label == '\0')
+            return sim_messagef(SCPE_OPENERR, "Eth: 'test:' device must be given a test label.\n");
+        status = eth_test_open(test_label, eth_dev);
         if (status != SCPE_OK)
             return status;
     } else if (0 == strncmp("tap:", savname, 4)) {
@@ -105,18 +100,15 @@ static bool eth_is_explicit_pseudo_device(const char *name)
     return false;
 }
 
+/* Principal entry point for simulators to open an emulated Ethernet connection to a backend */
 t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
 {
     t_stat r;
-    int bufsz = (BUFSIZ < ETH_MAX_PACKET) ? ETH_MAX_PACKET : BUFSIZ;
     char errbuf[PCAP_ERRBUF_SIZE];
     char temp[1024], desc[1024] = "";
     const char *savname = name;
     char namebuf[4 * CBUFSIZE];
     int num;
-
-    if (bufsz < ETH_MAX_JUMBO_FRAME)
-        bufsz = ETH_MAX_JUMBO_FRAME; /* Enable handling of jumbo frames */
 
     /* initialize device */
     eth_zero(dev);
