@@ -17,11 +17,27 @@ int eth_devices(int max, ETH_LIST *list, bool framers);
  * Returns the name on success, or NULL if not found.
  */
 const char *eth_getname(int number, char *name, size_t name_size, char *desc, size_t desc_size);
+
+/* Get the name and description of an Ethernet device by its name, as exactly matched in the array returned
+ * by eth_devices().
+ *
+ * Returns the name on success, NULL if not found.
+ */
+const char *eth_getname_byname(const char *name, char *temp, size_t temp_size, char *desc, size_t desc_size);
+
 /* Get the name and description of an Ethernet device by its description, as exactly matched in the array
  * returned by eth_devices().
  *
  * Returns the name on success, or NULL if not found.
  */
 const char *eth_getname_bydesc(const char *desc, char *name, size_t name_size, char *ndesc, size_t ndesc_size);
+
+/* Add an `ETH_DEV` device to the open devices list. */
+void eth_add_to_open_list(ETH_DEV *dev);
+/* Remove an `ETH_DEV` device from the open devices list. */
+void _eth_remove_from_open_list(ETH_DEV *dev);
+
+/* Get the underlying interface's MAC address */
+void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on);
 
 #endif

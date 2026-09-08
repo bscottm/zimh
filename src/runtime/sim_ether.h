@@ -166,8 +166,7 @@ struct eth_device {
     int32_t loopback_self_sent_total;                            /* total loopback packets sent */
     int32_t loopback_self_rcvd_total;                            /* total loopback packets seen */
     ETH_MAC physical_addr;                                       /* physical address of interface */
-    int32_t have_host_nic_phy_addr;                              /* flag indicating that the
-                                                                    host_nic_phy_hw_addr is valid */
+    bool have_host_nic_phy_addr;                                 /* flag indicating that the host_nic_phy_hw_addr is valid */
     ETH_MAC host_nic_phy_hw_addr;                                /* MAC address of the attached NIC */
     uint32_t jumbo_fragmented;                                   /* Giant IPv4 Frames Fragmented */
     uint32_t jumbo_dropped;                                      /* Giant Frames Dropped */
@@ -274,7 +273,7 @@ t_stat eth_show(FILE *st, UNIT *uptr,                           /* show ethernet
                 int32_t val, const void *desc);
 t_stat eth_show_devices(FILE *st, DEVICE *dptr,                 /* show ethernet devices */
                         UNIT *uptr, int32_t val, const char *desc);
-int eth_devices(int max, ETH_LIST *dev, bool framers);          /* get ethernet devices on host */
+// int eth_devices(int max, ETH_LIST *dev, bool framers);          /* get ethernet devices on host */
 void eth_show_dev(FILE *st, ETH_DEV *dev);                      /* show ethernet device state */
 
 #    define ETH_MAC_STRING_SIZE sizeof("XX:XX:XX:XX:XX:XX")

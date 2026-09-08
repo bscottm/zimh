@@ -24,11 +24,11 @@
 #        include <string.h>
 #    endif /* HAVE_PCAP_NETWORK */
 
-#    ifdef HAVE_VDE_NETWORK
+#    if defined(HAVE_VDE_NETWORK)
 #        include <libvdeplug.h>
 #    endif /* HAVE_VDE_NETWORK */
 
-#    ifdef HAVE_SLIRP_NETWORK
+#    if defined(HAVE_SLIRP_NETWORK)
 #        include "simnetwork/eth_slirp/sim_slirp.h"
 #    endif
 

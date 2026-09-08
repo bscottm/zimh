@@ -66,9 +66,18 @@ typedef enum eth_api_e {
     ETH_API_COUNT     /* Number of API types (for array sizing) */
 } eth_api_t;
 
+#define ETH_DEV_NAME_MAX 256
+#define ETH_DEV_DESC_MAX 256
+
+/* Summary structure for enumerating operating system network interfaces. */
 struct eth_list {
+    /* Interface's name, e.g., eth0, WiFi, ... */
     char name[ETH_DEV_NAME_MAX];
+    /* Description. May be empty. */
     char desc[ETH_DEV_DESC_MAX];
+    /* Interface's MAC address */
+    ETH_MAC eth_mac;
+    /* Corresponding API to which this interface belongs. */
     eth_api_t eth_api;
 };
 

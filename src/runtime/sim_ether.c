@@ -368,10 +368,6 @@ static void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on);
 static const uchar_t framer_oui[3] = {0xaa, 0x00, 0x03};
 #endif
 
-/* These need to be externally visible. >sigh!< */
-const ETH_MAC eth_mac_any = {0, 0, 0, 0, 0, 0};
-const ETH_MAC eth_mac_bcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
 /*============================================================================*/
 /*                  OS-independent ethernet routines                          */
 /*============================================================================*/
@@ -1453,37 +1449,6 @@ static int pcap_mac_if_win32(const char *AdapterName, uchar_t MACAddress[6])
 
 #    endif                                           /* defined(_WIN32) */
 
-#    define ETH_MAC_FIXED_PATTERN                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
-        "[0-9a-fA-F][0-9a-fA-F]"
-
-#    define ETH_MAC_EXTENDED_PATTERN                                                                                   \
-        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
-        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
-        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
-        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
-        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
-        "[0-9a-fA-F]?[0-9a-fA-F]"
-
-typedef struct {
-    const char *prefix;
-    const char *suffix;
-} ETH_DEV_COMMAND;
-
-static const ETH_DEV_COMMAND eth_turnon_commands[] = {
-    {"ip link set dev ", " up 2>/dev/null"}, {"ifconfig ", " up 2>/dev/null"}, {NULL, NULL}};
-
-static const ETH_DEV_COMMAND eth_mac_lookup_commands[] = {
-    {"ip link show ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
-    {"ip link show ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
-    {"ifconfig ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
-    {"ifconfig ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
-    {NULL, NULL}};
-
 /* Build a shell command using a literal snprintf format for compiler checks. */
 static void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname)
 {
@@ -1496,74 +1461,6 @@ static void eth_format_dev_command(char *command, size_t command_size, const ETH
     else
         devname_len = (int)(command_size - (2 + format_len));
     snprintf(command, command_size, "%s%.*s%s", cmd->prefix, devname_len, devname, cmd->suffix);
-}
-
-static void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on)
-{
-    memset(&dev->host_nic_phy_hw_addr, 0, sizeof(dev->host_nic_phy_hw_addr));
-    dev->have_host_nic_phy_addr = 0;
-    if (dev->backend->eth_api != ETH_API_PCAP)
-        return;
-#    if defined(_WIN32)
-    if (!pcap_mac_if_win32(devname, dev->host_nic_phy_hw_addr))
-        dev->have_host_nic_phy_addr = 1;
-#    else
-    {
-        char command[1024];
-        FILE *f;
-        int i;
-        char tool[CBUFSIZE];
-
-        memset(command, 0, sizeof(command));
-        if (set_on) {
-            /* try to force an otherwise unused interface to be turned on */
-            for (i = 0; eth_turnon_commands[i].prefix; ++i) {
-                eth_format_dev_command(command, sizeof(command), &eth_turnon_commands[i], devname);
-                get_glyph_nc(command, tool, 0);
-                if (sim_get_tool_path(tool)[0]) {
-                    if (NULL != (f = popen(command, "r")))
-                        pclose(f);
-                }
-            }
-        }
-        for (i = 0; eth_mac_lookup_commands[i].prefix && (0 == dev->have_host_nic_phy_addr); ++i) {
-            eth_format_dev_command(command, sizeof(command), &eth_mac_lookup_commands[i], devname);
-            get_glyph_nc(command, tool, 0);
-            if (sim_get_tool_path(tool)[0]) {
-                if (NULL != (f = popen(command, "r"))) {
-                    while (0 == dev->have_host_nic_phy_addr) {
-                        if (fgets(command, sizeof(command) - 1, f)) {
-                            char *p1, *p2;
-
-                            p1 = strchr(command, ':');
-                            while (p1) {
-                                p2 = strchr(p1 + 1, ':');
-                                if (p2 <= p1 + 3) {
-                                    uint_t mac_bytes[6];
-                                    if (6 == sscanf(p1 - 2, "%02x:%02x:%02x:%02x:%02x:%02x", &mac_bytes[0],
-                                                    &mac_bytes[1], &mac_bytes[2], &mac_bytes[3], &mac_bytes[4],
-                                                    &mac_bytes[5])) {
-                                        dev->host_nic_phy_hw_addr[0] = mac_bytes[0];
-                                        dev->host_nic_phy_hw_addr[1] = mac_bytes[1];
-                                        dev->host_nic_phy_hw_addr[2] = mac_bytes[2];
-                                        dev->host_nic_phy_hw_addr[3] = mac_bytes[3];
-                                        dev->host_nic_phy_hw_addr[4] = mac_bytes[4];
-                                        dev->host_nic_phy_hw_addr[5] = mac_bytes[5];
-                                        dev->have_host_nic_phy_addr = 1;
-                                    }
-                                    break;
-                                }
-                                p1 = p2;
-                            }
-                        } else
-                            break;
-                    }
-                    pclose(f);
-                }
-            }
-        }
-    }
-#    endif
 }
 
 #    if defined(__APPLE__)

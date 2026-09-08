@@ -50,6 +50,28 @@ target_link_libraries(simh_network PRIVATE
     aio_support
 )
 
+add_executable(show_eth_devices
+    ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
+)
+
+target_compile_definitions(show_eth_devices PRIVATE
+    SHOW_ETH_DEVICES_TARGET
+)
+
+target_include_directories(show_eth_devices PRIVATE
+    "${SIMH_CORE_ROOT}"
+    "${SIMH_COMPAT_ROOT}"
+    "${SIMH_INCLUDE_ROOT}"
+    "${SIMH_RUNTIME_ROOT}"
+    ## "${SIMH_COMPONENTS_ROOT}"
+    "${SIMH_SOURCE_ROOT}"
+)
+
+target_link_libraries(show_eth_devices PRIVATE
+    sim_support
+    aio_support
+)
+
 # =============================================================================
 # Function: find_vcpkg_pkgconfig_target
 # Description: Safely extracts multi-config Release/Debug paths from vcpkg's

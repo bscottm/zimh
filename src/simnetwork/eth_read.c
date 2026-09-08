@@ -117,7 +117,7 @@ int eth_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
             } break;
 
             case ETH_API_TEST:
-                status = eth_test_read(dev, packet, routine);
+                status = eth_reader_test(dev->backend, dev);
                 break;
 
             case ETH_API_NONE:

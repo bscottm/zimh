@@ -46,27 +46,54 @@
 
 #include "sim_defs.h"
 #include "sim_ether.h"
+#include "simnetwork/eth_backends.h"
 
-/* Match the existing ETH_LIST structure from sim_ether.h */
-#define ETH_DEV_NAME_MAX 256
-#define ETH_DEV_DESC_MAX 256
+/* Don't pull in all of the scp junk just for a simple utility test. */
+#if defined(SHOW_ETH_DEVICES_TARGET)
+#    undef fprintf
+#    define sim_printf printf
+#    undef tolower
+#endif
 
-typedef enum {
-    ETH_API_NONE = 0,
-    ETH_API_PCAP,
-    ETH_API_TAP,
-    ETH_API_VDE,
-    ETH_API_UDP,
-    ETH_API_NAT,
-    ETH_API_TEST,
-    ETH_API_COUNT
-} eth_api_t;
+typedef struct {
+    const char *prefix;
+    const char *suffix;
+} ETH_DEV_COMMAND;
 
-typedef struct eth_list_s {
-    char name[ETH_DEV_NAME_MAX];
-    char desc[ETH_DEV_DESC_MAX];
-    eth_api_t eth_api;
-} ETH_LIST;
+#if !defined(_WIN32) && !defined(_WIN64)
+#    define ETH_MAC_FIXED_PATTERN                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
+        "[0-9a-fA-F][0-9a-fA-F]"
+
+#    define ETH_MAC_EXTENDED_PATTERN                                                                                   \
+        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
+        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
+        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
+        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
+        "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
+        "[0-9a-fA-F]?[0-9a-fA-F]"
+
+static const ETH_DEV_COMMAND eth_turnon_commands[] = {
+    {"ip link set dev ", " up 2>/dev/null"}, {"ifconfig ", " up 2>/dev/null"}, {NULL, NULL}};
+
+static const ETH_DEV_COMMAND eth_mac_lookup_commands[] = {
+    {"ip link show ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
+    {"ip link show ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
+    {"ifconfig ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
+    {"ifconfig ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
+    {NULL, NULL}};
+#endif
+
+/* DEC's organizational unit identifier. Not sure why it was called "framers" in the original SIMH code. */
+static const uchar_t digital_equipment_oui[3] = {0xaa, 0x00, 0x03};
+
+/* These need to be externally visible. >sigh!< */
+const ETH_MAC eth_mac_any = {0, 0, 0, 0, 0, 0};
+const ETH_MAC eth_mac_bcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 /*============================================================================*/
 /*                    Windows Implementation                                  */
@@ -82,7 +109,7 @@ typedef struct eth_list_s {
  * useful for large or variable-size allocations like adapter lists.
  */
 
-static int eth_devices_native_windows(int max, ETH_LIST *list)
+static int eth_devices_native_windows(int max, ETH_LIST *list, bool include_framers)
 {
     IP_ADAPTER_ADDRESSES *adapters = NULL;
     IP_ADAPTER_ADDRESSES *adapter;
@@ -104,16 +131,14 @@ static int eth_devices_native_windows(int max, ETH_LIST *list)
     }
 
     /* First call: determine required buffer size */
-    result = GetAdaptersAddresses(
-        AF_UNSPEC,                          /* Both IPv4 and IPv6 */
-        GAA_FLAG_SKIP_ANYCAST |             /* Skip anycast addresses */
-        GAA_FLAG_SKIP_MULTICAST |           /* Skip multicast addresses */
-        GAA_FLAG_SKIP_DNS_SERVER |          /* Skip DNS server addresses */
-        GAA_FLAG_INCLUDE_PREFIX,            /* Include prefix information */
-        NULL,                               /* Reserved */
-        NULL,                               /* Get required size */
-        &outBufLen
-    );
+    result = GetAdaptersAddresses(AF_UNSPEC,                     /* Both IPv4 and IPv6 */
+                                  GAA_FLAG_SKIP_ANYCAST |        /* Skip anycast addresses */
+                                      GAA_FLAG_SKIP_MULTICAST |  /* Skip multicast addresses */
+                                      GAA_FLAG_SKIP_DNS_SERVER | /* Skip DNS server addresses */
+                                      GAA_FLAG_INCLUDE_PREFIX,   /* Include prefix information */
+                                  NULL,                          /* Reserved */
+                                  NULL,                          /* Get required size */
+                                  &outBufLen);
 
     if (result != ERROR_BUFFER_OVERFLOW) {
         /* Unexpected: should return BUFFER_OVERFLOW on first call */
@@ -131,13 +156,8 @@ static int eth_devices_native_windows(int max, ETH_LIST *list)
 
     /* Second call: get actual adapter information */
     result = GetAdaptersAddresses(
-        AF_UNSPEC,
-        GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
-        GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_PREFIX,
-        NULL,
-        adapters,
-        &outBufLen
-    );
+        AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_PREFIX,
+        NULL, adapters, &outBufLen);
 
     if (result != NO_ERROR) {
         fprintf(stderr, "Eth: GetAdaptersAddresses failed with error %lu\n", result);
@@ -152,36 +172,36 @@ static int eth_devices_native_windows(int max, ETH_LIST *list)
             continue;
 
         /* Skip non-Ethernet interfaces (only Ethernet, IEEE 802.11 wireless) */
-        if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD &&
-            adapter->IfType != IF_TYPE_IEEE80211)
+        if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD && adapter->IfType != IF_TYPE_IEEE80211)
             continue;
 
         /* Skip interfaces that are down or not operational */
         if (adapter->OperStatus != IfOperStatusUp)
             continue;
 
-        /* Skip interfaces without a physical address (MAC) */
-        if (adapter->PhysicalAddressLength != 6)
+        /* Skip interfaces without an Ethernet MAC address */
+        if (adapter->PhysicalAddressLength != sizeof(ETH_MAC))
             continue;
+
+        if ((memcmp(adapter->PhysicalAddress, digital_equipment_oui, 3) == 0) != include_framers)
+            continue;
+
+        eth_copy_mac(list[used].eth_mac, adapter->PhysicalAddress);
 
         /* Build device name compatible with PCAP format */
         /* Windows PCAP uses: \Device\NPF_{GUID} */
-        snprintf(list[used].name, sizeof(list[used].name),
-                 "\\Device\\NPF_{%s}", adapter->AdapterName);
+        snprintf(list[used].name, sizeof(list[used].name), "\\Device\\NPF_%s", adapter->AdapterName);
 
         /* Use friendly name as description, fall back to description */
         if (adapter->FriendlyName != NULL) {
             /* Convert wide string to multibyte */
-            WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1,
-                               list[used].desc, sizeof(list[used].desc),
-                               NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1, list[used].desc, sizeof(list[used].desc), NULL,
+                                NULL);
         } else if (adapter->Description != NULL) {
-            WideCharToMultiByte(CP_UTF8, 0, adapter->Description, -1,
-                               list[used].desc, sizeof(list[used].desc),
-                               NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, adapter->Description, -1, list[used].desc, sizeof(list[used].desc), NULL,
+                                NULL);
         } else {
-            snprintf(list[used].desc, sizeof(list[used].desc),
-                    "Network adapter %s", adapter->AdapterName);
+            snprintf(list[used].desc, sizeof(list[used].desc), "Network adapter %s", adapter->AdapterName);
         }
 
         list[used].eth_api = ETH_API_PCAP; /* Native, but PCAP-compatible */
@@ -208,7 +228,7 @@ static int eth_devices_native_windows(int max, ETH_LIST *list)
  * address families.
  */
 
-static int eth_devices_native_unix(int max, ETH_LIST *list)
+static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers)
 {
     struct ifaddrs *ifaddr, *ifa;
     int used = 0;
@@ -242,7 +262,7 @@ static int eth_devices_native_unix(int max, ETH_LIST *list)
         if (already_listed)
             continue;
 
-#ifdef __linux__
+#    ifdef __linux__
         /* Linux: Look for AF_PACKET address family to confirm Ethernet */
         if (ifa->ifa_addr->sa_family == AF_PACKET) {
             struct sockaddr_ll *sll = (struct sockaddr_ll *)ifa->ifa_addr;
@@ -255,13 +275,16 @@ static int eth_devices_native_unix(int max, ETH_LIST *list)
             if (sll->sll_halen != 6)
                 continue;
 
+            if ((memcmp(sll->sll_addr, digital_equipment_oui, 3) != 0) != include_framers)
+                continue;
+
             snprintf(list[used].name, sizeof(list[used].name), "%s", ifa->ifa_name);
-            snprintf(list[used].desc, sizeof(list[used].desc),
-                    "Ethernet adapter %s", ifa->ifa_name);
+            snprintf(list[used].desc, sizeof(list[used].desc), "Ethernet adapter %s", ifa->ifa_name);
+            eth_copy_mac(list[used].eth_mac, (ETH_MAC)sll->sll_addr);
             list[used].eth_api = ETH_API_PCAP; /* Native, but PCAP-compatible */
             used++;
         }
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#    elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
         /* BSD: Look for AF_LINK address family */
         if (ifa->ifa_addr->sa_family == AF_LINK) {
             struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
@@ -274,13 +297,19 @@ static int eth_devices_native_unix(int max, ETH_LIST *list)
             if (sdl->sdl_alen != 6)
                 continue;
 
+            /* MAC address follows the name in the sockaddr_dl */
+            uint8_t *mac_addr = sll->sdl_data + sll->sdl_nlen;
+
+            if ((memcmp(mac_addr, digital_equipment_oui, 3) != 0) != include_framers)
+                continue;
+
             snprintf(list[used].name, sizeof(list[used].name), "%s", ifa->ifa_name);
-            snprintf(list[used].desc, sizeof(list[used].desc),
-                    "Ethernet adapter %s", ifa->ifa_name);
+            snprintf(list[used].desc, sizeof(list[used].desc), "Ethernet adapter %s", ifa->ifa_name);
+            eth_copy_mac(list[used].eth_mac, (ETH_MAC)mac_addr);
             list[used].eth_api = ETH_API_PCAP; /* Native, but PCAP-compatible */
             used++;
         }
-#endif
+#    endif
     }
 
     freeifaddrs(ifaddr);
@@ -301,7 +330,7 @@ static int eth_devices_native_unix(int max, ETH_LIST *list)
  *
  * Returns: number of devices found
  */
-int eth_devices(int max, ETH_LIST *list)
+int eth_devices(int max, ETH_LIST *list, bool include_framers)
 {
     int used;
 
@@ -312,9 +341,9 @@ int eth_devices(int max, ETH_LIST *list)
     memset(list, 0, max * sizeof(ETH_LIST));
 
 #if defined(_WIN32) || defined(_WIN64)
-    used = eth_devices_native_windows(max, list);
+    used = eth_devices_native_windows(max, list, false);
 #else
-    used = eth_devices_native_unix(max, list);
+    used = eth_devices_native_unix(max, list, false);
 #endif
 
     return used;
@@ -405,7 +434,7 @@ const char *eth_getdesc_byname(char *name, char *temp, size_t temp_size)
 static ETH_DEV **eth_open_devices = NULL;
 static int eth_open_device_count = 0;
 
-void _eth_add_to_open_list(ETH_DEV *dev)
+void eth_add_to_open_list(ETH_DEV *dev)
 {
     ETH_DEV **tmp = (ETH_DEV **)realloc(eth_open_devices, (eth_open_device_count + 1) * sizeof(*eth_open_devices));
     if (tmp != NULL) {
@@ -427,7 +456,74 @@ void _eth_remove_from_open_list(ETH_DEV *dev)
         }
 }
 
-#if 0
+void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on)
+{
+    eth_copy_mac(dev->host_nic_phy_hw_addr, eth_mac_any);
+    dev->have_host_nic_phy_addr = false;
+
+    if (dev->backend->eth_api != ETH_API_PCAP)
+        return;
+#if defined(_WIN32) || defined(_WIN64)
+    // FIXME:
+
+#else
+    char command[1024];
+    FILE *f;
+    int i;
+    char tool[CBUFSIZE];
+
+    memset(command, 0, sizeof(command));
+    if (set_on) {
+        /* try to force an otherwise unused interface to be turned on */
+        for (i = 0; eth_turnon_commands[i].prefix; ++i) {
+            eth_format_dev_command(command, sizeof(command), &eth_turnon_commands[i], devname);
+            get_glyph_nc(command, tool, 0);
+            if (sim_get_tool_path(tool)[0]) {
+                if (NULL != (f = popen(command, "r")))
+                    pclose(f);
+            }
+        }
+    }
+    for (i = 0; eth_mac_lookup_commands[i].prefix && (0 == dev->have_host_nic_phy_addr); ++i) {
+        eth_format_dev_command(command, sizeof(command), &eth_mac_lookup_commands[i], devname);
+        get_glyph_nc(command, tool, 0);
+        if (sim_get_tool_path(tool)[0]) {
+            if (NULL != (f = popen(command, "r"))) {
+                while (0 == dev->have_host_nic_phy_addr) {
+                    if (fgets(command, sizeof(command) - 1, f)) {
+                        char *p1, *p2;
+
+                        p1 = strchr(command, ':');
+                        while (p1) {
+                            p2 = strchr(p1 + 1, ':');
+                            if (p2 <= p1 + 3) {
+                                uint_t mac_bytes[6];
+                                if (6 == sscanf(p1 - 2, "%02x:%02x:%02x:%02x:%02x:%02x", &mac_bytes[0], &mac_bytes[1],
+                                                &mac_bytes[2], &mac_bytes[3], &mac_bytes[4], &mac_bytes[5])) {
+                                    dev->host_nic_phy_hw_addr[0] = mac_bytes[0];
+                                    dev->host_nic_phy_hw_addr[1] = mac_bytes[1];
+                                    dev->host_nic_phy_hw_addr[2] = mac_bytes[2];
+                                    dev->host_nic_phy_hw_addr[3] = mac_bytes[3];
+                                    dev->host_nic_phy_hw_addr[4] = mac_bytes[4];
+                                    dev->host_nic_phy_hw_addr[5] = mac_bytes[5];
+                                    dev->have_host_nic_phy_addr = 1;
+                                }
+                                break;
+                            }
+                            p1 = p2;
+                        }
+                    } else
+                        break;
+                }
+                pclose(f);
+            }
+        }
+    }
+}
+#endif
+}
+
+#if defined(SHOW_ETH_DEVICES_TARGET)
 /*============================================================================*/
 /*                    Example Usage / Test Program                            */
 /*============================================================================*/
@@ -440,17 +536,17 @@ int main(void)
     printf("Native Network Device Enumeration\n");
     printf("===================================\n\n");
 
-#if defined(_WIN32) || defined(_WIN64)
+#    if defined(_WIN32) || defined(_WIN64)
     printf("Using Windows IP Helper API with local heap allocation\n\n");
-#elif defined(__linux__)
+#    elif defined(__linux__)
     printf("Using Linux getifaddrs() with AF_PACKET\n\n");
-#elif defined(__APPLE__)
+#    elif defined(__APPLE__)
     printf("Using macOS getifaddrs() with AF_LINK\n\n");
-#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#    elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
     printf("Using BSD getifaddrs() with AF_LINK\n\n");
-#endif
+#    endif
 
-    count = eth_devices_native(32, devices);
+    count = eth_devices(32, devices, false);
 
     if (count == 0) {
         printf("No network devices found.\n");
@@ -463,7 +559,9 @@ int main(void)
     for (int i = 0; i < count; i++) {
         printf("  eth%-2d  %-50s\n", i, devices[i].name);
         printf("         %s\n", devices[i].desc);
-        printf("\n");
+
+        const uint8_t *m = (const uint8_t *)devices[i].eth_mac;
+        printf("         %02X:%02X:%02X:%02X:%02X:%02X\n", m[0], m[1], m[2], m[3], m[4], m[5]);
     }
 
     return 0;
