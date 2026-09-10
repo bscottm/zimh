@@ -11,82 +11,10 @@
 
 // ETH_DEV initializer
 static void eth_zero(ETH_DEV *dev);
-
-static t_stat eth_open_port(char *savname, size_t savname_size, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
-{
-    (void)savname_size;
-
-    /* attempt to connect device */
-    if (0 == strncmp("test:", savname, 5)) {
-        const char *test_label = savname + 5;
-        t_stat status;
-
-        while (isspace(*test_label))
-            ++test_label;
-        if (*test_label == '\0')
-            return sim_messagef(SCPE_OPENERR, "Eth: 'test:' device must be given a test label.\n");
-        status = eth_test_open(test_label, eth_dev);
-        if (status != SCPE_OK)
-            return status;
-    } else if (0 == strncmp("tap:", savname, 4)) {
-#    if defined(HAVE_TAP_NETWORK)
-        const char *devname = savname + 4;
-
-        while (isspace(*devname))
-            ++devname;
-
-        t_stat status = eth_tap_open(devname, eth_dev, savname, savname_size);
-
-        if (status != SCPE_OK)
-            return status;
-#    else
-        return sim_messagef(SCPE_OPENERR, "Eth: No support for Unix TAP network devices\n");
-#    endif
-    } else if (0 == strncmp("vde:", savname, 4)) {
-#    if defined(HAVE_VDE_NETWORK)
-        const char *devname = savname + 4;
-
-        while (isspace(*devname))
-            ++devname;
-
-        t_stat status = eth_vde_open(devname, eth_dev, savname, savname_size);
-
-        if (status != SCPE_OK)
-            return status;
-#    else
-        return sim_messagef(SCPE_OPENERR, "Eth: No support for VDE network devices\n");
-#    endif /* defined(HAVE_VDE_NETWORK) */
-    } else if (0 == strncmp("nat:", savname, 4)) {
-#    if defined(HAVE_SLIRP_NETWORK)
-        const char *devname = savname + 4;
-
-        while (isspace(*devname))
-            ++devname;
-
-        t_stat status;
-        if ((status = sim_slirp_open(devname, eth_dev, dptr, dbit)) != SCPE_OK)
-            return status;
-#    else
-        return sim_messagef(SCPE_OPENERR, "Eth: No support for libslirp/SLiRP NAT network devices\n");
-#    endif /* defined(HAVE_SLIRP_NETWORK) */
-    } else if (0 == strncmp("udp:", savname, 4)) {
-        t_stat status = eth_udp_open(savname, eth_dev, savname, savname_size);
-
-        if (status != SCPE_OK)
-            return status;
-    } else {
-        /* Default: attempt to open the parameter as if it were an explicit device name for pcap. */
-#    if defined(HAVE_PCAP_NETWORK)
-        t_stat status = eth_pcap_open(savname, eth_dev, savname, savname_size);
-        if (status != SCPE_OK)
-            return status;
-#    else
-        return sim_messagef(SCPE_OPENERR, "Eth (pcap): Unknown or unsupported network device %s\n", savname);
-#    endif /* defined(HAVE_PCAP_NETWORK) */
-    }
-
-    return SCPE_OK;
-}
+// Open an emulated Ethernet "port"
+static t_stat eth_open_port(char *savname, size_t savname_size, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit);
+// Close the emulated Ethernet "port".
+static t_stat eth_close_port(eth_backend_t *backend, SOCKET socket_fd);
 
 /* Return true when a name explicitly identifies an integrated pseudo backend. */
 static bool eth_is_explicit_pseudo_device(const char *name)
@@ -173,7 +101,7 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     /* Always initialize threading structures if platform supports it */
     r = eth_init_threading_structures(dev);
     if (r != SCPE_OK) {
-        _eth_close_port(dev->backend, dev->backend->state.eth_socket);
+        eth_close_port(dev->backend, dev->backend->state.eth_socket);
         free(dev->name);
         eth_zero(dev);
         return r;
@@ -199,7 +127,7 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     dev->asynch_io = false;
 #endif
 
-    _eth_add_to_open_list(dev);
+    eth_add_to_open_list(dev);
     /*
      * install a total filter on a newly opened interface and let the device
      * simulator install an appropriate filter that reflects the device's
@@ -213,4 +141,153 @@ void eth_zero(ETH_DEV *dev)
     /* set all members to NULL OR 0 */
     memset(dev, 0, sizeof(ETH_DEV));
     dev->reflections = -1; /* not established yet */
+}
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// Internal functions:
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+t_stat eth_open_port(char *savname, size_t savname_size, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
+{
+    (void)savname_size;
+
+    /* attempt to connect device */
+    if (0 == strncmp("test:", savname, 5)) {
+        const char *test_label = savname + 5;
+        t_stat status;
+
+        while (isspace(*test_label))
+            ++test_label;
+        if (*test_label == '\0')
+            return sim_messagef(SCPE_OPENERR, "Eth: 'test:' device must be given a test label.\n");
+        status = eth_test_open(test_label, eth_dev);
+        if (status != SCPE_OK)
+            return status;
+    } else if (0 == strncmp("tap:", savname, 4)) {
+#    if defined(HAVE_TAP_NETWORK)
+        const char *devname = savname + 4;
+
+        while (isspace(*devname))
+            ++devname;
+
+        t_stat status = eth_tap_open(devname, eth_dev, savname, savname_size);
+
+        if (status != SCPE_OK)
+            return status;
+#    else
+        return sim_messagef(SCPE_OPENERR, "Eth: No support for Unix TAP network devices\n");
+#    endif
+    } else if (0 == strncmp("vde:", savname, 4)) {
+#    if defined(HAVE_VDE_NETWORK)
+        const char *devname = savname + 4;
+
+        while (isspace(*devname))
+            ++devname;
+
+        t_stat status = eth_vde_open(devname, eth_dev, savname, savname_size);
+
+        if (status != SCPE_OK)
+            return status;
+#    else
+        return sim_messagef(SCPE_OPENERR, "Eth: No support for VDE network devices\n");
+#    endif /* defined(HAVE_VDE_NETWORK) */
+    } else if (0 == strncmp("nat:", savname, 4)) {
+#    if defined(HAVE_SLIRP_NETWORK)
+        const char *devname = savname + 4;
+
+        while (isspace(*devname))
+            ++devname;
+
+        t_stat status;
+        if ((status = sim_slirp_open(devname, eth_dev, dptr, dbit)) != SCPE_OK)
+            return status;
+#    else
+        return sim_messagef(SCPE_OPENERR, "Eth: No support for libslirp/SLiRP NAT network devices\n");
+#    endif /* defined(HAVE_SLIRP_NETWORK) */
+    } else if (0 == strncmp("udp:", savname, 4)) {
+        t_stat status = eth_udp_open(savname, eth_dev, savname, savname_size);
+
+        if (status != SCPE_OK)
+            return status;
+    } else {
+        /* Default: attempt to open the parameter as if it were an explicit device name for pcap. */
+#    if defined(HAVE_PCAP_NETWORK)
+        t_stat status = eth_pcap_open(savname, eth_dev, savname, savname_size);
+        if (status != SCPE_OK)
+            return status;
+#    else
+        return sim_messagef(SCPE_OPENERR, "Eth (pcap): Unknown or unsupported network device %s\n", savname);
+#    endif /* defined(HAVE_PCAP_NETWORK) */
+    }
+
+    return SCPE_OK;
+}
+
+t_stat eth_close_port(eth_backend_t *backend, SOCKET socket_fd)
+{
+    switch (backend->eth_api) {
+    case ETH_API_PCAP:
+#    ifdef HAVE_PCAP_NETWORK
+        pcap_close(backend->state.pcap);
+#    endif
+        break;
+    case ETH_API_TAP:
+#    ifdef HAVE_TAP_NETWORK
+        sim_close_sock(socket_fd);
+#    endif
+        break;
+    case ETH_API_VDE:
+#    ifdef HAVE_VDE_NETWORK
+        vde_close(backend->state.vde);
+#    endif
+        break;
+    case ETH_API_NAT:
+#    ifdef HAVE_SLIRP_NETWORK
+        sim_slirp_close(backend->state.slirp);
+#    endif
+        break;
+    case ETH_API_UDP:
+        sim_close_sock(socket_fd);
+        break;
+    case ETH_API_TEST:
+    case ETH_API_NONE:
+    case ETH_API_COUNT:
+        break;
+    }
+    return SCPE_OK;
+}
+
+t_stat eth_close(ETH_DEV *dev)
+{
+    /* make sure device exists */
+    if (dev == NULL)
+        return SCPE_UNATT;
+    if (dev->backend->eth_api == ETH_API_NONE)
+        return SCPE_OK;
+
+    /* close the device */
+    SOCKET socket_fd = dev->backend->state.eth_socket;
+    dev->have_host_nic_phy_addr = 0;
+
+#if ETH_THREADING_AVAILABLE
+    /* Stop threads if running */
+    if (dev->threads_running)
+        eth_stop_threads(dev);
+
+    /* Clean up threading structures */
+    if (dev->threading_initialized)
+        eth_destroy_threading_structures(dev);
+#endif
+
+    eth_close_port(dev->backend, socket_fd);
+    sim_messagef(SCPE_OK, "Eth: closed %s\n", dev->name);
+
+    /* Clean up device resources */
+    dev->backend->state.eth_socket = 0;
+    free(dev->name);
+    free(dev->bpf_filter);
+    eth_zero(dev);
+    eth_remove_from_open_list(dev);
+
+    return SCPE_OK;
 }

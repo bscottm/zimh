@@ -44,9 +44,9 @@
 #    endif
 #endif
 
-#include "sim_defs.h"
+// #include "sim_defs.h"
 #include "sim_ether.h"
-#include "simnetwork/eth_backends.h"
+// #include "simnetwork/eth_backends.h"
 
 /* Don't pull in all of the scp junk just for a simple utility test. */
 #if defined(SHOW_ETH_DEVICES_TARGET)
@@ -54,6 +54,9 @@
 #    define sim_printf printf
 #    undef tolower
 #endif
+
+static ETH_DEV **open_eth_devices = NULL;
+static size_t n_eth_devices = 0;
 
 typedef struct {
     const char *prefix;
@@ -183,6 +186,9 @@ static int eth_devices_native_windows(int max, ETH_LIST *list, bool include_fram
         if (adapter->PhysicalAddressLength != sizeof(ETH_MAC))
             continue;
 
+        /* Skip NATIVE interfaces that have DEC's MAC prefix. Why?  Good question, but it's part of the
+         * original SIMH/open-simh code. Likelihood of encountering a real DEC interface is pretty low,
+         * asymptotically rounding exactly to zero. */
         if ((memcmp(adapter->PhysicalAddress, digital_equipment_oui, 3) == 0) != include_framers)
             continue;
 
@@ -431,29 +437,36 @@ const char *eth_getdesc_byname(char *name, char *temp, size_t temp_size)
     return (found ? temp : NULL);
 }
 
-static ETH_DEV **eth_open_devices = NULL;
-static int eth_open_device_count = 0;
-
 void eth_add_to_open_list(ETH_DEV *dev)
 {
-    ETH_DEV **tmp = (ETH_DEV **)realloc(eth_open_devices, (eth_open_device_count + 1) * sizeof(*eth_open_devices));
+    ETH_DEV **tmp = (ETH_DEV **)realloc(open_eth_devices, (n_eth_devices + 1) * sizeof(*open_eth_devices));
     if (tmp != NULL) {
-        eth_open_devices = tmp;
-        eth_open_devices[eth_open_device_count++] = dev;
+        open_eth_devices = tmp;
+        open_eth_devices[n_eth_devices++] = dev;
     }
 }
 
-void _eth_remove_from_open_list(ETH_DEV *dev)
+void eth_remove_from_open_list(ETH_DEV *dev)
 {
     int i, j;
 
-    for (i = 0; i < eth_open_device_count; ++i)
-        if (eth_open_devices[i] == dev) {
-            for (j = i + 1; j < eth_open_device_count; ++j)
-                eth_open_devices[j - 1] = eth_open_devices[j];
-            --eth_open_device_count;
+    for (i = 0; i < n_eth_devices; ++i)
+        if (open_eth_devices[i] == dev) {
+            for (j = i + 1; j < n_eth_devices; ++j)
+                open_eth_devices[j - 1] = open_eth_devices[j];
+            --n_eth_devices;
             break;
         }
+}
+
+size_t eth_open_device_count()
+{
+    return n_eth_devices;
+}
+
+ETH_DEV ** const eth_open_devices()
+{
+    return open_eth_devices;
 }
 
 void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on)

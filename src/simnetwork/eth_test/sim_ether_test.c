@@ -6,14 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sim_defs.h"
+#include "sim_ether.h"
 #include "sim_ether_test.h"
-#include "sim_ether_internal.h"
-#include "sim_ether_test_internal.h"
-#include "sim_sock.h"
+#include "simnetwork/eth_funcs.h"
 #include "simnetwork/eth_test/eth_test.h"
 
 /* Append an Ethernet CRC in the same byte order used by the polled backend. */
-static uint32_t eth_test_append_crc(uint8_t *msg, uint32_t len)
+uint32_t eth_test_append_crc(uint8_t *msg, uint32_t len)
 {
     uint32_t crc = eth_crc32(0, msg, len);
     uint32_t ncrc = htonl(crc);

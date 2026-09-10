@@ -14,6 +14,7 @@ add_library(simh_regexp INTERFACE)
 # WITH_NETWORK option (and if WITH_NETWORK is FALSE or not set, then simh_network should be a simple interface
 # library.)
 add_library(simh_network STATIC
+    ${SIMH_SIMNETWORK_ROOT}/eth_crc32.c
     ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
     ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
     ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
@@ -25,6 +26,7 @@ add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_api.c
     ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_open.c
     ${SIMH_SIMNETWORK_ROOT}/eth_test/eth_test_api.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_test/sim_ether_test.c
 )
 
 target_compile_definitions(simh_network PUBLIC

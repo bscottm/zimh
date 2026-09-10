@@ -321,6 +321,7 @@
 #include "sim_tmxr_internal.h"
 #include "sim_types.h"
 #include "sim_ether.h"
+#include "simnetwork/eth_funcs.h"
 #include "scp.h"
 #include "xalloc.h"
 

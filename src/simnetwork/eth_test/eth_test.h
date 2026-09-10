@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 #if !defined(ETH_TEST_H)
-#define ETH_TEST_H
+#    define ETH_TEST_H
 
-#include "sim_defs.h"
-#include "sim_sock.h"
-#include "sim_ether.h"
-#include "simnetwork/eth_types.h"
-#include "simnetwork/eth_backends.h"
+#    include "sim_defs.h"
+#    include "simnetwork/eth_types.h"
+#    include "simnetwork/eth_backends.h"
 
 ETH_TEST_BACKEND *eth_test_find_backend(const char *name);
 t_stat eth_test_get_backend(const char *name, ETH_TEST_BACKEND **backend);

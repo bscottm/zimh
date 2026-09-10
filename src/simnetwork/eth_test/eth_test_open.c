@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The ZIMH Project
 // SPDX-License-Identifier: MIT
 
+#include "sim_defs.h"
+#include "sim_ether.h"
 #include "simnetwork/eth_test/eth_test.h"
 
 static ETH_TEST_BACKEND *eth_test_backends = NULL;

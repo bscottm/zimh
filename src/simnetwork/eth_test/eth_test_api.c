@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The ZIMH Project
 // SPDX-License-Identifier: MIT
 
+#include "sim_defs.h"
+#include "simnetwork/eth_types.h"
+#include "simnetwork/eth_funcs.h"
+#include "sim_ether.h"
 #include "simnetwork/eth_test/eth_test.h"
-
+#include "simnetwork/eth_test/sim_ether_test.h"
 
 /* Test Ethernet emulation select/poll wait API. */
 int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)

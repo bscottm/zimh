@@ -19,9 +19,6 @@
  * public test-harness controls belong in sim_ether_test.h.
  */
 
-/* Return whether a non-BPF receive path should deliver a packet to dev. */
-bool eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data);
-
 /* Internal functions used by dispatch tables and test backend.
  * Callers must include <pcap.h> before this header when HAVE_PCAP_NETWORK is defined. */
 

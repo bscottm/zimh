@@ -18,7 +18,6 @@ set(SIM_SOURCES
     ${SIMH_RUNTIME_ROOT}/sim_disk.c
     ${SIMH_RUNTIME_ROOT}/sim_disk_ramdisk.c
     ${SIMH_RUNTIME_ROOT}/sim_ether.c
-    ${SIMH_RUNTIME_ROOT}/sim_ether_test.c
     ${SIMH_RUNTIME_ROOT}/sim_fio.c
     ${SIMH_RUNTIME_ROOT}/sim_host_path.c
     ${SIMH_RUNTIME_ROOT}/sim_imd.c
@@ -70,20 +69,16 @@ function(zimh_find_bison command_var job_pool_args_var)
     set(${job_pool_args_var} "${_zimh_bison_job_pool_args}" PARENT_SCOPE)
 endfunction()
 
-## Build a simulator core library, with and without AIO support. The AIO variant
-## has "_aio" appended to its name, e.g., "simhz64_aio" or "simhz64_video_aio".
+## Build a simulator core library.
 function(build_simcore _targ)
     cmake_parse_arguments(SIMH "VIDEO;INT64;ADDR64;BESM6_SDL_HACK" "" "" ${ARGN})
 
     # Additional library targets that depend on simulator I/O:
     add_library(${_targ} STATIC ${SIM_SOURCES})
 
-    set(sim_aio_lib "${_targ}_aio")
-    add_library(${sim_aio_lib} STATIC ${SIM_SOURCES})
-
     # Components that need to be turned on while building the library, but
     # don't export out to the dependencies (hence PRIVATE.)
-    foreach (lib IN ITEMS "${_targ}" "${sim_aio_lib}")
+    foreach (lib IN ITEMS "${_targ}")
         set_target_properties(${lib} PROPERTIES
             EXCLUDE_FROM_ALL True
         )
@@ -140,7 +135,7 @@ function(build_simcore _targ)
 
     ## Add extras to the AIO variant (which includes the Ethernet and network
     ## backends):
-    target_link_libraries(${sim_aio_lib} PUBLIC
+    target_link_libraries(${_targ} PUBLIC
         simh_network
         aio_support
     )
@@ -253,11 +248,11 @@ function (simh_executable_template _targ)
         message(FATAL_ERROR "${_targ}: No source files?")
     endif (NOT DEFINED SIMH_SOURCES)
 
-    if (SIMH_USES_AIO AND NOT WITH_ASYNC)
-        message(WARNING
-          "!!! ${_targ}: Asynchronous I/O not enabled, but this simulator specifies USES_AIO\n"
-          "!!!           Some features will be crippled, notably networking.")
-    endif ()
+    ## if (SIMH_USES_AIO AND NOT WITH_ASYNC)
+    ##     message(WARNING
+    ##       "!!! ${_targ}: Asynchronous I/O not enabled, but this simulator specifies USES_AIO\n"
+    ##       "!!!           Some features will be crippled, notably networking.")
+    ## endif ()
 
     add_executable("${_targ}" "${SIMH_SOURCES}")
     set_target_properties(${_targ} PROPERTIES
@@ -355,9 +350,9 @@ function (simh_executable_template _targ)
     endif ()
 
     # Uses AIO...
-    if (SIMH_USES_AIO)
-        string(APPEND SIMH_SIMLIB "_aio")
-    endif()
+    ## if (SIMH_USES_AIO)
+    ##     string(APPEND SIMH_SIMLIB "_aio")
+    ## endif()
 
     target_link_libraries("${_targ}" PUBLIC "${SIMH_SIMLIB}")
 endfunction ()
