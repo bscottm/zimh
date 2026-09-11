@@ -53,18 +53,6 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 
 /* Forward declarations of API-specific wait handlers */
 
-/* NAT (SLiRP) wait implementation */
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
-{
-    (void)dev;
-#ifdef HAVE_SLIRP_NETWORK
-    return sim_slirp_select(backend->state.slirp, timeout_ms);
-#else
-    (void)timeout_ms;
-    return 1;
-#endif
-}
-
 /* None API wait implementation */
 int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev)
 {
@@ -345,7 +333,7 @@ t_stat eth_init_threading_structures(ETH_DEV *dev)
 /* Stop threads gracefully */
 void eth_stop_threads(ETH_DEV *dev)
 {
-    if (!dev || !dev->threads_running)
+    if (dev == NULL || !dev->threads_running)
         return;
 
     /* Signal reader thread to shutdown */

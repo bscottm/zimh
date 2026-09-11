@@ -169,6 +169,13 @@ static int initialize_poll_fds(sim_slirp_network *slirp);
 static slirp_ssize_t sim_slirp_receiver(const void *buf, size_t len, void *opaque);
 static void notify_callback(void *opaque);
 
+/* ETH_DEV API functions:*/
+static int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+static int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
+static bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
+static int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
+static bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
+
 t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
 {
     sim_slirp_network *slirp = (sim_slirp_network *)calloc(1, sizeof(*slirp));
@@ -702,6 +709,42 @@ void sim_slirp_show(sim_slirp_network *slirp, FILE *st)
 }
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+ * ETH_DEV API functions:
+ *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
+
+/* NAT (SLiRP) wait implementation */
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
+{
+    (void)dev;
+    return sim_slirp_select(backend->state.slirp, timeout_ms);
+}
+
+int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
+{
+    sim_slirp_network *slirp = dev->backend->state.slirp;
+
+    /* The mutex serializes the reader and the writer threads. */
+    pthread_mutex_lock(&slirp->libslirp_lock);
+    slirp_pollfds_poll(slirp->slirp_cxn, 0, slirp_get_events_callback, slirp);
+    pthread_mutex_unlock(&slirp->libslirp_lock);
+
+    /* slirp_pollfds_poll() is void, so we can't tell from its return value
+     * whether packets arrived. But packets delivered via _slirp_callback()
+     * are queued to dev->read_queue, so check if the queue is non-empty. */
+    return sim_tailq_empty(&dev->read_queue) ? 0 : 1;
+}
+
+int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
+{
+    sim_slirp_network *slirp = dev->backend->state.slirp;
+    int status;
+
+    status = sim_slirp_send(slirp, (char *)packet->msg, (size_t)packet->len, 0);
+
+    return ((status == packet->len) ? 0 : 1);
+}
+
+/*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * The libslirp interface.
  *
  * libslirp has an inverted sense of input and output. "Input" means "input into libslirp", whereas "output" means
@@ -727,12 +770,9 @@ bool before_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
 {
     SIM_UNUSED_ARG(dev);
 
-#if ETH_THREADING_AVAILABLE
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
-
     pthread_mutex_lock(&slirp->libslirp_lock);
-#endif
-    
+
     return true;
 }
 
@@ -749,12 +789,9 @@ bool after_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
 {
     SIM_UNUSED_ARG(dev);
 
-#if ETH_THREADING_AVAILABLE
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
-
     pthread_mutex_unlock(&slirp->libslirp_lock);
-#endif
-    
+
     return true;
 }
 

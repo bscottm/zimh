@@ -121,27 +121,13 @@ enum {
 int poll_eth_socket(eth_backend_t *backend, long timeout_ms);
 
 /*--- API functions for eth_backend_t ---*/
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 
-/* PCAP reader*/
-int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
-/* NAT (libslirp) reader */
-int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
 /* No (null) network reader */
 int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
 /* Test backend reader*/
 int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
 
-/* PCAP writer */
-int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
-/* libslirp mutex acquisition */
-bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
-/* libslirp writer */
-int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
-/* libslirp mutex release */
-bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 /* Empty/no network writer: This does nothing. Really. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */

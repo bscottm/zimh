@@ -352,6 +352,51 @@ int eth_devices(int max, ETH_LIST *list, bool include_framers)
     used = eth_devices_native_unix(max, list, false);
 #endif
 
+    /* Add the non-libpcap emulations, when present: */
+
+#    ifdef HAVE_TAP_NETWORK
+    if (used < max) {
+#        if defined(__OpenBSD__)
+        strlcpy(list[used].name, "tap:tunN", sizeof(list[used].name));
+#        else
+        strlcpy(list[used].name, "tap:tapN", sizeof(list[used].name));
+#        endif
+        strlcpy(list[used].desc, "Integrated Tun/Tap support", sizeof(list[used].desc));
+        list[used].eth_api = ETH_API_TAP;
+        ++used;
+    }
+#    endif
+#    ifdef HAVE_VDE_NETWORK
+    if (used < max) {
+        strlcpy(list[used].name, "vde:device{:switch-port-number}", sizeof(list[used].name));
+        strlcpy(list[used].desc, "Integrated VDE support", sizeof(list[used].desc));
+        list[used].eth_api = ETH_API_VDE;
+        ++used;
+    }
+#    endif
+#    ifdef HAVE_SLIRP_NETWORK
+    if (used < max) {
+        strlcpy(list[used].name, "nat:{optional-nat-parameters}", sizeof(list[used].name));
+        strlcpy(list[used].desc, "Integrated NAT (SLiRP) support", sizeof(list[used].desc));
+        list[used].eth_api = ETH_API_NAT;
+        ++used;
+    }
+#    endif
+
+    if (used < max) {
+        strlcpy(list[used].name, "udp:sourceport:remotehost:remoteport", sizeof(list[used].name));
+        strlcpy(list[used].desc, "Integrated UDP bridge support", sizeof(list[used].desc));
+        list[used].eth_api = ETH_API_UDP;
+        ++used;
+    }
+
+    if (used < max) {
+        strlcpy(list[used].name, "test:name", sizeof(list[used].name));
+        strlcpy(list[used].desc, "Integrated test Ethernet backend", sizeof(list[used].desc));
+        list[used].eth_api = ETH_API_TEST;
+        ++used;
+    }
+
     return used;
 }
 

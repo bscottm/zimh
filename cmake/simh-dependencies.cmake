@@ -186,6 +186,11 @@ if(WITH_NETWORK)
             src/simnetwork/eth_pcap/eth_pcap_open.c
             src/simnetwork/eth_pcap/eth_pcap_api.c
         )
+        if (WIN32)
+            target_sources(simh_network PRIVATE
+                src/simnetwork/eth_pcap/win32_npcap.c
+            )
+        endif()
     endif()
 
     # SLIRP + GLIB2
