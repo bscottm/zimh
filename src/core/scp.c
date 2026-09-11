@@ -206,6 +206,7 @@
 #define IN_SCP_C 1          /* Include from scp.c */
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "scp_internal.h"
 #include "sim_types.h"
 #include "scp_cmdvars.h"
@@ -10525,7 +10526,7 @@ return 0.0;
 
 double sim_gtime (void)
 {
-if (AIO_MAIN_THREAD) {
+if (is_simulator_thread()) {
     UPDATE_SIM_TIME;
     }
 return sim_vm_time;
@@ -10601,12 +10602,12 @@ return SCPE_OK;
 /* Debug printout routines, from Dave Hittner */
 
 const char *debug_bstates = "01_^";
-AIO_TLS char debug_line_prefix[256];
+THREAD_LOCAL_STORAGE char debug_line_prefix[256];
 int32_t debug_unterm  = 0;
 char *debug_line_buf_last = NULL;
 size_t debug_line_buf_last_len = 0;
 size_t debug_line_buf_last_endprefix_offset = 0;
-AIO_TLS char debug_line_last_prefix[256];
+THREAD_LOCAL_STORAGE char debug_line_last_prefix[256];
 char *debug_line_buf = NULL;
 size_t debug_line_bufsize = 0;
 size_t debug_line_offset = 0;
@@ -10846,7 +10847,7 @@ if (sim_deb_switches & SWMASK ('P')) {
     snprintf(pc_s, sizeof (pc_s), "-%s:", sim_PC->name);
     sprint_val (&pc_s[strlen(pc_s)], val, sim_PC->radix, sim_PC->width, sim_PC->flags & REG_FMT);
     }
-snprintf(debug_line_prefix, sizeof (debug_line_prefix), "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, AIO_MAIN_THREAD ? "" : "+", dptr->name, debug_type);
+snprintf(debug_line_prefix, sizeof (debug_line_prefix), "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, is_simulator_thread() ? "" : "+", dptr->name, debug_type);
 return debug_line_prefix;
 }
 

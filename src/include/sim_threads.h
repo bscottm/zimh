@@ -53,6 +53,21 @@ typedef pthread_mutex_t sim_mutex_t;
 #        error "No thread support?"
 #    endif
 
+/* Thread-local storage declaration attribute.
+
+   The project baseline assumes a compiler with at least C11 support, so `_Thread_local` is the normal C
+   spelling here.  MSVC is the remaining exception: its C11/C17 mode still documents `_Thread_local` as
+   recognized but unsupported, so keep using `__declspec(thread)` there for now.
+
+   This branch should be removable once our supported Windows C toolchain has portable `_Thread_local` support
+   in C mode.
+ */
+#    if defined(_MSC_VER)
+#        define THREAD_LOCAL_STORAGE __declspec(thread)
+#    else
+#        define THREAD_LOCAL_STORAGE _Thread_local
+#    endif
+
 static inline int sim_thread_equal(sim_thread_t left, sim_thread_t right)
 {
 #    if defined(HAVE_PTHREADS)

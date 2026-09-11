@@ -1,0 +1,20 @@
+Plan for replacing fileref with disk_image_file in sim_disk.c:
+
+1. All disk I/O operations (pread/pwrite calls) - these are already using SIM_FILE_HANDLE
+2. All open/create/close operations for disk images
+3. All VHD, RAW, and SIMH format operations
+4. The detach function's local variable 'fileref'
+
+EXCEPTIONS (keep as is - these expect FILE*):
+- Line 3753: clearerr (uptr->fileref) - This is SIMH format using stdio, needs special handling
+- Line 3827: sim_fseek (uptr->fileref, ...) - This is in sim_disk_pdp11_bad_block, SIMH format
+- Line 3831: sim_fwrite (..., uptr->fileref) - This is in sim_disk_pdp11_bad_block, SIMH format
+
+For the SIMH format functions that use FILE* operations (clearerr, fseek, fwrite), we need to:
+- Keep using fileref for SIMH format buffered operations
+- Use disk_image_file for positioned I/O operations
+
+Actually, looking at the summary, we want UNIFORM positioned I/O for all formats. So we need to:
+1. Replace all uptr->fileref with uptr->disk_image_file
+2. Convert any remaining FILE* operations (clearerr, fseek, fwrite) to positioned I/O equivalents
+3. sim_disk_pdp11_bad_block should use positioned I/O instead of fseek/fwrite
