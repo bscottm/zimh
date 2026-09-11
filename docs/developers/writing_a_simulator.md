@@ -1594,9 +1594,8 @@ struct UNIT {
 #ifdef SIM_ASYNCH_IO
     void (*a_check_completion)(UNIT *);
     bool (*a_is_active)(UNIT *);
-    UNIT *a_next;                       /* next async active */
-    int32_t a_event_time;
-    ACTIVATE_API a_activate_call;
+    /* Note: a_next, a_event_time, and a_activate_call removed in 2026 */
+    /* Async I/O now uses non-intrusive MPSC queue with min-heap */
     bool a_polling_now;                 /* polling active flag */
     int32_t a_poll_waiter_count;        /* count of polling waiters */
     double a_due_time;                  /* due time for timer event */

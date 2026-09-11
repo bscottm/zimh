@@ -62,16 +62,13 @@ Internal routines:
 #include <sys/stat.h>
 #include <time.h>
 
-#if defined SIM_ASYNCH_IO
-#include <pthread.h>
-#endif
-
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_disk.h"
 #include "sim_disk_ramdisk.h"
 #include "dynstr.h"
 #include "sim_threads.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "sim_types.h"
 #include "sim_uuid.h"
 
@@ -155,15 +152,14 @@ struct disk_context {
 #if defined _WIN32
     HANDLE              disk_handle;        /* OS specific Raw device handle */
 #endif
-#if defined SIM_ASYNCH_IO
-    int                 asynch_io;          /* Asynchronous Interrupt scheduling enabled */
+    bool                asynch_io;          /* Asynchronous Interrupt scheduling enabled */
     int                 asynch_io_latency;  /* instructions to delay pending interrupt */
-    pthread_mutex_t     lock;
-    pthread_t           io_thread;          /* I/O Thread Id */
-    pthread_mutex_t     io_lock;
-    pthread_cond_t      io_cond;
-    pthread_cond_t      io_done;
-    pthread_cond_t      startup_cond;
+    sim_mutex_t         lock;
+    sim_thread_t        io_thread;          /* I/O Thread Id */
+    sim_mutex_t         io_lock;
+    sim_cond_t          io_cond;
+    sim_cond_t          io_done;
+    sim_cond_t          startup_cond;
     bool                io_thread_running;
     int                 io_dop;
     uint8_t             *buf;
@@ -172,7 +168,6 @@ struct disk_context {
     t_lba               lba;
     DISK_PCALLBACK      callback;
     t_stat              io_status;
-#endif
     };
 
 #define disk_ctx up8                        /* Field in Unit structure which points to the disk_context */
@@ -253,24 +248,23 @@ sim_disk_clear_all_test_backends (void)
     }
 }
 
-#if defined SIM_ASYNCH_IO
 #define AIO_CALLSETUP                                               \
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;   \
                                                                     \
-if ((!callback) || !ctx->asynch_io)
+if ((callback == NULL) || !ctx->asynch_io)
 
 #define AIO_CALL(op, _lba, _buf, _rsects, _sects,  _callback)   \
     if (ctx->asynch_io) {                                       \
         struct disk_context *ctx =                              \
                       (struct disk_context *)uptr->disk_ctx;    \
                                                                 \
-        pthread_mutex_lock (&ctx->io_lock);                     \
+        sim_mutex_lock (&ctx->io_lock);                         \
                                                                 \
         sim_debug_unit (ctx->dbit, uptr,                        \
       "sim_disk AIO_CALL(op=%d, unit=%d, lba=0x%X, sects=%d)\n",\
                 op, (int)(uptr - ctx->dptr->units), _lba, _sects);\
                                                                 \
-        if (ctx->callback)                                      \
+        if (ctx->callback != NULL)                              \
             abort(); /* horrible mistake, stop */               \
         ctx->io_dop = op;                                       \
         ctx->lba = _lba;                                        \
@@ -278,8 +272,8 @@ if ((!callback) || !ctx->asynch_io)
         ctx->sects = _sects;                                    \
         ctx->rsects = _rsects;                                  \
         ctx->callback = _callback;                              \
-        pthread_cond_signal (&ctx->io_cond);                    \
-        pthread_mutex_unlock (&ctx->io_lock);                   \
+        sim_cond_signal (&ctx->io_cond);                        \
+        sim_mutex_unlock (&ctx->io_lock);                       \
         }                                                       \
     else                                                        \
         if (_callback)                                          \
@@ -310,14 +304,14 @@ char thread_name[THREAD_NAME_MAX + 1];
 snprintf(thread_name, THREAD_NAME_MAX, "%s disk thread", uptr->uname);
 sim_set_thread_name(thread_name);
 
-pthread_mutex_lock (&ctx->io_lock);
+sim_mutex_lock (&ctx->io_lock);
 ctx->io_thread_running = true;
-pthread_cond_signal (&ctx->startup_cond);   /* Signal we're ready to go */
+sim_cond_signal (&ctx->startup_cond);   /* Signal we're ready to go */
 while (ctx->asynch_io) {
-    pthread_cond_wait (&ctx->io_cond, &ctx->io_lock);
+    sim_cond_wait (&ctx->io_cond, &ctx->io_lock);
     if (ctx->io_dop == DOP_DONE)
         break;
-    pthread_mutex_unlock (&ctx->io_lock);
+    sim_mutex_unlock (&ctx->io_lock);
     switch (ctx->io_dop) {
         case DOP_RSEC:
             ctx->io_status = sim_disk_rdsect (uptr, ctx->lba, ctx->buf, ctx->rsects, ctx->sects);
@@ -329,15 +323,15 @@ while (ctx->asynch_io) {
             ctx->io_status = sim_disk_isavailable (uptr);
             break;
         }
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_mutex_lock (&ctx->io_lock);
     ctx->io_dop = DOP_DONE;
-    pthread_cond_signal (&ctx->io_done);
-    pthread_mutex_unlock (&ctx->io_lock);
+    sim_cond_signal (&ctx->io_done);
+    sim_mutex_unlock (&ctx->io_lock);
     sim_activate (uptr, ctx->asynch_io_latency);
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_mutex_lock (&ctx->io_lock);
     }
 ctx->io_thread_running = false;
-pthread_mutex_unlock (&ctx->io_lock);
+sim_mutex_unlock (&ctx->io_lock);
 
 sim_debug_unit (ctx->dbit, uptr, "_disk_io(unit=%d) exiting\n", (int)(uptr - ctx->dptr->units));
 
@@ -355,27 +349,40 @@ return THREAD_FUNC_RETURN(0);
    and stdio doesn't have an atomic seek+(read|write) operation),
    we have the opportunity to possibly detect improper attempts to
    issue multiple concurrent I/O requests. */
-static void _disk_completion_dispatch (UNIT *uptr)
+static void _disk_completion_dispatch(UNIT *uptr)
 {
-struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
-DISK_PCALLBACK callback = ctx->callback;
+    struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
-sim_debug_unit (ctx->dbit, uptr, "_disk_completion_dispatch(unit=%d, dop=%d, callback=%p)\n", (int)(uptr - ctx->dptr->units), ctx->io_dop, (void *)(ctx->callback));
+    /* Take lock to safely access ctx fields shared with I/O thread */
+    sim_mutex_lock(&ctx->io_lock);
 
-if (ctx->io_dop != DOP_DONE)
-    abort();                                            /* horribly wrong, stop */
+    sim_debug_unit(ctx->dbit, uptr, "_disk_completion_dispatch(unit=%d, dop=%d, callback=%p)\n",
+                   (int)(uptr - ctx->dptr->units), ctx->io_dop, (void *)(ctx->callback));
 
-if (ctx->callback && ctx->io_dop == DOP_DONE) {
-    ctx->callback = NULL;
-    callback (uptr, ctx->io_status);
+    DISK_PCALLBACK callback = NULL;
+    t_stat io_status = ctx->io_status;
+
+    if (ctx->io_dop == DOP_DONE) {
+        if (ctx->callback != NULL) {
+            callback = ctx->callback;
+            ctx->callback = NULL;
+        }
+    } else {
+        /* Wasn't DOP_DONE -- incorrect state. Horribly wrong, so stop. Don't worry about unlocking the mutex.
+         * We're going to abort() anyway. */
+        abort();
     }
+
+    sim_mutex_unlock(&ctx->io_lock);
+    if (callback != NULL)
+        callback(uptr, io_status);
 }
 
-static bool _disk_is_active (UNIT *uptr)
+static bool _disk_is_active (const UNIT * const uptr)
 {
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
-if (ctx) {
+if (ctx != NULL) {
     sim_debug_unit (ctx->dbit, uptr, "_disk_is_active(unit=%d, dop=%d)\n", (int)(uptr - ctx->dptr->units), ctx->io_dop);
     return (ctx->io_dop != DOP_DONE);
     }
@@ -389,20 +396,14 @@ struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 if (ctx) {
     sim_debug_unit (ctx->dbit, uptr, "_disk_cancel(unit=%d, dop=%d)\n", (int)(uptr - ctx->dptr->units), ctx->io_dop);
     if (ctx->asynch_io) {
-        pthread_mutex_lock (&ctx->io_lock);
+        sim_mutex_lock (&ctx->io_lock);
         while (ctx->io_dop != DOP_DONE)
-            pthread_cond_wait (&ctx->io_done, &ctx->io_lock);
-        pthread_mutex_unlock (&ctx->io_lock);
+            sim_cond_wait (&ctx->io_done, &ctx->io_lock);
+        sim_mutex_unlock (&ctx->io_lock);
         }
     }
 return false;
 }
-#else
-#define AIO_CALLSETUP
-#define AIO_CALL(op, _lba, _buf, _rsects, _sects,  _callback)   \
-    if (_callback)                                              \
-        (_callback) (uptr, r);
-#endif
 
 /* Forward declarations */
 
@@ -674,67 +675,48 @@ return filesystem_size;
 
 /* Enable asynchronous operation */
 
-t_stat sim_disk_set_async (UNIT *uptr, int latency)
+t_stat sim_disk_set_async(UNIT *uptr, int latency)
 {
-#if !defined(SIM_ASYNCH_IO)
-char *msg = "Disk: cannot operate asynchronously\r\n";
+    struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
+    int create_status;
 
-/* Parameters are used only when async I/O support is compiled in. */
-(void) uptr;
-(void) latency;
+    sim_debug_unit(ctx->dbit, uptr, "sim_disk_set_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
 
-sim_printf ("%s", msg);
-return SCPE_NOFNC;
-#else
-struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
-int create_status;
+    uptr->a_check_completion = _disk_completion_dispatch;
+    uptr->a_is_active = _disk_is_active;
+    uptr->cancel = _disk_cancel;
 
-sim_debug_unit (ctx->dbit, uptr, "sim_disk_set_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
-
-ctx->asynch_io = sim_asynch_enabled;
-ctx->asynch_io_latency = latency;
-if (ctx->asynch_io) {
-    pthread_mutex_init (&ctx->io_lock, NULL);
-    pthread_cond_init (&ctx->io_cond, NULL);
-    pthread_cond_init (&ctx->io_done, NULL);
-    pthread_cond_init (&ctx->startup_cond, NULL);
-    pthread_mutex_lock (&ctx->io_lock);
-    ctx->io_thread_running = false;
-    create_status = sim_thread_create (&ctx->io_thread, _disk_io, uptr);
-    if (create_status != 0) {
-        pthread_mutex_unlock (&ctx->io_lock);
-        pthread_cond_destroy (&ctx->startup_cond);
-        pthread_cond_destroy (&ctx->io_done);
-        pthread_cond_destroy (&ctx->io_cond);
-        pthread_mutex_destroy (&ctx->io_lock);
-        ctx->asynch_io = false;
-        return sim_messagef (
-            SCPE_IOERR,
-            "%s: can't start asynchronous disk I/O thread: %s\n",
-            sim_uname (uptr), strerror (create_status));
+    ctx->asynch_io_latency = latency;
+    if ((ctx->asynch_io = aio_enabled_and_active()) == true && !ctx->io_thread_running) {
+        sim_mutex_init(&ctx->io_lock);
+        sim_cond_init(&ctx->io_cond);
+        sim_cond_init(&ctx->io_done);
+        sim_cond_init(&ctx->startup_cond);
+        sim_mutex_lock(&ctx->io_lock);
+        ctx->io_thread_running = false;
+        create_status = sim_thread_create(&ctx->io_thread, _disk_io, uptr);
+        if (create_status != 0) {
+            sim_mutex_unlock(&ctx->io_lock);
+            sim_cond_destroy(&ctx->startup_cond);
+            sim_cond_destroy(&ctx->io_done);
+            sim_cond_destroy(&ctx->io_cond);
+            sim_mutex_destroy(&ctx->io_lock);
+            ctx->asynch_io = false;
+            return sim_messagef(SCPE_IOERR, "%s: can't start asynchronous disk I/O thread: %s\n", sim_uname(uptr),
+                                strerror(create_status));
+        }
+        while (!ctx->io_thread_running) /* Wait for thread to stabilize */
+            sim_cond_wait(&ctx->startup_cond, &ctx->io_lock);
+        sim_mutex_unlock(&ctx->io_lock);
+        sim_cond_destroy(&ctx->startup_cond);
     }
-    while (!ctx->io_thread_running)            /* Wait for thread to stabilize */
-        pthread_cond_wait (&ctx->startup_cond, &ctx->io_lock);
-    pthread_mutex_unlock (&ctx->io_lock);
-    pthread_cond_destroy (&ctx->startup_cond);
-    }
-uptr->a_check_completion = _disk_completion_dispatch;
-uptr->a_is_active = _disk_is_active;
-uptr->cancel = _disk_cancel;
-return SCPE_OK;
-#endif
+    return SCPE_OK;
 }
 
 /* Disable asynchronous operation */
 
 t_stat sim_disk_clr_async (UNIT *uptr)
 {
-#if !defined(SIM_ASYNCH_IO)
-/* Parameter is used only when async I/O support is compiled in. */
-(void) uptr;
-
-return SCPE_NOFNC;
-#else
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
 /* make sure device exists */
@@ -743,17 +725,16 @@ if (!ctx) return SCPE_UNATT;
 sim_debug_unit (ctx->dbit, uptr, "sim_disk_clr_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
 
 if (ctx->asynch_io) {
-    pthread_mutex_lock (&ctx->io_lock);
-    ctx->asynch_io = 0;
-    pthread_cond_signal (&ctx->io_cond);
-    pthread_mutex_unlock (&ctx->io_lock);
-    pthread_join (ctx->io_thread, NULL);
-    pthread_mutex_destroy (&ctx->io_lock);
-    pthread_cond_destroy (&ctx->io_cond);
-    pthread_cond_destroy (&ctx->io_done);
+    sim_mutex_lock (&ctx->io_lock);
+    ctx->asynch_io = false;
+    sim_cond_signal (&ctx->io_cond);
+    sim_mutex_unlock (&ctx->io_lock);
+    sim_thread_join (ctx->io_thread, NULL);
+    sim_mutex_destroy (&ctx->io_lock);
+    sim_cond_destroy (&ctx->io_cond);
+    sim_cond_destroy (&ctx->io_done);
     }
 return SCPE_OK;
-#endif
 }
 
 /* Read Sectors */
@@ -1081,13 +1062,12 @@ static void _sim_disk_io_flush (UNIT *uptr)
 {
 uint32_t f = DK_GET_FMT (uptr);
 
-#if defined (SIM_ASYNCH_IO)
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
 sim_disk_clr_async (uptr);
-if (sim_asynch_enabled)
+if (aio_enabled_and_active())
     sim_disk_set_async (uptr, ctx->asynch_io_latency);
-#endif
+
 switch (f) {                                            /* case on format */
     case DKUF_F_STD:                                    /* Simh */
         fflush (uptr->fileref);
@@ -3587,9 +3567,7 @@ if (!ramdisk_attach &&
     (created || (autosized && (ctx->footer == NULL))))
     store_disk_footer (uptr, dtype);
 
-#if defined (SIM_ASYNCH_IO)
 sim_disk_set_async (uptr, completion_delay);
-#endif
 uptr->io_flush = _sim_disk_io_flush;
 
 if (uptr->flags & UNIT_BUFABLE) {                       /* buffer in memory? */
@@ -3946,8 +3924,8 @@ if (!(uptr->flags & UNIT_ATT))                          /* attached? */
 sim_debug_unit (ctx->dbit, uptr, "sim_disk_reset(unit=%d)\n", (int)(uptr - ctx->dptr->units));
 
 _sim_disk_io_flush(uptr);
-AIO_VALIDATE(uptr);
-AIO_UPDATE_QUEUE;
+is_simulator_thread_assert(uptr);
+sim_aio_update_queue();
 return SCPE_OK;
 }
 
@@ -6917,8 +6895,6 @@ return sim_messagef (SCPE_OK, "No such file or directory: %s\n", cptr);
 }
 
 /* disk testing */
-
-#include <setjmp.h>
 
 struct disk_test_coverage {
     t_lba total_sectors;

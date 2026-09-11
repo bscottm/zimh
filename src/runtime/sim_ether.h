@@ -77,7 +77,6 @@
 #        define PCAP_READ_TIMEOUT 1
 #    endif
 
-#if ETH_THREADING_AVAILABLE
 #    if defined(USE_SETNONBLOCK)
 #        undef USE_SETNONBLOCK
 #    endif /* USE_SETNONBLOCK */
@@ -85,7 +84,6 @@
 #    define PCAP_READ_TIMEOUT 15
 #    include "sim_threads.h"
 #    include "sim_tailq.h"
-#endif /* ETH_THREADING_AVAILABLE */
 
 /* give priority to USE_NETWORK over USE_LOADED_WINPCAP */
 #    if defined(USE_NETWORK) && defined(USE_LOADED_WINPCAP)
@@ -207,7 +205,6 @@ struct eth_device {
     bool asynch_io;                /* Asynchronous I/O enabled for this device */
     int asynch_io_latency;         /* instructions to delay pending interrupt */
 
-#if ETH_THREADING_AVAILABLE
     bool threading_initialized;    /* Threading structures (queues, mutexes) initialized */
     bool threads_running;          /* Reader/writer threads are actively running */
 
@@ -235,19 +232,21 @@ struct eth_device {
     /* Thread status: */
     sim_atomic_value_t reader_status; /* Current reader state (atomically accessed) */
     sim_atomic_value_t writer_status; /* Current writer state (atomically accessed) */
-#endif
 };
 
 /* prototype declarations*/
 
 t_stat eth_open(ETH_DEV *dev, const char *name,                 /* open ethernet interface */
                 DEVICE *dptr, uint32_t dbit);
+t_stat eth_open_ex(ETH_DEV *dev, const char *name,              /* open with thread control */
+                   DEVICE *dptr, uint32_t dbit, bool start_threads);
 t_stat eth_close(ETH_DEV *dev);                                 /* close ethernet interface */
 t_stat eth_attach_help(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
 t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet,                /* write synchronous packet; */
                  ETH_PCALLBACK routine);                        /*  callback when done */
 int eth_read(ETH_DEV *dev, ETH_PACK *packet,                    /* read single packet; */
              ETH_PCALLBACK routine);                            /*  callback when done*/
+void eth_error(ETH_DEV *dev, const char *where);                /* Handle ethernet emulation errors. */
 t_stat eth_filter(ETH_DEV *dev, int addr_count,                 /* set filter on incoming packets */
                   const ETH_MAC addresses[], bool all_multicast, bool promiscuous);
 t_stat eth_filter_hash(ETH_DEV *dev, int addr_count,            /* set filter on incoming packets with hash */
@@ -257,6 +256,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count,         /* set filter on
                           const ETH_MAC addresses[], bool all_multicast, bool promiscuous, bool match_broadcast,
                           ETH_MULTIHASH *const hash);           /* AUTODIN II based 8 byte imperfect hash */
 t_stat eth_check_address_conflict(ETH_DEV *dev, const ETH_MAC address);
+t_stat eth_reflect(ETH_DEV *dev);                               /* measure backend reflections */
 const char *eth_version(void);                                  /* Version of dynamically loaded library (pcap) */
 void eth_setcrc(ETH_DEV *dev, int need_crc);                    /* enable/disable CRC mode */
 t_stat eth_set_async(ETH_DEV *dev, int latency);                /* set read behavior to be async */
@@ -283,8 +283,6 @@ t_stat eth_mac_scan_ex(ETH_MAC mac,                                    /* scan s
 
 /* FIXME: Functions that should be moved into a simnetwork/ header... */
 void eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, bool *to_me, bool *from_me);
-/* Core packet processing - backend agnostic */
-void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len, uint32_t caplen);
 
 /* Legacy ETH_QUE functions - always available for test backend */
 t_stat ethq_init(ETH_QUE *que, int max);          /* initialize FIFO queue */
@@ -298,7 +296,6 @@ void ethq_insert_data(ETH_QUE *que, int32_t type, /* insert item into FIFO queue
                       int32_t status);
 t_stat ethq_destroy(ETH_QUE *que);                /* release FIFO queue */
 
-#if ETH_THREADING_AVAILABLE
 /* Adapter functions for lock-free SPSC queue - only used internally in
  * sim_ether.c */
 t_stat eth_tailq_init(sim_tailq_t *que, int max);          /* initialize lock-free queue */
@@ -307,16 +304,15 @@ void eth_tailq_destroy(sim_tailq_t *que);                  /* destroy lock-free 
 void eth_tailq_insert_data(sim_tailq_t *que, int32_t type, /* insert into lock-free queue */
                            const uint8_t *data, int used, size_t len, size_t crc_len, const uint8_t *crc_data,
                            int32_t status);
-#    endif
 
 const char *eth_capabilities(void);
 t_stat sim_ether_test(DEVICE *dptr, const char *cptr); /* unit test routine */
 
 /* Backend open functions: */
-t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
-t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
-t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
-t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size);
+t_stat eth_tap_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size);
+t_stat eth_vde_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size);
+t_stat eth_udp_open(const char *devname, ETH_DEV *dev);
+t_stat eth_pcap_open(const char *devname, ETH_DEV *dev);
 t_stat eth_test_open(const char *test_label, ETH_DEV *dev);
 
 /* Well-known Ethernet MAC addresses:

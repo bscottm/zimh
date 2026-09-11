@@ -3,7 +3,7 @@
 
 #include "sim_defs.h"
 #include "simnetwork/eth_types.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "sim_ether.h"
 #include "simnetwork/eth_test/eth_test.h"
 #include "simnetwork/eth_test/sim_ether_test.h"

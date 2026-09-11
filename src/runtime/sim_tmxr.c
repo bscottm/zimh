@@ -313,6 +313,7 @@
 
 #include "sim_defs.h"
 #include "dynstr.h"
+#include "sim_aio.h"
 #include "sim_serial.h"
 #include "sim_sock.h"
 #include "sim_ether.h"
@@ -321,7 +322,7 @@
 #include "sim_tmxr_internal.h"
 #include "sim_types.h"
 #include "sim_ether.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "scp.h"
 #include "xalloc.h"
 
@@ -4514,12 +4515,10 @@ else
 
 t_stat tmxr_change_async (void)
 {
-#if defined(SIM_ASYNCH_IO)
-if (sim_asynch_enabled)
+if (aio_enabled_and_active())
     return tmxr_start_poll ();
-else
-    tmxr_stop_poll ();
-#endif
+
+tmxr_stop_poll ();
 return SCPE_OK;
 }
 
@@ -4964,7 +4963,7 @@ return _sim_activate (uptr, interval);
 
 t_stat tmxr_activate_abs (UNIT *uptr, int32_t interval)
 {
-AIO_VALIDATE(uptr);             /* Can't call asynchronously */
+is_simulator_thread_assert(uptr);             /* Can't call asynchronously */
 sim_cancel (uptr);
 return tmxr_activate (uptr, interval);
 }

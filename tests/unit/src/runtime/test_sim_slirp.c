@@ -10,9 +10,10 @@
 #include "sim_defs.h"
 #include "sim_sock.h"
 #include "sim_ether.h"
-#include "simnetwork/slirp/sim_slirp.h"
+#include "simnetwork/eth_slirp/sim_slirp.h"
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
+#include "simnetwork/eth_backends.h"
 #include "sim_types.h"
 #include "sim_tailq.h"
 
@@ -115,7 +116,7 @@ static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, co
     dev->dbit = 0;
     dev->read_packet = &mock_packet;  /* Point to the mock packet storage */
     dev->read_callback = test_packet_callback;
-    dev->backend.eth_api = ETH_API_NAT;  /* Set backend type to NAT/slirp */
+    dev->backend->eth_api = ETH_API_NAT;  /* Set backend type to NAT/slirp */
 
     if (mac) {
         memcpy(dev->physical_addr, mac, ether_addr_len);
@@ -580,7 +581,6 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     struct callback_capture capture;
     ETH_DEV mock_eth_dev;
     uint8_t request[42];
-    char errbuf[256];
     sim_slirp_network *slirp;
 
     (void)state;
@@ -589,15 +589,9 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     build_arp_request(request, guest_mac, "10.0.2.15", "10.0.2.2");
 
-    errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf, sizeof(errbuf));
-
-    if (*errbuf != '\0') {
-        fprintf(stderr, "sim_slirp_open error: %s\n", errbuf);
-    }
-
+    assert_int_equal(sim_slirp_open("", &mock_eth_dev, &mock_device, 0), SCPE_OK);
+    slirp = mock_eth_dev.backend->state.slirp;
     assert_non_null(slirp);
-    assert_string_equal(errbuf, "");
 
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
@@ -644,7 +638,6 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     const uint8_t *option;
     size_t option_len;
     size_t request_len;
-    char errbuf[256];
     sim_slirp_network *slirp;
 
     (void)state;
@@ -653,12 +646,9 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     request_len = build_dhcp_discover(request, guest_mac, xid);
 
-    errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
-                           sizeof(errbuf));
-
+    assert_int_equal(sim_slirp_open("", &mock_eth_dev, &mock_device, 0), SCPE_OK);
+    slirp = mock_eth_dev.backend->state.slirp;
     assert_non_null(slirp);
-    assert_string_equal(errbuf, "");
 
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
@@ -734,7 +724,6 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     uint8_t host_mac[ether_addr_len];
     uint8_t packet[128];
     size_t packet_len;
-    char errbuf[256];
     sim_slirp_network *slirp;
 
     (void)state;
@@ -743,12 +732,9 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
     build_arp_request(packet, guest_mac, "10.0.2.15", "10.0.2.2");
 
-    errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
-                           sizeof(errbuf));
-
+    assert_int_equal(sim_slirp_open("", &mock_eth_dev, &mock_device, 0), SCPE_OK);
+    slirp = mock_eth_dev.backend->state.slirp;
     assert_non_null(slirp);
-    assert_string_equal(errbuf, "");
 
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
@@ -809,7 +795,6 @@ static void test_slirp_handles_dns_query(void **state)
     ETH_DEV mock_eth_dev;
     uint8_t packet[512];
     size_t packet_len;
-    char errbuf[256];
     sim_slirp_network *slirp;
 
     (void)state;
@@ -817,12 +802,9 @@ static void test_slirp_handles_dns_query(void **state)
     memset(&capture, 0, sizeof(capture));
     init_mock_eth_dev(&mock_eth_dev, &capture, guest_mac);
 
-    errbuf[0] = '\0';
-    slirp = sim_slirp_open("", &mock_eth_dev, &mock_device, 0, errbuf,
-                           sizeof(errbuf));
-
+    assert_int_equal(sim_slirp_open("", &mock_eth_dev, &mock_device, 0), SCPE_OK);
+    slirp = mock_eth_dev.backend->state.slirp;
     assert_non_null(slirp);
-    assert_string_equal(errbuf, "");
 
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */

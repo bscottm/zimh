@@ -3,7 +3,21 @@
 
 #include "simnetwork/eth_vde/eth_vde.h"
 
-t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+// Close and clean up.
+static void eth_vde_close(eth_backend_t *self);
+
+static const eth_api_funcs_t vde_eth_funcs = {
+    .packet_wait = eth_wait_vde,
+    .packet_read = eth_reader_vde,
+    .before_packet_write = NULL,
+    .write_packet = eth_writer_vde,
+    .after_packet_write = NULL,
+    .reader_shutdown = NULL,
+    .writer_shutdown = NULL,
+    .close = eth_vde_close
+};
+
+t_stat eth_vde_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size)
 {
     char vdeswitch_s[CBUFSIZE]; /* VDE switch name */
     char vdeport_s[CBUFSIZE];   /* VDE switch port (optional), numeric */
@@ -39,14 +53,16 @@ t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
     }
 
     backend->eth_api = ETH_API_VDE;
-    backend->packet_wait = eth_wait_vde;
-    backend->packet_read = eth_reader_vde;
-    backend->before_packet_write = NULL;
-    backend->write_packet = eth_writer_vde;
-    backend->after_packet_write = NULL;
     backend->state.vde = vde;
+    backend->eth_funcs = &vde_eth_funcs;
 
     dev->backend = backend;
 
     return SCPE_OK;
 }
+
+void eth_vde_close(eth_backend_t *self)
+{
+    vde_close(self->state.vde);
+}
+

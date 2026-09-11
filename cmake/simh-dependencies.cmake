@@ -15,12 +15,14 @@ add_library(simh_regexp INTERFACE)
 # library.)
 add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_crc32.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
     ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_filter.c
     ${SIMH_SIMNETWORK_ROOT}/eth_open_close.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
     ${SIMH_SIMNETWORK_ROOT}/eth_read.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
     ${SIMH_SIMNETWORK_ROOT}/poll_eth_socket.c
     ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_open.c
     ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_api.c
@@ -52,24 +54,24 @@ target_link_libraries(simh_network PRIVATE
     aio_support
 )
 
-add_executable(show_eth_devices
+add_executable(eth_show_devices
+    ${SIMH_SIMNETWORK_ROOT}/utils/eth_show_devices.c
     ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
 )
 
-target_compile_definitions(show_eth_devices PRIVATE
+target_compile_definitions(eth_show_devices PRIVATE
     SHOW_ETH_DEVICES_TARGET
 )
 
-target_include_directories(show_eth_devices PRIVATE
+target_include_directories(eth_show_devices PRIVATE
     "${SIMH_CORE_ROOT}"
     "${SIMH_COMPAT_ROOT}"
     "${SIMH_INCLUDE_ROOT}"
     "${SIMH_RUNTIME_ROOT}"
-    ## "${SIMH_COMPONENTS_ROOT}"
     "${SIMH_SOURCE_ROOT}"
 )
 
-target_link_libraries(show_eth_devices PRIVATE
+target_link_libraries(eth_show_devices PRIVATE
     sim_support
     aio_support
 )
@@ -186,6 +188,11 @@ if(WITH_NETWORK)
             src/simnetwork/eth_pcap/eth_pcap_open.c
             src/simnetwork/eth_pcap/eth_pcap_api.c
         )
+        if (WIN32)
+            target_sources(simh_network PRIVATE
+                src/simnetwork/eth_pcap/win32_npcap.c
+            )
+        endif()
     endif()
 
     # SLIRP + GLIB2

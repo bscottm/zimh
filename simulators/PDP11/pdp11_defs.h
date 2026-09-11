@@ -87,9 +87,11 @@
 #define VM_PDP11        0
 #endif
 
-#include "sim_defs.h"                                   /* simulator defns */
 #include <setjmp.h>
 #include <stdint.h>
+
+#include "sim_defs.h"                                   /* simulator defns */
+#include "sim_aio.h"
 
 #if defined(USE_INT64) || defined(USE_ADDR64)
 #error "PDP-11 does not support 64b values!"

@@ -41,6 +41,8 @@ if(NOT TARGET aio_support)
     add_library(aio_support STATIC
         ${SIMH_LIB_ROOT}/sim_threads.c
         ${SIMH_LIB_ROOT}/sim_tailq.c
+        ${SIMH_LIB_ROOT}/sim_aio.c
+        ${SIMH_LIB_ROOT}/sim_event_queue.c
     )
     target_include_directories(aio_support PRIVATE
         "${SIMH_INCLUDE_ROOT}"

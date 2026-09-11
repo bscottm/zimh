@@ -84,6 +84,7 @@
 #include <stdint.h>
 
 #include "sim_ether.h"
+#include "simnetwork/eth_network.h"
 
 #define XQ_QUE_MAX           500                        /* read queue size in packets */
 #define XQ_FILTER_MAX         14                        /* number of filters allowed */

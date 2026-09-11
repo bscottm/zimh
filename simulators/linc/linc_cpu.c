@@ -801,7 +801,7 @@ t_stat cpu_do(void)
   /* Can not return from DO until the instruction is done,
      i.e. not paused. */
   while (paused) {
-    AIO_CHECK_EVENT;
+    aio_check_event();
     if (sim_interval <= 0) {
       if ((stat = sim_process_event()) != SCPE_OK)
         return stat;
@@ -914,7 +914,7 @@ t_stat sim_instr(void)
   ENI = 0;
 
   for (;;) {
-    AIO_CHECK_EVENT;
+    aio_check_event();
     if (sim_interval <= 0) {
       if ((stat = sim_process_event()) != SCPE_OK)
         return stat;

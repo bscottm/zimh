@@ -122,23 +122,24 @@
    sim_set_notelnet             close console Telnet port
    sim_show_telnet              show console status
 */
+#include <ctype.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_console_internal.h"
 #include "sim_time.h"
 #include "sim_tmxr.h"
 #include "sim_serial.h"
 #include "sim_types.h"
 #include "sim_timer.h"
-#include <ctype.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
 
 /* Forward declarations of platform specific routines */
 
 static t_stat sim_os_poll_kbd (void);
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
+#if defined(SIM_ASYNCH_MUX)
 static bool sim_os_poll_kbd_ready (int ms_timeout);
 #endif
 static t_stat sim_os_putchar (int32_t out);
@@ -3406,15 +3407,15 @@ return SCPE_OK;
 }
 
 
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-extern pthread_mutex_t     sim_tmxr_poll_lock;
-extern pthread_cond_t      sim_tmxr_poll_cond;
-extern int32_t             sim_tmxr_poll_count;
-extern bool                sim_tmxr_poll_running;
+#if defined(SIM_ASYNCH_MUX)
+extern sim_mutex_t  sim_tmxr_poll_lock;
+extern sim_cond_t   sim_tmxr_poll_cond;
+extern int32_t      sim_tmxr_poll_count;
+extern bool         sim_tmxr_poll_running;
 
-pthread_t           sim_console_poll_thread;       /* Keyboard Polling Thread Id */
+sim_thread_t        sim_console_poll_thread;    /* Keyboard Polling Thread Id */
 bool                sim_console_poll_running = false;
-pthread_cond_t      sim_console_startup_cond;
+sim_thread_cond_t   sim_console_startup_cond;
 
 static THREAD_FUNC_DEFN(_console_poll)
 {
@@ -3503,7 +3504,7 @@ console_poll_stop (void)
     }
 }
 
-#endif /* defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX) */
+#endif /* defined(SIM_ASYNCH_MUX) */
 
 
 t_stat sim_ttinit (void)
@@ -3514,62 +3515,59 @@ tmxr_startup ();
 return sim_os_ttinit ();
 }
 
-t_stat sim_ttrun (void)
+t_stat sim_ttrun(void)
 {
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-t_stat status;
+#if defined(SIM_ASYNCH_MUX)
+    t_stat status;
 #endif
 
-if (!sim_con_tmxr.ldsc->uptr) {                         /* If simulator didn't declare its input polling unit */
-    sim_con_unit.dynflags &= ~UNIT_TM_POLL;             /* we can't poll asynchronously */
-    sim_con_unit.dynflags |= TMUF_NOASYNCH;             /* disable asynchronous behavior */
-    }
-else {
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-    if (sim_asynch_enabled) {
-        sim_con_tmxr.ldsc->uptr->dynflags |= UNIT_TM_POLL;/* flag console input device as a polling unit */
-        sim_con_unit.dynflags |= UNIT_TM_POLL;         /* flag as polling unit */
-        }
-#endif
-    }
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-if (sim_asynch_enabled) {
-    status = tmxr_start_poll ();
-    if (status != SCPE_OK)
-        return status;
-    }
-pthread_mutex_lock (&sim_tmxr_poll_lock);
-if (sim_asynch_enabled) {
-    int create_status;
-
-    pthread_cond_init (&sim_console_startup_cond, NULL);
-    sim_console_poll_running = false;
-    create_status = sim_thread_create (&sim_console_poll_thread, _console_poll, NULL);
-    if (create_status == 0) {
-        while (!sim_console_poll_running)          /* Wait for thread to stabilize */
-            pthread_cond_wait (&sim_console_startup_cond, &sim_tmxr_poll_lock);
-        pthread_cond_destroy (&sim_console_startup_cond);
+    if (!sim_con_tmxr.ldsc->uptr) {             /* If simulator didn't declare its input polling unit */
+        sim_con_unit.dynflags &= ~UNIT_TM_POLL; /* we can't poll asynchronously */
+        sim_con_unit.dynflags |= TMUF_NOASYNCH; /* disable asynchronous behavior */
     } else {
-        if (create_status != 0) {
-            pthread_cond_destroy (&sim_console_startup_cond);
-            pthread_mutex_unlock (&sim_tmxr_poll_lock);
-            tmxr_stop_poll ();
-            return sim_messagef (
-                SCPE_TTIERR,
-                "Console: can't start asynchronous poll thread: %s\n",
-                strerror (create_status));
+        if (aio_enabled_and_active()) {
+#if defined(SIM_ASYNCH_MUX)
+            sim_con_tmxr.ldsc->uptr->dynflags |= UNIT_TM_POLL; /* flag console input device as a polling unit */
+            sim_con_unit.dynflags |= UNIT_TM_POLL;             /* flag as polling unit */
+
+            status = tmxr_start_poll();
+            if (status != SCPE_OK)
+                return status;
+
+            sim_mutex_lock(&sim_tmxr_poll_lock);
+
+            int create_status;
+
+            sim_cond_init(&sim_console_startup_cond, NULL);
+            sim_console_poll_running = false;
+
+            create_status = sim_thread_create(&sim_console_poll_thread, _console_poll, NULL);
+            if (create_status == 0) {
+                while (!sim_console_poll_running) /* Wait for thread to stabilize */
+                    sim_cond_wait(&sim_console_startup_cond, &sim_tmxr_poll_lock);
+                sim_cond_destroy(&sim_console_startup_cond);
+            } else {
+                if (create_status != 0) {
+                    sim_cond_destroy(&sim_console_startup_cond);
+                    sim_mutex_unlock(&sim_tmxr_poll_lock);
+                    tmxr_stop_poll();
+                    return sim_messagef(SCPE_TTIERR, "Console: can't start asynchronous poll thread: %s\n",
+                                        strerror(create_status));
+                }
+            }
+
+            sim_mutex_unlock(&sim_tmxr_poll_lock);
+#endif
         }
     }
-}
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
-#endif
-return sim_os_ttrun ();
+
+    return sim_os_ttrun();
 }
 
-t_stat sim_ttcmd (void)
+t_stat sim_ttcmd(void)
 {
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-console_poll_stop ();
+#if defined(SIM_ASYNCH_MUX)
+    console_poll_stop();
 #endif
 tmxr_stop_poll ();
 return sim_os_ttcmd ();
@@ -3808,7 +3806,7 @@ if ((sim_brk_char && ((c & 0177) == sim_brk_char)) || (c & SCPE_BREAK))
 return c | SCPE_KFLAG;
 }
 
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
+#if defined(SIM_ASYNCH_MUX)
 static bool sim_os_poll_kbd_ready (int ms_timeout)
 {
 sim_debug (DBG_TRC, &sim_con_telnet, "sim_os_poll_kbd_ready()\n");
@@ -4058,7 +4056,7 @@ sim_os_poll_kbd_ready_now (void)
     return (1 == select (1, &readfds, NULL, NULL, &timeout));
 }
 
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
+#if defined(SIM_ASYNCH_MUX)
 static bool sim_os_poll_kbd_ready (int ms_timeout)
 {
 fd_set readfds;
@@ -4253,7 +4251,7 @@ sim_os_poll_kbd_ready_now (void)
     return (1 == select (1, &readfds, NULL, NULL, &timeout));
 }
 
-#if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
+#if defined(SIM_ASYNCH_MUX)
 static bool sim_os_poll_kbd_ready (int ms_timeout)
 {
 fd_set readfds;

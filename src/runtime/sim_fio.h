@@ -142,14 +142,7 @@ int sim_tolower (int c);
 #undef tolower
 #endif
 #define tolower(chr) sim_tolower(chr)
-int sim_strncasecmp (const char *string1, const char *string2, size_t len);
-int sim_strcasecmp (const char *string1, const char *string2);
-#ifndef strncasecmp
-#define strncasecmp(str1, str2, len) sim_strncasecmp((str1), (str2), (len))
-#endif
-#ifndef strcasecmp
-#define strcasecmp(str1, str2) sim_strcasecmp ((str1), (str2))
-#endif
+
 int sim_strwhitecasecmp (const char *string1, const char *string2, bool casecmp);
 
 

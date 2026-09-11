@@ -9,7 +9,7 @@
 #include "sim_defs.h"
 #include "sim_ether.h"
 #include "sim_ether_test.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_test/eth_test.h"
 
 /* Append an Ethernet CRC in the same byte order used by the polled backend. */

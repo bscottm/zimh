@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "sim_ether.h"
+#include "eth_network.h"
 
 /* Return whether a non-BPF receive path should deliver a packet to dev. */
 bool eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data)

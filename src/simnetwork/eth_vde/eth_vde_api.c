@@ -5,6 +5,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_vde/eth_vde.h"
 
 /* VDE wait implementation */

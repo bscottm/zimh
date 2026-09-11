@@ -52,14 +52,12 @@ struct sim_slirp {
 
     char *args;
 
-#if ETH_THREADING_AVAILABLE
     /* Access lock to libslirp. libslirp is not threaded or protected. */
-    pthread_mutex_t libslirp_lock;
+    sim_mutex_t libslirp_lock;
 
     /* Condvar, mutex when there are no sockets to poll or select for reading. */
-    pthread_cond_t no_sockets_cv;
-    pthread_mutex_t no_sockets_lock;
-#        endif
+    sim_cond_t no_sockets_cv;
+    sim_mutex_t no_sockets_lock;
 
     // Number of currently active sockets.
     sim_atomic_value_t n_sockets;

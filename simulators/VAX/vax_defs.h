@@ -53,6 +53,9 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
+#include "sim_aio.h"
+#include "sim_types.h"
+#include "xalloc.h"
 #include "vax_psl.h"
 
 /* Stops and aborts */

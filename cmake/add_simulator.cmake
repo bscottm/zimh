@@ -41,9 +41,14 @@ set(SIM_VIDEO_SOURCES
 ## Augment the sim_support library:
 target_sources(sim_support PRIVATE
     ${SIMH_CORE_ROOT}/scp_debtab.c
+    ${SIMH_LIB_ROOT}/sim_ctype.c
     ${SIMH_LIB_ROOT}/dynstr.c
     ${SIMH_LIB_ROOT}/string_util.c
     ${SIMH_LIB_ROOT}/xalloc.c
+)
+
+target_link_libraries(sim_support PUBLIC
+    aio_support
 )
 
 function(zimh_find_bison command_var job_pool_args_var)

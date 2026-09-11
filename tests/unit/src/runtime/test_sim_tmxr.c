@@ -95,7 +95,7 @@ struct sim_tmxr_fixture {
         t_stat open_serial_status;
 
         int eth_devices_calls;
-        int eth_devices_result;
+        size_t eth_devices_result;
         ETH_LIST eth_devices_list[4];
 
         int eth_open_calls;
@@ -344,7 +344,7 @@ static SERHANDLE test_tmxr_open_serial(char *name, TMLN *lp, t_stat *status)
     return tmxr_io_fixture->io.open_serial_result;
 }
 
-static int test_tmxr_eth_devices(int max, ETH_LIST *dev, bool framers)
+static size_t test_tmxr_eth_devices(size_t max, ETH_LIST *dev, bool framers)
 {
     int i;
 

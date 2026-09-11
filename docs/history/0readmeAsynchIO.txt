@@ -52,7 +52,7 @@ module added the following line indicated by >>>:
         for ( ;; ) {
 
         [...]
->>>	        AIO_CHECK_EVENT;
+>>>	        aio_check_event();
         	if (sim_interval <= 0) {                /* chk clock queue */
         		temp = sim_process_event ();
         		if (temp)

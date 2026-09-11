@@ -16,6 +16,7 @@
 #include "sim_tempfile.h"
 #include "scp.h"
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_fio.h"
 #include "sim_tape.h"
 #include "sim_tape_internal.h"

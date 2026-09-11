@@ -9,7 +9,8 @@
 
 #include "sim_defs.h"
 #include "sim_ether.h"
-#include "sim_ether_test.h"
+#include "simnetwork/eth_backends.h"
+#include "simnetwork/eth_test/sim_ether_test.h"
 
 static DEVICE test_device = {.name = "TETH"};
 
@@ -169,7 +170,7 @@ static void test_test_backend_opens_explicit_pseudo_name(void **state)
     (void)state;
 
     open_test_device(&dev, "TEST:sim-ether-explicit");
-    assert_int_equal(dev.backend.eth_api, ETH_API_TEST);
+    assert_int_equal(dev.backend->eth_api, ETH_API_TEST);
 
     close_test_device(&dev);
     assert_int_equal(eth_test_clear("sim-ether-explicit"), SCPE_OK);

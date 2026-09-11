@@ -187,8 +187,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "sim_types.h"
-#include "xalloc.h"
 #include "vax_defs.h"
 #include "vax_cis.h"
 #include "vax_cmode.h"
@@ -676,7 +674,7 @@ for ( ;; ) {
         }
     fault_PC = PC;
     recqptr = 0;                                        /* clr recovery q */
-    AIO_CHECK_EVENT;                                    /* queue async events */
+    aio_check_event();                                  /* queue async events */
     if (sim_interval <= 0) {                            /* chk clock queue */
         temp = sim_process_event ();
         if (temp)

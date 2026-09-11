@@ -12,6 +12,21 @@
 #include "sim_sock.h"
 #include "simnetwork/eth_tap/eth_tap.h"
 
+// Close and cleanup TAP.
+static void eth_tap_close(eth_backend_t *self);
+
+/* TAP Ethernet emulation functions. */
+static const eth_api_funcs_t tap_eth_funcs = {
+    .packet_wait = eth_wait_tap,
+    .packet_read = eth_reader_tap,
+    .before_packet_write = NULL,
+    .write_packet = eth_writer_tap,
+    .after_packet_write = NULL,
+    .reader_shutdown = NULL,
+    .writer_shutdown = NULL,
+    .close = eth_tap_close
+};
+
 // Open a TAP device and configure it for use with the simulator. The device name is specified in the devname
 // parameter, and the resulting device name is stored in the savname parameter. The savname parameter must be
 // large enough to hold the resulting device name, which is typically the same as the devname parameter.
@@ -20,7 +35,7 @@
 // SCPE_OK: The TAP device was opened and configured successfully.
 // SCPE_OPENERR: An error occurred while opening or configuring the TAP device.
 // SCPE_MEM: An error occurred while allocating memory for the eth_backend_t structure.
-t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_tap_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size)
 {
     if (!strcmp(savname, "tap:tapN"))
         return sim_messagef(SCPE_OPENERR, "Eth: Must specify actual tap device name (i.e. tap:tap0)\n");
@@ -44,8 +59,6 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
             if (ioctl(tun, FIONBIO, &on)) {
                 close(tun);
                 return sim_messagef(SCPE_OPENERR, "Eth: ioctl(FIONBIO) on %s failed: %s\n", devname, strerror(errno));
-            } else {
-                strlcpy(savname, ifr.ifr_name, savname_size);
             }
         } else {
             close(tun);
@@ -105,16 +118,16 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
         return sim_messagef(SCPE_MEM, "Eth: Error allocating memory for eth_backend_t\n");
 
     backend->eth_api = ETH_API_TAP;
-    backend->packet_wait = eth_wait_tap;
-    backend->packet_read = eth_reader_tap;
-    backend->before_packet_write = NULL;
-    backend->write_packet = eth_writer_tap;
-    backend->after_packet_write = NULL;
-    backend->reader_shutdown = NULL;
-    backend->writer_shutdown = NULL;
     backend->state.eth_socket = tun;
+    backend->eth_funcs = &tap_eth_funcs;
 
     dev->backend = backend;
 
     return SCPE_OK;
+}
+
+// Close and cleanup TAP.
+void eth_tap_close(eth_backend_t *self)
+{
+    sim_close_sock(self->state.eth_socket);
 }

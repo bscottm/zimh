@@ -70,6 +70,7 @@
 #include "3b2_stddev.h"
 #include "3b2_timer.h"
 #include "sim_types.h"
+#include "sim_aio.h"
 
 #if !defined(DONT_USE_INTERNAL_ROM)
 #if defined(REV3)
@@ -2512,7 +2513,7 @@ t_stat sim_instr(void)
             cpu_exception_stack_depth--;
         }
 
-        AIO_CHECK_EVENT;
+        aio_check_event();
 
         if (sim_interval-- <= 0) {
             if ((stop_reason = sim_process_event())) {

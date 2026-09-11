@@ -41,15 +41,8 @@ typedef struct eth_test_backend {
     struct eth_test_backend *next;
 } ETH_TEST_BACKEND;
 
-/* eth_api_t movde to simnetwork/eth_types.h */
-
-/* Discriminated union for API-specific state. */
-struct eth_backend_s {
-    /* API being used to move packets */
-    eth_api_t eth_api;
-
-    /* API interface: */
-
+/* API function interface: */
+typedef struct eth_api_funcs_s {
     /* Wait for a packet's arrival at the reader. This is the poll/select point.
      * timeout_ms:
      *   > 0: wait up to this many milliseconds (threaded/async mode)
@@ -92,6 +85,17 @@ struct eth_backend_s {
 
     /* Writer-side thread shutdown hook. Optional -- may be NULL. */
     void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+
+    /* Close and cleanup state. Not optional, may not be NULL. */
+    void (*close)(struct eth_backend_s *self);
+} eth_api_funcs_t;
+
+/* eth_api_t moved to simnetwork/eth_types.h */
+
+/* Discriminated union for API-specific state. */
+struct eth_backend_s {
+    /* API being used to move packets */
+    eth_api_t eth_api;
     
     /* Per-backend state.*/
     union {
@@ -109,6 +113,9 @@ struct eth_backend_s {
         /* Network socket for UDP and TAP backends.*/
         SOCKET eth_socket;
     } state;
+
+    /* API functions */
+    const eth_api_funcs_t *eth_funcs;
 };
 
 // Default socket read timeout. Note: This can be made longer, which only
@@ -121,27 +128,13 @@ enum {
 int poll_eth_socket(eth_backend_t *backend, long timeout_ms);
 
 /*--- API functions for eth_backend_t ---*/
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 
-/* PCAP reader*/
-int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
-/* NAT (libslirp) reader */
-int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
 /* No (null) network reader */
 int eth_reader_none(eth_backend_t *backend, ETH_DEV *dev);
 /* Test backend reader*/
 int eth_reader_test(eth_backend_t *backend, ETH_DEV *dev);
 
-/* PCAP writer */
-int eth_writer_pcap(ETH_DEV *dev, const ETH_PACK *packet);
-/* libslirp mutex acquisition */
-bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
-/* libslirp writer */
-int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
-/* libslirp mutex release */
-bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 /* Empty/no network writer: This does nothing. Really. */
 int eth_writer_none(ETH_DEV *dev, const ETH_PACK *packet);
 /* Test backend writer. */

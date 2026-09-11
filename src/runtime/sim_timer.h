@@ -16,10 +16,7 @@
 
 #include "sim_time.h"
 #include "sim_types.h"
-#if defined(SIM_ASYNCH_IO) || ETH_THREADING_AVAILABLE
-#include <pthread.h>
-#endif
-
+#include "sim_threads.h"
 
 #define SIM_NTIMERS     8                           /* # timers */
 #define SIM_TMAX        500                         /* max timer makeup */

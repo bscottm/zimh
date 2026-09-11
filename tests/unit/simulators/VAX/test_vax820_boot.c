@@ -11,6 +11,12 @@
 
 uint32_t R[16];
 uint32_t PSL;
+uint32_t P0BR;
+uint32_t P0LR;
+uint32_t P1BR;
+uint32_t P1LR;
+uint32_t SBR;
+uint32_t SLR;
 uint32_t SISR;
 uint32_t fault_PC;
 uint32_t p1;
@@ -29,8 +35,6 @@ int32_t cpu_msk = 1;
 int32_t in_ie;
 int32_t mapen;
 uint32_t mchk_va;
-TLBENT stlb[VA_TBSIZE];
-TLBENT ptlb[VA_TBSIZE];
 jmp_buf save_env;
 UNIT cpu_unit;
 DEVICE cpu_dev;
@@ -187,18 +191,6 @@ void fl_wr(int32_t pa, int32_t val, int32_t lnt)
     (void)pa;
     (void)val;
     (void)lnt;
-}
-
-TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
-{
-    TLBENT ent = {0};
-
-    (void)va;
-    (void)lnt;
-    (void)acc;
-    if (stat != NULL)
-        *stat = 0;
-    return ent;
 }
 
 static int32_t intexc(int32_t vec, int32_t cc, int32_t ipl, int ei)
