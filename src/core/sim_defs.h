@@ -104,7 +104,7 @@
 // Standard header prelude, platform-specific headers.
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 
-#include "sim_platform.h"
+#    include "sim_platform.h"
 
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 // SIMH types, definitions, structures, ...
@@ -328,7 +328,7 @@ struct DEVICE {
     DEBTAB *debflags;           /* debug flags */
     t_stat (*msize)(UNIT *up, int32_t v, const char *cp, void *dp);
     /* mem size routine */
-    char *lname; /* logical name */
+    char *lname;                /* logical name */
     t_stat (*help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
     /* help */
     t_stat (*attach_help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
@@ -421,7 +421,7 @@ struct UNIT {
     char *uname;                /* Unit name */
     DEVICE *dptr;               /* DEVICE linkage (backpointer) */
     uint32_t dctrl;             /* debug control */
-#    ifdef SIM_ASYNCH_IO
+
     void (*a_check_completion)(UNIT *);
     bool (*a_is_active)(const UNIT *);
     UNIT *a_next; /* next asynch active */
@@ -436,7 +436,6 @@ struct UNIT {
     double a_due_time;   /* due time for timer event */
     double a_due_gtime;  /* due time (in instructions) for timer event */
     double a_usec_delay; /* time delay for timer event */
-#    endif
 };
 
 /* Unit flags */
@@ -553,7 +552,7 @@ struct REG {
 /* Command tables, base and alternate formats */
 
 struct CTAB {
-    const char *name; /* name */
+    const char *name;      /* name */
     t_stat (*action)(int32_t flag, const char *cptr);
     /* action routine */
     int32_t arg;           /* argument */
