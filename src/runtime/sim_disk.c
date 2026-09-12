@@ -371,11 +371,11 @@ if (ctx->callback && ctx->io_dop == DOP_DONE) {
     }
 }
 
-static bool _disk_is_active (UNIT *uptr)
+static bool _disk_is_active (const UNIT *uptr)
 {
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
 
-if (ctx) {
+if (ctx != NULL) {
     sim_debug_unit (ctx->dbit, uptr, "_disk_is_active(unit=%d, dop=%d)\n", (int)(uptr - ctx->dptr->units), ctx->io_dop);
     return (ctx->io_dop != DOP_DONE);
     }

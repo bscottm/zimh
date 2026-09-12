@@ -423,7 +423,7 @@ struct UNIT {
     uint32_t dctrl;             /* debug control */
 #    ifdef SIM_ASYNCH_IO
     void (*a_check_completion)(UNIT *);
-    bool (*a_is_active)(UNIT *);
+    bool (*a_is_active)(const UNIT *);
     UNIT *a_next; /* next asynch active */
     int32_t a_event_time;
     ACTIVATE_API a_activate_call;

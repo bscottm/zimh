@@ -10442,7 +10442,7 @@ bool sim_is_active (UNIT *uptr)
 {
 AIO_VALIDATE(uptr);
 AIO_UPDATE_QUEUE;
-return (((uptr->next) || AIO_IS_ACTIVE(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active (uptr) : false)) ? true : false);
+return (((uptr->next) || is_unit_aio_active(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active (uptr) : false)) ? true : false);
 }
 
 /* sim_activate_time - return activation time
@@ -10779,7 +10779,7 @@ static t_stat _sim_debug_flush (void)
 
 /* Finds debug phrase matching bitmask from from device DEBTAB table */
 
-const char *_get_dbg_verb (uint32_t dbits, DEVICE* dptr, UNIT *uptr)
+const char *_get_dbg_verb (uint32_t dbits, const DEVICE* dptr, const UNIT *uptr)
 {
 static const char *debtab_none    = "DEBTAB_ISNULL";
 static const char *debtab_nomatch = "DEBTAB_NOMATCH";
@@ -10805,7 +10805,7 @@ return some_match ? some_match : debtab_nomatch;
 
 /* Prints standard debug prefix unless previous call unterminated */
 
-static const char *sim_debug_prefix (uint32_t dbits, DEVICE* dptr, UNIT* uptr)
+static const char *sim_debug_prefix (uint32_t dbits, const DEVICE* dptr, const UNIT* uptr)
 {
 const char* debug_type = _get_dbg_verb (dbits, dptr, uptr);
 char tim_t[32] = "";
@@ -11136,7 +11136,7 @@ return stat | ((stat != SCPE_OK) ? SCPE_NOMESSAGE : 0);
    Callers should be calling sim_debug() which is a macro
    defined in scp.h which evaluates the action condition before
    incurring call overhead. */
-void _sim_vdebug (uint32_t dbits, DEVICE* dptr, UNIT *uptr, const char* fmt, va_list arglist)
+void _sim_vdebug (uint32_t dbits, const DEVICE* dptr, const UNIT *uptr, const char* fmt, va_list arglist)
 {
 if (sim_deb && dptr && ((dptr->dctrl | (uptr ? uptr->dctrl : 0)) & dbits)) {
     TMLN *saved_oline = sim_oline;
@@ -11209,7 +11209,7 @@ if (sim_deb && dptr && ((dptr->dctrl | (uptr ? uptr->dctrl : 0)) & dbits)) {
     }
 }
 
-void _sim_debug_unit (uint32_t dbits, UNIT *uptr, const char* fmt, ...)
+void _sim_debug_unit (uint32_t dbits, const UNIT *uptr, const char* fmt, ...)
 {
 DEVICE *dptr = (uptr ? uptr->dptr : NULL);
 
@@ -11221,7 +11221,7 @@ if (sim_deb && (((dptr ? dptr->dctrl : 0) | (uptr ? uptr->dctrl : 0)) & dbits)) 
     }
 }
 
-void _sim_debug_device (uint32_t dbits, DEVICE* dptr, const char* fmt, ...)
+void _sim_debug_device (uint32_t dbits, const DEVICE* dptr, const char* fmt, ...)
 {
 if (sim_deb && dptr && (dptr->dctrl & dbits)) {
     va_list arglist;

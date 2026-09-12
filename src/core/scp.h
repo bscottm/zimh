@@ -205,7 +205,7 @@ const char *scp_argv0 (void);
 bool scp_has_oline (void);
 bool scp_do_echo_enabled(void);
 int32_t scp_do_depth(void);
-const char *_get_dbg_verb(uint32_t dbits, DEVICE *dptr, UNIT *uptr);
+const char *_get_dbg_verb(uint32_t dbits, const DEVICE *dptr, const UNIT *uptr);
 REG *find_reg (const char *ptr, const char **optr, DEVICE *dptr);
 CTAB *find_ctab (CTAB *tab, const char *gbuf);
 C1TAB *find_c1tab (C1TAB *tab, const char *gbuf);
@@ -233,11 +233,11 @@ void sim_debug_bits_hdr (uint32_t dbits, DEVICE* dptr, const char *header,
     BITFIELD* bitdefs, uint32_t before, uint32_t after, int terminate);
 void sim_debug_bits (uint32_t dbits, DEVICE* dptr, BITFIELD* bitdefs,
     uint32_t before, uint32_t after, int terminate);
-void _sim_vdebug (uint32_t dbits, DEVICE* dptr, UNIT *uptr, const char* fmt,
+void _sim_vdebug (uint32_t dbits, const DEVICE* dptr, const UNIT *uptr, const char* fmt,
     va_list arglist) PRINTF_FMT(4, 0);
-void _sim_debug_unit (uint32_t dbits, UNIT *uptr, const char* fmt, ...)
+void _sim_debug_unit (uint32_t dbits, const UNIT *uptr, const char* fmt, ...)
     PRINTF_FMT(3, 4);
-void _sim_debug_device (uint32_t dbits, DEVICE* dptr, const char* fmt, ...)
+void _sim_debug_device (uint32_t dbits, const DEVICE* dptr, const char* fmt, ...)
     PRINTF_FMT(3, 4);
 #define sim_debug(dbits, dptr, ...) do { if ((sim_deb != NULL) && ((dptr) != NULL) && ((dptr)->dctrl & (dbits))) _sim_debug_device (dbits, dptr, __VA_ARGS__);} while (0)
 #define sim_debug_unit(dbits, uptr, ...) do { if ((sim_deb != NULL) && ((uptr) != NULL) && (uptr->dptr != NULL) && (((uptr)->dctrl | (uptr)->dptr->dctrl) & (dbits))) _sim_debug_unit (dbits, uptr, __VA_ARGS__);} while (0)

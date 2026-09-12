@@ -15,16 +15,24 @@
 
 extern sim_mutex_t sim_asynch_lock;
 extern sim_cond_t sim_asynch_wake;
+
 extern sim_mutex_t sim_timer_lock;
 extern sim_cond_t sim_timer_wake;
+
 extern bool sim_timer_event_canceled;
+
 extern int32_t sim_tmxr_poll_count;
 extern sim_cond_t sim_tmxr_poll_cond;
 extern sim_mutex_t sim_tmxr_poll_lock;
-extern pthread_t sim_asynch_main_threadid;
-// FIXME: Replace with sim_tailq_t:
+
+// Simulator thread ID. Might not actually be the process' main thread.
+extern sim_thread_t sim_asynch_main_threadid;
+
+// Pending asynchronous UNIT service requests. FIXME: Replace with sim_tailq_t:
 extern UNIT *volatile sim_asynch_queue;
+
 extern volatile bool sim_idle_wait;
+
 extern int32_t sim_asynch_check;
 extern int32_t sim_asynch_latency;
 extern int32_t sim_asynch_inst_latency;
@@ -36,9 +44,14 @@ static inline bool is_simulator_thread() {
     return sim_thread_equal(sim_thread_self(), sim_asynch_main_threadid);
 }
 
+/* Does the unit have pending asynchronous I/O? */
+static inline bool is_unit_aio_active(const UNIT *unit) {
+    return ((unit->a_is_active != NULL ? unit->a_is_active(unit) : false) || unit->a_next != NULL);
+}
+
 #    define AIO_LOCK sim_mutex_lock(&sim_asynch_lock)
 #    define AIO_UNLOCK sim_mutex_unlock(&sim_asynch_lock)
-#    define AIO_IS_ACTIVE(uptr) (((uptr)->a_is_active ? (uptr)->a_is_active(uptr) : false) || ((uptr)->a_next))
+
 #    if defined(SIM_ASYNCH_MUX)
 #        define AIO_CANCEL(uptr)                                                                                       \
             if (((uptr)->dynflags & UNIT_TM_POLL) && !((uptr)->next) && !((uptr)->a_next)) {                           \
