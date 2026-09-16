@@ -9986,6 +9986,17 @@ t_stat sim_process_event(void)
         return SCPE_STOP;
     }
     AIO_UPDATE_QUEUE;
+
+    /* NEW: Process async events from heap with time <= current simulator time */
+    if (aio_enabled_and_active()) {
+        int32_t current_time = (int32_t)sim_gtime();
+        int processed = sim_aio_process_heap(current_time);
+        if (processed > 0) {
+            sim_debug(SIM_DBG_AIO_QUEUE, &sim_scp_dev,
+                      "Processed %d async events from heap\n", processed);
+        }
+    }
+
     UPDATE_SIM_TIME; /* update sim time */
     if (sim_interval > 0) {
         sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Interval not yet expired: %d\n", sim_interval);
