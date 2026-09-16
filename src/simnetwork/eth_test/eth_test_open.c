@@ -5,6 +5,16 @@
 #include "sim_ether.h"
 #include "simnetwork/eth_test/eth_test.h"
 
+static const eth_api_funcs_t test_eth_funcs = {
+    .packet_wait = eth_wait_test,
+    .packet_read = eth_reader_test,
+    .before_packet_write = NULL,
+    .write_packet = eth_writer_test,
+    .after_packet_write = NULL,
+    .reader_shutdown = NULL,
+    .writer_shutdown = NULL
+};
+
 static ETH_TEST_BACKEND *eth_test_backends = NULL;
 
 enum {
@@ -26,12 +36,8 @@ t_stat eth_test_open(const char *test_label, ETH_DEV *dev)
         return SCPE_MEM;
 
     backend->eth_api = ETH_API_TEST;
-    backend->packet_wait = eth_wait_test;
-    backend->packet_read = eth_reader_test;
-    backend->before_packet_write = NULL;
-    backend->write_packet = eth_writer_test;
-    backend->after_packet_write = NULL;
     backend->state.test_backend = test_backend;
+    backend->eth_funcs = &test_eth_funcs;
 
     dev->backend = backend;
 

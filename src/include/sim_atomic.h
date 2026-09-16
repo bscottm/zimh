@@ -68,6 +68,8 @@
 #if !defined(SIM_ATOMIC_H)
 #    define SIM_ATOMIC_H
 
+#    include "sim_platform.h"  /* For platform-specific types like LONG on Windows */
+
 #    if !defined(__STDC_NO_ATOMICS__) && __STDC_VERSION__ >= 201112L
 /* C11 or newer compiler -- use the compiler's support for atomic types. */
 #        include <stdatomic.h>
@@ -227,6 +229,35 @@ static inline sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_atomic
 #            else
     /* Older Windows InterlockedExchangeAdd, which returns the original value in p->value. */
     retval = InterlockedExchangeAdd(&p->value, x) + x;
+#            endif
+#        endif
+#    endif
+
+    return retval;
+}
+
+/* Atomic fetch-and-add: returns the OLD value before the addition */
+static inline sim_atomic_type_t sim_atomic_fetch_add(sim_atomic_value_t *p, sim_atomic_type_t x)
+{
+    sim_atomic_type_t retval;
+
+#    if HAVE_STD_ATOMIC
+    /* atomic_fetch_add returns the old value, which is what we want */
+    retval = atomic_fetch_add_explicit(&p->value, x, SIM_ATOMIC_SEQ_CST);
+#    elif HAVE_ATOMIC_PRIMS
+#        if defined(__ATOMIC_SEQ_CST)
+#            if (defined(__GNUC__) || defined(__clang__))
+    retval = __atomic_fetch_add(&p->value, x, __ATOMIC_SEQ_CST);
+#            else
+#                error "sim_atomic_fetch_add: No atomic fetch_add intrinsic?"
+#            endif
+#        elif defined(_WIN32) || defined(_WIN64)
+#            if defined(InterlockedAdd)
+    /* InterlockedAdd returns the new value, but InterlockedExchangeAdd returns old */
+    retval = InterlockedExchangeAdd(&p->value, x);
+#            else
+    /* Older Windows InterlockedExchangeAdd returns the original value */
+    retval = InterlockedExchangeAdd(&p->value, x);
 #            endif
 #        endif
 #    endif

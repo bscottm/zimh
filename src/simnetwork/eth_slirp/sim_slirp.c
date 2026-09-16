@@ -176,6 +176,16 @@ static bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 static int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
 static bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 
+static const eth_api_funcs_t slirp_eth_funcs = {
+    .packet_wait = eth_wait_nat,
+    .packet_read = eth_reader_nat,
+    .before_packet_write = before_slirp_send,
+    .write_packet = eth_writer_nat,
+    .after_packet_write = after_slirp_send,
+    .reader_shutdown = sim_slirp_reader_shutdown,
+    .writer_shutdown = sim_slirp_writer_shutdown
+};
+
 t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
 {
     sim_slirp_network *slirp = (sim_slirp_network *)calloc(1, sizeof(*slirp));
@@ -460,14 +470,8 @@ t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t
     }
 
     backend->eth_api = ETH_API_NAT;
-    backend->packet_wait = eth_wait_nat;
-    backend->packet_read = eth_reader_nat;
-    backend->before_packet_write = before_slirp_send;
-    backend->write_packet = eth_writer_nat;
-    backend->after_packet_write = after_slirp_send;
-    backend->reader_shutdown = sim_slirp_reader_shutdown;
-    backend->writer_shutdown = sim_slirp_writer_shutdown;
     backend->state.slirp = slirp;
+    backend->eth_funcs = &slirp_eth_funcs;
 
     return SCPE_OK;
 

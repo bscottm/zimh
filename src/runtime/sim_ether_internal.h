@@ -26,6 +26,5 @@
 void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len, uint32_t caplen);
 
 t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine);
-void _eth_error(ETH_DEV* dev, const char* where);
 
 #endif

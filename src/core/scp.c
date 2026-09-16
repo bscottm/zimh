@@ -267,7 +267,7 @@
 #define UPDATE_SIM_TIME                                                                                                \
     do {                                                                                                               \
         int32_t _x;                                                                                                    \
-        AIO_LOCK;                                                                                                      \
+        aio_global_lock();                                                                                                      \
         if (sim_clock_queue == QUEUE_LIST_END)                                                                         \
             _x = noqueue_time;                                                                                         \
         else                                                                                                           \
@@ -278,7 +278,7 @@
             noqueue_time = sim_interval;                                                                               \
         else                                                                                                           \
             sim_clock_queue->time = sim_interval;                                                                      \
-        AIO_UNLOCK;                                                                                                    \
+        aio_global_unlock();                                                                                                    \
     } while (0)
 
 #if defined(USE_INT64)
@@ -2721,7 +2721,7 @@ int scp_main(int argc, char *argv[])
 #endif
 
     sim_init_sock(); /* init socket capabilities */
-    AIO_INIT;        /* init Asynch I/O */
+    aio_init();      /* init Asynch I/O */
     sim_finit();     /* init fio package */
     sim_disk_init(); /* init disk package */
     sim_tape_init(); /* init tape package */
@@ -2877,7 +2877,7 @@ cleanup_and_exit:
     sim_set_notelnet(0, NULL); /* close Telnet */
     vid_close_all();           /* close video */
     sim_ttclose();             /* close console */
-    AIO_CLEANUP;               /* Asynch I/O */
+    aio_cleanup();             /* Asynch I/O */
     sim_cleanup_sock();        /* cleanup sockets */
     fclose(stdnul);            /* close bit bucket file handle */
     free(targv);               /* release any argv copy that was made */
@@ -5528,13 +5528,14 @@ t_stat show_queue(FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, cons
         }
     }
     sim_show_clock_queues(st, dnotused, unotused, flag, cptr);
-#if defined(SIM_ASYNCH_IO)
-    pthread_mutex_lock(&sim_asynch_lock);
+
+    aio_global_lock();
     sim_mfile = &buf;
     fprintf(st, "asynchronous pending event queue\n");
     if (sim_asynch_queue == QUEUE_LIST_END)
         fprintf(st, "  Empty\n");
     else {
+        /* FIXME!! Iterate through the min-heap */
         for (uptr = sim_asynch_queue; uptr != QUEUE_LIST_END; uptr = uptr->a_next) {
             if ((dptr = find_dev_from_unit(uptr)) != NULL) {
                 fprintf(st, "  %s", sim_dname(dptr));
@@ -5547,11 +5548,12 @@ t_stat show_queue(FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, cons
     }
     fprintf(st, "asynch latency: %d nanoseconds\n", sim_asynch_latency);
     fprintf(st, "asynch instruction latency: %d %s\n", sim_asynch_inst_latency, sim_vm_interval_units);
-    pthread_mutex_unlock(&sim_asynch_lock);
+    aio_global_unlock();
+
     sim_mfile = NULL;
     fprintf(st, "%*.*s", (int)buf.pos, (int)buf.pos, buf.buf);
     free(buf.buf);
-#endif /* SIM_ASYNCH_IO */
+
     return SCPE_OK;
 }
 
@@ -10025,7 +10027,11 @@ t_stat sim_process_event(void)
             sim_interval += sim_interval_catchup + sim_clock_queue->time;
         } else
             sim_interval = noqueue_time = NOQUEUE_WAIT;
-        AIO_EVENT_BEGIN(uptr);
+
+        // Terminal multipexor polling?
+        // Formerly the AIO_EVENT_BEGIN macro.
+        int tmxr_polling = uptr->dynflags & UNIT_TM_POLL;
+
         if (uptr->usecs_remaining) {
             sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname(uptr),
                       uptr->usecs_remaining);
@@ -10037,7 +10043,24 @@ t_stat sim_process_event(void)
             else
                 reason = SCPE_OK;
         }
-        AIO_EVENT_COMPLETE(uptr, reason);
+
+        if (aio_enabled_and_active()) {
+            // Formerly the AIO_EVENT_COMPLETE macro. Only invoked if AIO is enabled and active.
+            if (tmxr_polling) {
+                sim_mutex_lock(&sim_tmxr_poll_lock);
+                uptr->a_polling_now = false;
+                if (uptr->a_poll_waiter_count) {
+                    sim_tmxr_poll_count -= uptr->a_poll_waiter_count;
+                    uptr->a_poll_waiter_count = 0;
+                    if (0 == sim_tmxr_poll_count)
+                        sim_cond_broadcast(&sim_tmxr_poll_cond);
+                }
+                sim_mutex_unlock(&sim_tmxr_poll_lock);
+            }
+
+            sim_aio_update_queue();
+        }
+
         if (sim_interval_catchup < -1) {
             sim_interval_catchup += sim_clock_queue->time;
             sim_vm_time += sim_clock_queue->time;
@@ -10186,7 +10209,7 @@ t_stat sim_activate_after_abs_d(UNIT *uptr, double usec_delay)
 
 t_stat _sim_activate_after_abs(UNIT *uptr, double usec_delay)
 {
-    AIO_VALIDATE(uptr); /* Can't call asynchronously */
+    is_simulator_thread_assert(uptr); /* Can't call asynchronously */
     if (usec_delay < 0.0)
         return sim_timer_activate_after(uptr, usec_delay);
     sim_cancel(uptr);
@@ -10205,7 +10228,7 @@ t_stat sim_activate_after_d(UNIT *uptr, double usec_delay)
 
 t_stat _sim_activate_after(UNIT *uptr, double usec_delay)
 {
-    AIO_VALIDATE(uptr);      /* Can't call asynchronously */
+    is_simulator_thread_assert(uptr);      /* Can't call asynchronously */
     if (sim_is_active(uptr)) /* already active? */
         return SCPE_OK;
     return sim_timer_activate_after(uptr, usec_delay);
@@ -10225,7 +10248,7 @@ t_stat sim_cancel(UNIT *uptr)
     UNIT *cptr, *nptr;
     t_stat cancel_status;
 
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     if ((uptr->cancel) && uptr->cancel(uptr))
         return SCPE_OK;
     if (uptr->dynflags & UNIT_TMR_UNIT) {
@@ -10283,7 +10306,7 @@ t_stat sim_cancel(UNIT *uptr)
 
 bool sim_is_active(UNIT *uptr)
 {
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     AIO_UPDATE_QUEUE;
     return (((uptr->next) || is_unit_aio_active(uptr) ||
              ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active(uptr) : false))
@@ -10330,7 +10353,7 @@ int32_t sim_activate_time(UNIT *uptr)
 {
     int32_t accum;
 
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     accum = _sim_timer_activate_time(uptr);
     if (accum >= 0)
         return accum;
@@ -10343,7 +10366,7 @@ double sim_activate_time_usecs(UNIT *uptr)
     int32_t accum;
     double result;
 
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     result = sim_timer_activate_time_usecs(uptr);
     if (result >= 0)
         return result;
@@ -10510,7 +10533,7 @@ static void _sim_debug_write_flush(const char *buf, size_t len, bool flush)
             _debug_fwrite(buf, len);      /* output now. */
         return;                           /* done */
     }
-    AIO_LOCK;
+    aio_global_lock();
     if (debug_line_offset + len + 1 > debug_line_bufsize) {
         /* realloc(NULL, size) == malloc(size). Initialize the malloc()-ed space. Only
            need to test debug_line_buf since SIMH allocates both buffers at the same
@@ -10594,7 +10617,7 @@ static void _sim_debug_write_flush(const char *buf, size_t len, bool flush)
             memmove(debug_line_buf, eol + 1, debug_line_offset);
         debug_line_buf[debug_line_offset] = '\0';
     }
-    AIO_UNLOCK;
+    aio_global_unlock();
 }
 
 static void _sim_debug_write(const char *buf, size_t len)

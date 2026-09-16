@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The ZIMH Project
 // SPDX-License-Identifier: MIT
 
-#if !defined(SIM_ETH_FUNCS_H)
-#define SIM_ETH_FUNCS_H
+#if !defined(SIM_ETH_NETWORK_H)
+#define SIM_ETH_NETWORK_H
 
 #include <stdbool.h>
 

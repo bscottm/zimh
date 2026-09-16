@@ -422,8 +422,9 @@ struct UNIT {
     DEVICE *dptr;               /* DEVICE linkage (backpointer) */
     uint32_t dctrl;             /* debug control */
 
+    // Async I/O support:
     void (*a_check_completion)(UNIT *);
-    bool (*a_is_active)(const UNIT *);
+    bool (*a_is_active)(const UNIT * const);
     UNIT *a_next; /* next asynch active */
     int32_t a_event_time;
     ACTIVATE_API a_activate_call;

@@ -3,6 +3,16 @@
 
 #include "simnetwork/eth_pcap/eth_pcap.h"
 
+static const eth_api_funcs_t pcap_eth_funcs = {
+    .packet_wait = eth_wait_pcap,
+    .packet_read = eth_reader_pcap,
+    .before_packet_write = NULL,
+    .write_packet = eth_writer_pcap,
+    .after_packet_write = NULL,
+    .reader_shutdown = NULL,
+    .writer_shutdown = NULL
+};
+    
 t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
     pcap_t *pcap;
@@ -107,14 +117,8 @@ if (pcap == NULL) /* can't open device */
     }
 
     backend->eth_api = ETH_API_PCAP;
-    backend->packet_wait = eth_wait_pcap;
-    backend->packet_read = eth_reader_pcap;
-    backend->before_packet_write = NULL;
-    backend->write_packet = eth_writer_pcap;
-    backend->after_packet_write = NULL;
-    backend->reader_shutdown = NULL;
-    backend->writer_shutdown = NULL;
     backend->state.pcap = pcap;
+    backend->eth_funcs = &pcap_eth_funcs;
 
     dev->backend = backend;
 

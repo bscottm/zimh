@@ -5,8 +5,9 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "sim_aio.h"
 #include "sim_ether.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_backends.h"
 
 // ETH_DEV initializer
@@ -97,7 +98,6 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     if (dev->backend->eth_api == ETH_API_TEST)
         dev->reflections = 0;
 
-#if ETH_THREADING_AVAILABLE
     /* Always initialize threading structures if platform supports it */
     r = eth_init_threading_structures(dev);
     if (r != SCPE_OK) {
@@ -108,7 +108,7 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     }
 
     /* Start threads ONLY if sim_asynch_enabled is true */
-    if (sim_asynch_enabled) {
+    if (aio_enabled_and_active()) {
         r = eth_start_threads(dev);
         if (r != SCPE_OK) {
             sim_printf("Eth: Warning - failed to start async threads, "
@@ -119,13 +119,9 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
             dev->asynch_io_latency = 1000; /* Default 1ms */
         }
     } else {
-        /* sim_asynch_enabled is false - use synchronous mode */
+        /* AIO isn't available. */
         dev->asynch_io = false;
     }
-#else
-    /* Platform doesn't support threading - always synchronous */
-    dev->asynch_io = false;
-#endif
 
     eth_add_to_open_list(dev);
     /*
@@ -290,4 +286,104 @@ t_stat eth_close(ETH_DEV *dev)
     eth_remove_from_open_list(dev);
 
     return SCPE_OK;
+}
+
+void eth_error(ETH_DEV *dev, const char *where)
+{
+    char msg[64];
+    const char *netname = "";
+    time_t now;
+    struct tm tm_now;
+    char time_buf[32];
+
+    if ((sim_time(&now) != (time_t)-1) && (localtime_r(&now, &tm_now) != NULL) &&
+        (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S\n", &tm_now) != 0))
+        sim_printf("%s", time_buf);
+    else
+        sim_printf("unknown time\n");
+    switch (dev->backend->eth_api) {
+    case ETH_API_PCAP:
+        netname = "pcap";
+        break;
+    case ETH_API_TAP:
+        netname = "tap";
+        break;
+    case ETH_API_VDE:
+        netname = "vde";
+        break;
+    case ETH_API_UDP:
+        netname = "udp";
+        break;
+    case ETH_API_NAT:
+        netname = "nat";
+        break;
+    case ETH_API_TEST:
+        netname = "test";
+        break;
+    case ETH_API_NONE:
+    case ETH_API_COUNT:
+    default:
+        netname = "unknown";
+        break;
+    }
+    snprintf(msg, sizeof(msg), "%s(%s): ", where, netname);
+    switch (dev->backend->eth_api) {
+    case ETH_API_PCAP:
+#    if defined(HAVE_PCAP_NETWORK)
+        sim_printf("%s%s\n", msg, pcap_geterr(dev->backend->state.pcap));
+#    endif
+        break;
+    default:
+        sim_err_sock(INVALID_SOCKET, msg);
+        break;
+    }
+
+    if (aio_enabled_and_active()) {
+        sim_mutex_lock(&dev->lock);
+        ++dev->error_waiting_threads;
+        /* FIXME: Reevaluate this and the direct case. */
+        if (!dev->error_needs_reset)
+            dev->error_needs_reset =
+                (((dev->transmit_packet_errors + dev->receive_packet_errors) % ETH_ERROR_REOPEN_THRESHOLD) == 0);
+        sim_mutex_unlock(&dev->lock);
+    } else {
+        dev->error_needs_reset =
+            (((dev->transmit_packet_errors + dev->receive_packet_errors) % ETH_ERROR_REOPEN_THRESHOLD) == 0);
+    }
+
+    /* Limit errors to 1 per second (per invoking thread (reader and writer)) */
+    sim_os_sleep(1);
+
+    /*
+      When all of the threads which can reference this ETH_DEV object are
+      simultaneously waiting in this routine, we have the potential to close
+      and reopen the network connection.
+
+      We do this after ETH_ERROR_REOPEN_THRESHOLD total errors have occurred.
+      In practice could be as frequently as once every ETH_ERROR_REOPEN_THRESHOLD/2
+      seconds, but normally would be about once every 1.5*ETH_ERROR_REOPEN_THRESHOLD
+      seconds (ONLY when the error condition exists).
+    */
+
+    if (aio_enabled_and_active()) {
+        sim_mutex_lock(&dev->lock);
+    }
+
+    if ((!aio_enabled_and_active() || dev->error_waiting_threads == 2) && (dev->error_needs_reset)) {
+        t_stat r;
+
+        eth_close_port(dev->backend, dev->backend->state.eth_socket);
+        sim_os_sleep(ETH_ERROR_REOPEN_PAUSE);
+
+        r = eth_open_port(dev->name, strlen(dev->name) + 1, dev, dev->dptr, dev->dbit);
+        dev->error_needs_reset = false;
+        if (r == SCPE_OK)
+            sim_printf("%s ReOpened: %s \n", msg, dev->name);
+        ++dev->error_reopen_count;
+    }
+
+    if (aio_enabled_and_active()) {
+        --dev->error_waiting_threads;
+        sim_mutex_unlock(&dev->lock);
+    }
 }

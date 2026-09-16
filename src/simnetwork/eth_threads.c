@@ -65,7 +65,7 @@ int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev)
 static bool eth_reader_error_handler(ETH_DEV *dev)
 {
     ++dev->receive_packet_errors;
-    _eth_error(dev, "_eth_reader");
+    eth_error(dev, "_eth_reader");
 
     /* Attempt to recover if device still attached */
 
@@ -110,12 +110,12 @@ THREAD_FUNC_DEFN(_eth_reader)
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
         eth_backend_t *backend = dev->backend;
-        int status = backend->packet_wait(backend, dev, ETH_READER_POLL_TMO);
+        int status = backend->eth_funcs->packet_wait(backend, dev, ETH_READER_POLL_TMO);
 
         /* Packet available? */
         if (status > 0) {
             /* Have backend deliver it. */
-            status = backend->packet_read(backend, dev);
+            status = backend->eth_funcs->packet_read(backend, dev);
         }
 
         /* If async I/O is enabled and queue has data, schedule a DEVICE/UNIT poll.
@@ -204,7 +204,7 @@ THREAD_FUNC_DEFN(_eth_writer)
         }
 
         /* Before write housekeeping... */
-        if (backend->before_packet_write != NULL && !backend->before_packet_write(backend, dev)) {
+        if (backend->eth_funcs->before_packet_write != NULL && !backend->eth_funcs->before_packet_write(backend, dev)) {
             goto error_out;
         }
 
@@ -241,7 +241,7 @@ THREAD_FUNC_DEFN(_eth_writer)
         }
 
         /* After write housekeeping... */
-        if (backend->after_packet_write != NULL && !backend->after_packet_write(backend, dev)) {
+        if (backend->eth_funcs->after_packet_write != NULL && !backend->eth_funcs->after_packet_write(backend, dev)) {
             goto error_out;
         }
 
@@ -339,8 +339,8 @@ void eth_stop_threads(ETH_DEV *dev)
     /* Signal reader thread to shutdown */
     sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
 
-    if (dev->backend && dev->backend->reader_shutdown)
-        dev->backend->reader_shutdown(dev->backend, dev);
+    if (dev->backend && dev->backend->eth_funcs->reader_shutdown)
+        dev->backend->eth_funcs->reader_shutdown(dev->backend, dev);
 
     sim_thread_join(dev->reader_thread, NULL);
 
@@ -350,8 +350,8 @@ void eth_stop_threads(ETH_DEV *dev)
     sim_cond_signal(&dev->writer_cond);
     sim_mutex_unlock(&dev->writer_lock);
 
-    if (dev->backend && dev->backend->writer_shutdown)
-        dev->backend->writer_shutdown(dev->backend, dev);
+    if (dev->backend && dev->backend->eth_funcs->writer_shutdown)
+        dev->backend->eth_funcs->writer_shutdown(dev->backend, dev);
 
     sim_thread_join(dev->writer_thread, NULL);
 

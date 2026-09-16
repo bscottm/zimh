@@ -3,7 +3,7 @@
 
 #include "sim_defs.h"
 #include "sim_ether.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_backends.h"
 
 /* Forward decl's: */

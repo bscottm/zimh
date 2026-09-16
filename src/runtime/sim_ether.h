@@ -248,6 +248,7 @@ t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet,                /* write synchro
                  ETH_PCALLBACK routine);                        /*  callback when done */
 int eth_read(ETH_DEV *dev, ETH_PACK *packet,                    /* read single packet; */
              ETH_PCALLBACK routine);                            /*  callback when done*/
+void eth_error(ETH_DEV *dev, const char *where);                /* Handle ethernet emulation errors. */
 t_stat eth_filter(ETH_DEV *dev, int addr_count,                 /* set filter on incoming packets */
                   const ETH_MAC addresses[], bool all_multicast, bool promiscuous);
 t_stat eth_filter_hash(ETH_DEV *dev, int addr_count,            /* set filter on incoming packets with hash */

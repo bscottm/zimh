@@ -33,6 +33,16 @@ add_unit_test(unit-tailq
     USES_AIO
 )
 
+add_unit_test(unit-event-queue
+    LABEL unit
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_event_queue.c
+    INCLUDES
+        ${PROJECT_SOURCE_DIR}/src/include
+        ${PROJECT_SOURCE_DIR}/tests/unit/support
+    USES_AIO
+)
+
 add_unit_test(unit-thread-name
     SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/test_thread_name.c

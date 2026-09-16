@@ -7,6 +7,17 @@
 
 #include "simnetwork/eth_backends.h"
 
+/* UDP tunnel Ethernet emulation functions */
+static const eth_api_funcs_t udp_eth_funcs = {
+    .packet_wait = eth_wait_udp,
+    .packet_read = eth_reader_udp,
+    .before_packet_write = NULL,
+    .write_packet = eth_writer_udp,
+    .after_packet_write = NULL,
+    .reader_shutdown = NULL,
+    .writer_shutdown = NULL
+};
+
 t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
 {
     char localport[CBUFSIZE], host[CBUFSIZE], port[CBUFSIZE];
@@ -43,14 +54,8 @@ t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
         return sim_messagef(SCPE_MEM, "Eth: Error allocating memory for eth_backend_t\n");
 
     backend->eth_api = ETH_API_UDP;
-    backend->packet_wait = eth_wait_udp;
-    backend->packet_read = eth_reader_udp;
-    backend->before_packet_write = NULL;
-    backend->write_packet = eth_writer_udp;
-    backend->after_packet_write = NULL;
-    backend->reader_shutdown = NULL;
-    backend->writer_shutdown = NULL;
     backend->state.eth_socket = eth_socket;
+    backend->eth_funcs = &udp_eth_funcs;
 
     return SCPE_OK;
 }

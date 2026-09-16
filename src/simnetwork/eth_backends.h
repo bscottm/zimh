@@ -41,15 +41,8 @@ typedef struct eth_test_backend {
     struct eth_test_backend *next;
 } ETH_TEST_BACKEND;
 
-/* eth_api_t movde to simnetwork/eth_types.h */
-
-/* Discriminated union for API-specific state. */
-struct eth_backend_s {
-    /* API being used to move packets */
-    eth_api_t eth_api;
-
-    /* API interface: */
-
+/* API function interface: */
+typedef struct eth_api_funcs_s {
     /* Wait for a packet's arrival at the reader. This is the poll/select point.
      * timeout_ms:
      *   > 0: wait up to this many milliseconds (threaded/async mode)
@@ -92,6 +85,14 @@ struct eth_backend_s {
 
     /* Writer-side thread shutdown hook. Optional -- may be NULL. */
     void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+} eth_api_funcs_t;
+
+/* eth_api_t moved to simnetwork/eth_types.h */
+
+/* Discriminated union for API-specific state. */
+struct eth_backend_s {
+    /* API being used to move packets */
+    eth_api_t eth_api;
     
     /* Per-backend state.*/
     union {
@@ -109,6 +110,9 @@ struct eth_backend_s {
         /* Network socket for UDP and TAP backends.*/
         SOCKET eth_socket;
     } state;
+
+    /* API functions */
+    const eth_api_funcs_t *eth_funcs;
 };
 
 // Default socket read timeout. Note: This can be made longer, which only

@@ -46,7 +46,7 @@
 
 // #include "sim_defs.h"
 #include "sim_ether.h"
-// #include "simnetwork/eth_backends.h"
+#include "simnetwork/eth_backends.h"
 
 /* Don't pull in all of the scp junk just for a simple utility test. */
 #if defined(SHOW_ETH_DEVICES_TARGET)
@@ -58,12 +58,18 @@
 static ETH_DEV **open_eth_devices = NULL;
 static size_t n_eth_devices = 0;
 
+#if !defined(_WIN32) && !defined(_WIN64)
+
+/* Interface manipulation commands: <prefix> args <suffix>, e.g.,
+ * "ip link" "eth0" "up"
+ *
+ * FIXME: Move this back to eth_devices.c when sim_ether.c is fully modularized.
+ */
 typedef struct {
     const char *prefix;
     const char *suffix;
 } ETH_DEV_COMMAND;
 
-#if !defined(_WIN32) && !defined(_WIN64)
 #    define ETH_MAC_FIXED_PATTERN                                                                                      \
         "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
         "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \

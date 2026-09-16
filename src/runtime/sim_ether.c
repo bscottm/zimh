@@ -1,7 +1,9 @@
-/* sim_ether.c: OS-dependent network routines */
 // SPDX-FileCopyrightText: 2002-2007 David T. Hittner
 // SPDX-License-Identifier: X11
 
+/* sim_ether.c: (Purportedly...) OS-dependent network routines */
+
+/* Original notes for sim_ether.c: */
 /*
   ------------------------------------------------------------------------------
 
@@ -345,10 +347,12 @@
 #endif
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_sock.h"
 #include "sim_ether_internal.h"
 #include "simnetwork/eth_threads.h"
-#include "simnetwork/eth_funcs.h"
+#include "simnetwork/eth_network.h"
+#include "simnetwork/eth_backends.h"
 #include "string_util.h"
 #include "sim_time.h"
 #include "sim_timer.h"
@@ -859,6 +863,7 @@ int pcap_sendpacket(pcap_t *handle, const u_char *msg, int len)
 }
 #    endif                                           /* !HAS_PCAP_SENDPACKET */
 
+#if defined(FIXME_MIGRATE_TESTING)
 /* Build a shell command using a literal snprintf format for compiler checks. */
 static void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname)
 {
@@ -872,6 +877,7 @@ static void eth_format_dev_command(char *command, size_t command_size, const ETH
         devname_len = (int)(command_size - (2 + format_len));
     snprintf(command, command_size, "%s%.*s%s", cmd->prefix, devname_len, devname, cmd->suffix);
 }
+#endif
 
 #    if defined(__APPLE__)
 #        include <uuid/uuid.h>
@@ -951,8 +957,6 @@ static int _eth_get_system_id(char *buf, size_t buf_size)
 /* Forward declarations */
 t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine);
 
-void _eth_error(ETH_DEV *dev, const char *where);
-
 /* eth_set_async
  *
  * Turn on receiver processing which can be either asynchronous or polled
@@ -962,17 +966,12 @@ t_stat eth_set_async(ETH_DEV *dev, int latency)
     if (dev == NULL)
         return SCPE_UNATT;
 
-#if !ETH_THREADING_AVAILABLE
-    (void)latency;
-    return sim_messagef(SCPE_NOFNC,
-        "Eth: Async I/O not available on this platform\n");
-#else
     /* Already async? */
     if (dev->asynch_io)
         return SCPE_OK;
 
     /* Simulator doesn't support async I/O globally */
-    if (!sim_asynch_enabled)
+    if (!aio_enabled_and_active())
         return sim_messagef(SCPE_NOFNC,
             "Eth: Async I/O disabled (simulator needs SIM_ASYNCH_IO)\n");
 
@@ -1253,99 +1252,6 @@ static t_stat eth_reflect(ETH_DEV *dev)
     return SCPE_OK;
 }
 
-void _eth_error(ETH_DEV *dev, const char *where)
-{
-    char msg[64];
-    const char *netname = "";
-    time_t now;
-    struct tm tm_now;
-    char time_buf[32];
-
-    if ((sim_time(&now) != (time_t)-1) && (localtime_r(&now, &tm_now) != NULL) &&
-        (strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S\n", &tm_now) != 0))
-        sim_printf("%s", time_buf);
-    else
-        sim_printf("unknown time\n");
-    switch (dev->backend->eth_api) {
-    case ETH_API_PCAP:
-        netname = "pcap";
-        break;
-    case ETH_API_TAP:
-        netname = "tap";
-        break;
-    case ETH_API_VDE:
-        netname = "vde";
-        break;
-    case ETH_API_UDP:
-        netname = "udp";
-        break;
-    case ETH_API_NAT:
-        netname = "nat";
-        break;
-    case ETH_API_TEST:
-        netname = "test";
-        break;
-    case ETH_API_NONE:
-    case ETH_API_COUNT:
-    default:
-        netname = "unknown";
-        break;
-    }
-    snprintf(msg, sizeof(msg), "%s(%s): ", where, netname);
-    switch (dev->backend->eth_api) {
-#    if defined(HAVE_PCAP_NETWORK)
-    case ETH_API_PCAP:
-        sim_printf("%s%s\n", msg, pcap_geterr(dev->backend->state.pcap));
-        break;
-#    endif
-    default:
-        sim_err_sock(INVALID_SOCKET, msg);
-        break;
-    }
-#if ETH_THREADING_AVAILABLE
-    sim_mutex_lock(&dev->lock);
-    ++dev->error_waiting_threads;
-    if (!dev->error_needs_reset)
-        dev->error_needs_reset =
-            (((dev->transmit_packet_errors + dev->receive_packet_errors) % ETH_ERROR_REOPEN_THRESHOLD) == 0);
-    sim_mutex_unlock(&dev->lock);
-#    else
-    dev->error_needs_reset =
-        (((dev->transmit_packet_errors + dev->receive_packet_errors) % ETH_ERROR_REOPEN_THRESHOLD) == 0);
-#    endif
-    /* Limit errors to 1 per second (per invoking thread (reader and writer)) */
-    sim_os_sleep(1);
-/*
- When all of the threads which can reference this ETH_DEV object are
- simultaneously waiting in this routine, we have the potential to close
- and reopen the network connection.
- We do this after ETH_ERROR_REOPEN_THRESHOLD total errors have occurred.
- In practice could be as frequently as once every ETH_ERROR_REOPEN_THRESHOLD/2
- seconds, but normally would be about once every 1.5*ETH_ERROR_REOPEN_THRESHOLD
- seconds (ONLY when the error condition exists).
- */
-#if ETH_THREADING_AVAILABLE
-    sim_mutex_lock(&dev->lock);
-    if ((dev->error_waiting_threads == 2) && (dev->error_needs_reset)) {
-#    else
-    if (dev->error_needs_reset) {
-#    endif
-        t_stat r;
-
-        _eth_close_port(&dev->backend, dev->backend->state.eth_socket);
-        sim_os_sleep(ETH_ERROR_REOPEN_PAUSE);
-
-        r = _eth_open_port(dev->name, strlen(dev->name) + 1, dev->backend, dev, dev->dptr, dev->dbit);
-        dev->error_needs_reset = false;
-        if (r == SCPE_OK)
-            sim_printf("%s ReOpened: %s \n", msg, dev->name);
-        ++dev->error_reopen_count;
-    }
-#if ETH_THREADING_AVAILABLE
-    --dev->error_waiting_threads;
-    sim_mutex_unlock(&dev->lock);
-#    endif
-}
 
 t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 {
@@ -1386,7 +1292,7 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         }
 
         /* dispatch write request (synchronous; no need to save write info to dev) */
-        status = dev->backend->write_packet(dev, packet);
+        status = dev->backend->eth_funcs->write_packet(dev, packet);
 
         ++dev->packets_sent; /* basic bookkeeping */
         /* On error, correct loopback bookkeeping */
@@ -1402,7 +1308,7 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         }
         if (status != 0) {
             ++dev->transmit_packet_errors;
-            _eth_error(dev, "_eth_write");
+            eth_error(dev, "_eth_write");
         }
 
     } /* if packet->len */
@@ -1416,9 +1322,6 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 
 t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 {
-    if (dev && dev->backend->eth_api == ETH_API_TEST)
-        return eth_test_write(dev, packet, routine);
-
     /* make sure device exists */
     if (dev == NULL || (dev->backend->eth_api == ETH_API_NONE))
         return SCPE_UNATT;
@@ -1429,7 +1332,6 @@ t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         return SCPE_IERR;
 
     if (dev->asynch_io) {
-#if ETH_THREADING_AVAILABLE
         /* Async mode: queue for writer thread */
         ETH_WRITE_REQUEST *request;
 
@@ -1469,9 +1371,6 @@ t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         if (routine)
             (routine)(dev->write_status);
         return dev->write_status;
-#else
-        return SCPE_IERR; /* Should never reach here */
-#endif
     } else {
         /* Sync mode: write directly */
         return _eth_write(dev, packet, routine);
@@ -1898,6 +1797,7 @@ static t_stat eth_test_crc32(DEVICE *dptr)
     return (errors == 0) ? SCPE_OK : SCPE_IERR;
 }
 
+#if defined(FIXME_MIGRATE_TESTING)
 t_stat eth_test_dev_command_format(void)
 {
     int errors = 0;
@@ -1939,7 +1839,9 @@ t_stat eth_test_dev_command_format(void)
 
     return (errors == 0) ? SCPE_OK : SCPE_IERR;
 }
+#endif
 
+#if defined(FIXME_MIGRATE_TESTING)
 static t_stat eth_test_bpf(DEVICE *dptr)
 {
     int errors = 0;
@@ -2076,6 +1978,7 @@ static t_stat eth_test_bpf(DEVICE *dptr)
 #    endif /* USE_BPF */
     return (errors == 0) ? SCPE_OK : SCPE_IERR;
 }
+#endif
 
 #    include <setjmp.h>
 
@@ -2091,8 +1994,10 @@ t_stat sim_ether_test(DEVICE *dptr, const char *cptr)
     sim_printf("Testing %s device sim_ether APIs\n", dptr->name);
 
     SIM_TEST(eth_test_crc32(dptr));
+#if defined(FIXME_MIGRATE_TESTING)
     SIM_TEST(eth_test_dev_command_format());
     SIM_TEST(eth_test_bpf(dptr));
+#endif
     return stat;
 }
-#endif     /* USE_NETWORK */
+

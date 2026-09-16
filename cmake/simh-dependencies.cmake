@@ -15,12 +15,14 @@ add_library(simh_regexp INTERFACE)
 # library.)
 add_library(simh_network STATIC
     ${SIMH_SIMNETWORK_ROOT}/eth_crc32.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
     ${SIMH_SIMNETWORK_ROOT}/eth_dispatch.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
-    ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_filter.c
     ${SIMH_SIMNETWORK_ROOT}/eth_open_close.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_pktreader.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_queue.c
     ${SIMH_SIMNETWORK_ROOT}/eth_read.c
+    ${SIMH_SIMNETWORK_ROOT}/eth_threads.c
     ${SIMH_SIMNETWORK_ROOT}/poll_eth_socket.c
     ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_open.c
     ${SIMH_SIMNETWORK_ROOT}/eth_udp/eth_udp_api.c

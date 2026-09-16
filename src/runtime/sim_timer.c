@@ -77,6 +77,7 @@
 #include <string.h>
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_time.h"
 #include "sim_timer_internal.h"
 #include "sim_types.h"
@@ -252,7 +253,6 @@ static uint32_t _compute_minimum_sleep(void)
 
 #endif /* defined(MS_MIN_GRANULARITY) && (MS_MIN_GRANULARITY != 1) */
 
-#if defined(SIM_ASYNCH_IO)
 uint32_t sim_idle_ms_sleep(uint_t msec)
 {
     struct timespec start_time, end_time, done_time, delta_time;
@@ -262,28 +262,22 @@ uint32_t sim_idle_ms_sleep(uint_t msec)
     if (sim_timer_deadline_msec(&end_time, msec) != 0)
         return sim_os_ms_sleep(msec);
     (void)sim_clock_gettime(CLOCK_REALTIME, &start_time);
-    pthread_mutex_lock(&sim_asynch_lock);
+    aio_global_lock();
     sim_idle_wait = true;
     if (pthread_cond_timedwait(&sim_asynch_wake, &sim_asynch_lock, &end_time))
         timedout = true;
     else
         sim_asynch_check = 0; /* force check of asynch queue now */
     sim_idle_wait = false;
-    pthread_mutex_unlock(&sim_asynch_lock);
+    aio_global_unlock();
     (void)sim_clock_gettime(CLOCK_REALTIME, &done_time);
     if (!timedout) {
-        AIO_UPDATE_QUEUE;
+        sim_aio_update_queue();
     }
     sim_timespec_diff(&delta_time, &done_time, &start_time);
     delta_ms = (uint32_t)((delta_time.tv_sec * 1000) + ((delta_time.tv_nsec + 500000) / 1000000));
     return delta_ms;
 }
-#else
-uint32_t sim_idle_ms_sleep(uint_t msec)
-{
-    return sim_os_ms_sleep(msec);
-}
-#endif
 
 /* OS-dependent timer and clock routines */
 
@@ -413,9 +407,8 @@ static bool _sim_coschedule_cancel(UNIT *uptr);
 static void _sim_timer_adjust_cal(void);
 t_stat sim_timer_show_idle_mode(FILE *st, UNIT *uptr, int32_t val, const void *desc);
 
-#if defined(SIM_ASYNCH_CLOCKS)
 static bool _sim_wallclock_cancel(UNIT *uptr);
-static bool _sim_wallclock_is_active(UNIT *uptr);
+static bool _sim_wallclock_is_active(const UNIT * const uptr);
 
 static int sim_timespec_compare(struct timespec *a, struct timespec *b)
 {
@@ -438,7 +431,6 @@ static int sim_timespec_compare(struct timespec *a, struct timespec *b)
     else
         return 0;
 }
-#endif /* defined(SIM_ASYNCH_CLOCKS) */
 
 /* OS independent clock calibration package */
 
@@ -2723,7 +2715,7 @@ double sim_timer_inst_per_sec(void)
 
 t_stat sim_timer_activate(UNIT *uptr, int32_t interval)
 {
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     return sim_timer_activate_after(uptr, (double)((interval * 1000000.0) / sim_timer_inst_per_sec()));
 }
 
@@ -2735,7 +2727,7 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
     t_stat stat;
     RTC *crtc;
 
-    AIO_VALIDATE(uptr);
+    is_simulator_thread_assert(uptr);
     if (usec_delay < 0.0) {
         sim_debug(DBG_QUE, &sim_timer_dev, "sim_timer_activate_after(%s, %.0f usecs) - negative delay\n",
                   sim_uname(uptr), usec_delay);
@@ -2844,7 +2836,7 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
         uptr->a_due_time = d_now + (usec_delay / 1000000.0);
         uptr->a_due_gtime = sim_gtime() + (sim_timer_inst_per_sec() * (usec_delay / 1000000.0));
         uptr->cancel = &_sim_wallclock_cancel; /* bind cleanup method */
-        uptr->a_is_active = &_sim_wallclock_is_active;
+        uptr->a_is_active = _sim_wallclock_is_active;
         if (tmr <= SIM_NTIMERS) {              /* Timer Unit? */
             RTC *rtc = &rtcs[tmr];
 
@@ -3165,7 +3157,7 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
     return b_return;
 }
 
-static bool _sim_wallclock_is_active(UNIT *uptr)
+static bool _sim_wallclock_is_active(const UNIT * const uptr)
 {
     int32_t tmr;
 

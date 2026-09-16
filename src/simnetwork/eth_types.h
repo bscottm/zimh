@@ -101,5 +101,4 @@ typedef struct eth_write_request ETH_WRITE_REQUEST;
 /* Actual struct eth_device declared in sim_ether.h */
 typedef struct eth_device ETH_DEV;
 
-
 #endif
