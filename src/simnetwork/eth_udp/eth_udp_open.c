@@ -3,9 +3,11 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "simnetwork/eth_backends.h"
 #include "simnetwork/eth_udp/eth_udp.h"
 
-#include "simnetwork/eth_backends.h"
+// Close and clean up.
+static void eth_udp_close(eth_backend_t *self);
 
 /* UDP tunnel Ethernet emulation functions */
 static const eth_api_funcs_t udp_eth_funcs = {
@@ -15,10 +17,11 @@ static const eth_api_funcs_t udp_eth_funcs = {
     .write_packet = eth_writer_udp,
     .after_packet_write = NULL,
     .reader_shutdown = NULL,
-    .writer_shutdown = NULL
+    .writer_shutdown = NULL,
+    .close = eth_udp_close
 };
 
-t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_udp_open(const char *devname, ETH_DEV *dev)
 {
     char localport[CBUFSIZE], host[CBUFSIZE], port[CBUFSIZE];
     char hostport[2 * CBUFSIZE];
@@ -58,4 +61,10 @@ t_stat eth_udp_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
     backend->eth_funcs = &udp_eth_funcs;
 
     return SCPE_OK;
+}
+
+// Close and clean up.
+void eth_udp_close(eth_backend_t *self)
+{
+    sim_close_sock(self->state.eth_socket);
 }

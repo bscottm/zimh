@@ -85,6 +85,9 @@ typedef struct eth_api_funcs_s {
 
     /* Writer-side thread shutdown hook. Optional -- may be NULL. */
     void (*writer_shutdown)(struct eth_backend_s *self, ETH_DEV *dev);
+
+    /* Close and cleanup state. Not optional, may not be NULL. */
+    void (*close)(struct eth_backend_s *self);
 } eth_api_funcs_t;
 
 /* eth_api_t moved to simnetwork/eth_types.h */

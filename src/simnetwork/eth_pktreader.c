@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: X11
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 #include "sim_ether.h"
 #include "simnetwork/eth_network.h"
 #include "simnetwork/eth_backends.h"
@@ -64,9 +65,9 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
 
     /* detect reception of loopback packet to our physical address */
     if ((LOOPBACK_SELF_FRAME(dev->physical_addr, data)) || (LOOPBACK_PHYSICAL_REFLECTION(dev, data))) {
-#if ETH_THREADING_AVAILABLE
-        sim_mutex_lock(&dev->self_lock);
-#endif
+        if (aio_enabled_and_active())
+            sim_mutex_lock(&dev->self_lock);
+
         dev->loopback_self_rcvd_total++;
         /* lower reflection count - if already zero, pass it on */
         if (dev->loopback_self_sent > 0) {
@@ -75,9 +76,8 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             to_me = false;
         } else if (!bpf_used)
             from_me = false;
-#if ETH_THREADING_AVAILABLE
-        sim_mutex_unlock(&dev->self_lock);
-#endif
+        if (aio_enabled_and_active())
+            sim_mutex_unlock(&dev->self_lock);
     }
 
     if (bpf_used ? to_me : (to_me && !from_me)) {
@@ -92,63 +92,63 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             return;
         }
         if (!eth_process_loopback(dev, data, len)) {
-#if ETH_THREADING_AVAILABLE
-            int crc_len = 0;
-            uint8_t crc_data[4] = {0, 0, 0, 0};
-            uint32_t pkt_len = len;
-            uint8_t *moved_data = NULL;
+            if (aio_enabled_and_active()) {
+                int crc_len = 0;
+                uint8_t crc_data[4] = {0, 0, 0, 0};
+                uint32_t pkt_len = len;
+                uint8_t *moved_data = NULL;
 
-            if (len < ETH_MIN_PACKET) { /* Pad runt packets before CRC append */
-                moved_data = (uint8_t *)malloc(ETH_MIN_PACKET);
-                memcpy(moved_data, data, pkt_len);
-                memset(moved_data + pkt_len, 0, ETH_MIN_PACKET - pkt_len);
-                pkt_len = ETH_MIN_PACKET;
-                data = moved_data;
+                if (len < ETH_MIN_PACKET) { /* Pad runt packets before CRC append */
+                    moved_data = (uint8_t *)malloc(ETH_MIN_PACKET);
+                    memcpy(moved_data, data, pkt_len);
+                    memset(moved_data + pkt_len, 0, ETH_MIN_PACKET - pkt_len);
+                    pkt_len = ETH_MIN_PACKET;
+                    data = moved_data;
+                }
+
+                /* If necessary, fix IP header checksums for packets originated locally */
+                /* but were presumed to be traversing a NIC which was going to handle that task */
+                /* This must be done before any needed CRC calculation */
+                eth_fix_ip_xsum_offload(dev, (const u_char *)data, pkt_len);
+
+                if (dev->need_crc)
+                    crc_len = eth_get_packet_crc32_data(data, pkt_len, crc_data);
+
+                eth_packet_trace(dev, data, pkt_len, "rcvqd");
+
+                /* Lock-free enqueue - sim_tailq_t is SPSC safe */
+                eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, pkt_len, crc_len, crc_data, 0);
+                ++dev->packets_received;
+                free(moved_data);
+            } else {
+                /* set data in passed read packet */
+                dev->read_packet->len = len;
+                memcpy(dev->read_packet->msg, data, len);
+                /* Handle runt case and pad with zeros.  */
+                /* The real NIC won't hand us runts from the wire, BUT we may be getting */
+                /* some packets looped back before they actually traverse the wire */
+                /* (by an internal bridge device for instance) */
+                if (len < ETH_MIN_PACKET) {
+                    memset(&dev->read_packet->msg[len], 0, ETH_MIN_PACKET - len);
+                    dev->read_packet->len = ETH_MIN_PACKET;
+                }
+                /* If necessary, fix IP header checksums for packets originated by the local host */
+                /* but were presumed to be traversing a NIC which was going to handle that task */
+                /* This must be done before any needed CRC calculation */
+                eth_fix_ip_xsum_offload(dev, dev->read_packet->msg, dev->read_packet->len);
+                if (dev->need_crc)
+                    dev->read_packet->crc_len = eth_add_packet_crc32(dev->read_packet->msg, dev->read_packet->len);
+                else
+                    dev->read_packet->crc_len = 0;
+
+                eth_packet_trace(dev, dev->read_packet->msg, dev->read_packet->len, "reading");
+
+                ++dev->packets_received;
+
+                /* call optional read callback function */
+                if (dev->read_callback)
+                    (dev->read_callback)(0);
             }
-
-            /* If necessary, fix IP header checksums for packets originated locally */
-            /* but were presumed to be traversing a NIC which was going to handle that task */
-            /* This must be done before any needed CRC calculation */
-            eth_fix_ip_xsum_offload(dev, (const u_char *)data, pkt_len);
-
-            if (dev->need_crc)
-                crc_len = eth_get_packet_crc32_data(data, pkt_len, crc_data);
-
-            eth_packet_trace(dev, data, pkt_len, "rcvqd");
-
-            /* Lock-free enqueue - sim_tailq_t is SPSC safe */
-            eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, pkt_len, crc_len, crc_data, 0);
-            ++dev->packets_received;
-            free(moved_data);
-#else /* !ETH_THREADING_AVAILABLE */
-            /* set data in passed read packet */
-            dev->read_packet->len = len;
-            memcpy(dev->read_packet->msg, data, len);
-            /* Handle runt case and pad with zeros.  */
-            /* The real NIC won't hand us runts from the wire, BUT we may be getting */
-            /* some packets looped back before they actually traverse the wire */
-            /* (by an internal bridge device for instance) */
-            if (len < ETH_MIN_PACKET) {
-                memset(&dev->read_packet->msg[len], 0, ETH_MIN_PACKET - len);
-                dev->read_packet->len = ETH_MIN_PACKET;
-            }
-            /* If necessary, fix IP header checksums for packets originated by the local host */
-            /* but were presumed to be traversing a NIC which was going to handle that task */
-            /* This must be done before any needed CRC calculation */
-            eth_fix_ip_xsum_offload(dev, dev->read_packet->msg, dev->read_packet->len);
-            if (dev->need_crc)
-                dev->read_packet->crc_len = eth_add_packet_crc32(dev->read_packet->msg, dev->read_packet->len);
-            else
-                dev->read_packet->crc_len = 0;
-
-            eth_packet_trace(dev, dev->read_packet->msg, dev->read_packet->len, "reading");
-
-            ++dev->packets_received;
-
-            /* call optional read callback function */
-            if (dev->read_callback)
-                (dev->read_callback)(0);
-#endif
         }
     }
 }

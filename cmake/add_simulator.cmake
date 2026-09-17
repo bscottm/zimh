@@ -8,6 +8,7 @@ set(SIM_SOURCES
     ${SIMH_CORE_ROOT}/scp_breakpoint.c
     ${SIMH_CORE_ROOT}/scp_cmdvars.c
     ${SIMH_CORE_ROOT}/scp_context.c
+    ${SIMH_CORE_ROOT}/scp_debtab.c
     ${SIMH_CORE_ROOT}/scp_expect.c
     ${SIMH_CORE_ROOT}/scp_expr.c
     ${SIMH_CORE_ROOT}/scp_help_engine.c
@@ -40,7 +41,6 @@ set(SIM_VIDEO_SOURCES
 
 ## Augment the sim_support library:
 target_sources(sim_support PRIVATE
-    ${SIMH_CORE_ROOT}/scp_debtab.c
     ${SIMH_LIB_ROOT}/dynstr.c
     ${SIMH_LIB_ROOT}/string_util.c
     ${SIMH_LIB_ROOT}/xalloc.c

@@ -12,10 +12,6 @@
 #include "simnetwork/eth_threads.h"
 #include "simnetwork/eth_dispatch.h"
 
-#if !ETH_THREADING_AVAILABLE
-#  error "eth_threads.c requires pthread support (define HAVE_PTHREAD or _WIN32)"
-#endif
-
 /*============================================================================*/
 /*                    STATE HANDLER IMPLEMENTATIONS                           */
 /*============================================================================*/

@@ -44,7 +44,11 @@
 #    endif
 #endif
 
-// #include "sim_defs.h"
+#include "sim_defs.h"
+#include "sim_ether.h"
+#include "simnetwork/eth_backends.h"
+
+#include "sim_defs.h"
 #include "sim_ether.h"
 #include "simnetwork/eth_backends.h"
 
@@ -59,17 +63,10 @@ static ETH_DEV **open_eth_devices = NULL;
 static size_t n_eth_devices = 0;
 
 #if !defined(_WIN32) && !defined(_WIN64)
+static const ETH_DEV_COMMAND eth_turnon_commands[] = {
+    {"ip link set dev ", " up 2>/dev/null"}, {"ifconfig ", " up 2>/dev/null"}, {NULL, NULL}};
 
-/* Interface manipulation commands: <prefix> args <suffix>, e.g.,
- * "ip link" "eth0" "up"
- *
- * FIXME: Move this back to eth_devices.c when sim_ether.c is fully modularized.
- */
-typedef struct {
-    const char *prefix;
-    const char *suffix;
-} ETH_DEV_COMMAND;
-
+#    if 0
 #    define ETH_MAC_FIXED_PATTERN                                                                                      \
         "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
         "[0-9a-fA-F][0-9a-fA-F]:"                                                                                      \
@@ -86,15 +83,17 @@ typedef struct {
         "[0-9a-fA-F]?[0-9a-fA-F]:"                                                                                     \
         "[0-9a-fA-F]?[0-9a-fA-F]"
 
-static const ETH_DEV_COMMAND eth_turnon_commands[] = {
-    {"ip link set dev ", " up 2>/dev/null"}, {"ifconfig ", " up 2>/dev/null"}, {NULL, NULL}};
-
+// No longer needed because ZIMH captures the MAC address when constructing the ETH_LIST array.
 static const ETH_DEV_COMMAND eth_mac_lookup_commands[] = {
     {"ip link show ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
     {"ip link show ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
     {"ifconfig ", " 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
     {"ifconfig ", " 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
     {NULL, NULL}};
+#endif
+
+// TUN or TAP predicate.
+static int is_tuntap(const char *iface);
 #endif
 
 /* DEC's organizational unit identifier. Not sure why it was called "framers" in the original SIMH code. */
@@ -118,14 +117,14 @@ const ETH_MAC eth_mac_bcast = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
  * useful for large or variable-size allocations like adapter lists.
  */
 
-static int eth_devices_native_windows(int max, ETH_LIST *list, bool include_framers)
+static size_t eth_devices_native_windows(int max, ETH_LIST *list, bool include_framers)
 {
     IP_ADAPTER_ADDRESSES *adapters = NULL;
     IP_ADAPTER_ADDRESSES *adapter;
     ULONG outBufLen = 0;
     DWORD result;
     HANDLE hHeap = NULL;
-    int used = 0;
+    size_t used = 0;
 
     /* Create a local heap for adapter allocation. This provides:
      * - Better memory isolation
@@ -240,10 +239,10 @@ static int eth_devices_native_windows(int max, ETH_LIST *list, bool include_fram
  * address families.
  */
 
-static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers)
+static size_t eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers)
 {
     struct ifaddrs *ifaddr, *ifa;
-    int used = 0;
+    size_t used = 0;
 
     if (getifaddrs(&ifaddr) == -1) {
         perror("Eth: getifaddrs");
@@ -265,10 +264,9 @@ static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers
 
         /* Check for duplicate interface names already in list */
         bool already_listed = false;
-        for (int i = 0; i < used; i++) {
+        for (int i = 0; i < used && !already_listed; i++) {
             if (strcmp(list[i].name, ifa->ifa_name) == 0) {
                 already_listed = true;
-                break;
             }
         }
         if (already_listed)
@@ -318,7 +316,11 @@ static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers
             snprintf(list[used].name, sizeof(list[used].name), "%s", ifa->ifa_name);
             snprintf(list[used].desc, sizeof(list[used].desc), "Ethernet adapter %s", ifa->ifa_name);
             eth_copy_mac(list[used].eth_mac, (ETH_MAC)mac_addr);
-            list[used].eth_api = ETH_API_PCAP; /* Native, but PCAP-compatible */
+
+            /* Distinguish between pcap-capable vs. TAP interfaces.
+             * NOTE: Assuming "not TAP, so it's PCAP" might need to be revisited in the future.
+             */
+            list[used].eth_api = is_tuntap(ifa->ifa_name) == 1 ? ETH_API_TAP : ETH_API_PCAP;
             used++;
         }
 #    endif
@@ -328,6 +330,54 @@ static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers
     return used;
 }
 
+/* Returns 1 if iface is TUN, 2 if TAP, 0 if neither, -1 on error */
+int is_tuntap(const char *iface)
+{
+#    ifdef __linux__
+    /* Linux: TUN/TAP interfaces expose /sys/class/net/<iface>/tun_flags */
+    char path[256];
+    snprintf(path, sizeof(path), "/sys/class/net/%s/tun_flags", iface);
+
+    int fd = open(path, O_RDONLY);
+    if (fd == -1)
+        return 0; /* not a tun/tap interface */
+
+    unsigned int flags = 0;
+    if (read(fd, &flags, sizeof(flags)) == -1) {
+        close(fd);
+        return -1;
+    }
+    close(fd);
+
+    /* IFF_TUN = 0x0001, IFF_TAP = 0x0002 */
+    if (flags & 0x0002)
+        return 2; /* TAP */
+    if (flags & 0x0001)
+        return 1; /* TUN */
+    return 0;
+#    else
+    /* macOS / BSD: check for corresponding /dev/tunN or /dev/tapN node.
+     * The interface name encodes the type: tunN → TUN, tapN → TAP.
+     * We verify the device node actually exists. */
+    char devpath[64];
+
+    if (strncmp(iface, "tap", 3) == 0) {
+        snprintf(devpath, sizeof(devpath), "/dev/%s", iface);
+        if (access(devpath, F_OK) == 0)
+            return 2;
+    } else if (strncmp(iface, "tun", 3) == 0) {
+        snprintf(devpath, sizeof(devpath), "/dev/%s", iface);
+        if (access(devpath, F_OK) == 0)
+            return 1;
+    }
+
+    /* macOS built-in utun interfaces (IKE/IPsec) are TUN-like */
+    if (strncmp(iface, "utun", 4) == 0)
+        return 1;
+
+    return 0;
+#    endif
+}
 #endif /* _WIN32 */
 
 /*============================================================================*/
@@ -342,9 +392,9 @@ static int eth_devices_native_unix(int max, ETH_LIST *list, bool include_framers
  *
  * Returns: number of devices found
  */
-int eth_devices(int max, ETH_LIST *list, bool include_framers)
+size_t eth_devices(size_t max, ETH_LIST *list, bool include_framers)
 {
-    int used;
+    size_t used;
 
     if (list == NULL || max <= 0)
         return 0;
@@ -360,7 +410,7 @@ int eth_devices(int max, ETH_LIST *list, bool include_framers)
 
     /* Add the non-libpcap emulations, when present: */
 
-#    ifdef HAVE_TAP_NETWORK
+#    if 0 && defined(HAVE_TAP_NETWORK)
     if (used < max) {
 #        if defined(__OpenBSD__)
         strlcpy(list[used].name, "tap:tunN", sizeof(list[used].name));
@@ -372,7 +422,7 @@ int eth_devices(int max, ETH_LIST *list, bool include_framers)
         ++used;
     }
 #    endif
-#    ifdef HAVE_VDE_NETWORK
+#    if 0 && defined(HAVE_VDE_NETWORK)
     if (used < max) {
         strlcpy(list[used].name, "vde:device{:switch-port-number}", sizeof(list[used].name));
         strlcpy(list[used].desc, "Integrated VDE support", sizeof(list[used].desc));
@@ -380,7 +430,7 @@ int eth_devices(int max, ETH_LIST *list, bool include_framers)
         ++used;
     }
 #    endif
-#    ifdef HAVE_SLIRP_NETWORK
+#    if 0 && defined(HAVE_SLIRP_NETWORK)
     if (used < max) {
         strlcpy(list[used].name, "nat:{optional-nat-parameters}", sizeof(list[used].name));
         strlcpy(list[used].desc, "Integrated NAT (SLiRP) support", sizeof(list[used].desc));
@@ -389,103 +439,54 @@ int eth_devices(int max, ETH_LIST *list, bool include_framers)
     }
 #    endif
 
+#if 0
     if (used < max) {
         strlcpy(list[used].name, "udp:sourceport:remotehost:remoteport", sizeof(list[used].name));
         strlcpy(list[used].desc, "Integrated UDP bridge support", sizeof(list[used].desc));
         list[used].eth_api = ETH_API_UDP;
         ++used;
     }
+#endif
 
+#if 0
     if (used < max) {
         strlcpy(list[used].name, "test:name", sizeof(list[used].name));
         strlcpy(list[used].desc, "Integrated test Ethernet backend", sizeof(list[used].desc));
         list[used].eth_api = ETH_API_TEST;
         ++used;
     }
+#endif
 
     return used;
 }
 
-const char *eth_getname(int number, char *name, size_t name_size, char *desc, size_t desc_size)
+const ETH_LIST *eth_getdevice_bydesc(const ETH_LIST *list, size_t n_list, const char *desc)
 {
-    ETH_LIST list[ETH_MAX_DEVICE];
-    int count = eth_devices(ETH_MAX_DEVICE, list, false);
+    size_t i;
+    const size_t j = strlen(desc);
 
-    if ((number < 0) || (count <= number))
-        return NULL;
-    if (list[number].eth_api != ETH_API_PCAP) {
-        sim_printf("Eth: Pcap capable device not found.  You may need to run as root\n");
-        return NULL;
+    for (i = 0; i < n_list; i++) {
+        if (j == strlen(list[i].desc) && strncasecmp(list[i].desc, desc, j) == 0)
+            return list + i;
     }
 
-    strlcpy(name, list[number].name, name_size);
-    strlcpy(desc, list[number].desc, desc_size);
-    return name;
-}
-
-const char *eth_getname_bydesc(const char *desc, char *name, size_t name_size, char *ndesc, size_t ndesc_size)
-{
-    ETH_LIST list[ETH_MAX_DEVICE];
-    int count = eth_devices(ETH_MAX_DEVICE, list, false);
-    int i;
-    size_t j = strlen(desc);
-
-    for (i = 0; i < count; i++) {
-        int found = 1;
-        size_t k = strlen(list[i].desc);
-
-        if (j != k)
-            continue;
-        for (k = 0; k < j; k++)
-            if (tolower(list[i].desc[k]) != tolower(desc[k]))
-                found = 0;
-        if (found == 0)
-            continue;
-
-        /* found a case-insensitive description match */
-        strlcpy(name, list[i].name, name_size);
-        strlcpy(ndesc, list[i].desc, ndesc_size);
-        return name;
-    }
     /* not found */
     return NULL;
 }
 
-const char *eth_getname_byname(const char *name, char *temp, size_t temp_size, char *desc, size_t desc_size)
+const ETH_LIST *eth_getdevice_byname(const ETH_LIST *list, size_t n_list, const char *name)
 {
-    ETH_LIST list[ETH_MAX_DEVICE];
-    int count = eth_devices(ETH_MAX_DEVICE, list, false);
-    size_t n;
-    int i, found;
+    size_t i;
+    const size_t n = strlen(name);
 
-    found = 0;
-    n = strlen(name);
-    for (i = 0; i < count && !found; i++) {
+    for (i = 0; i < n_list; i++) {
         if ((n == strlen(list[i].name)) && (strncasecmp(name, list[i].name, n) == 0)) {
-            found = 1;
-            strlcpy(temp, list[i].name, temp_size); /* only case might be different */
-            strlcpy(desc, list[i].desc, desc_size);
+            return list + i;
         }
     }
-    return (found ? temp : NULL);
-}
 
-const char *eth_getdesc_byname(char *name, char *temp, size_t temp_size)
-{
-    ETH_LIST list[ETH_MAX_DEVICE];
-    int count = eth_devices(ETH_MAX_DEVICE, list, false);
-    size_t n;
-    int i, found;
-
-    found = 0;
-    n = strlen(name);
-    for (i = 0; i < count && !found; i++) {
-        if ((n == strlen(list[i].name)) && (strncasecmp(name, list[i].name, n) == 0)) {
-            found = 1;
-            strlcpy(temp, list[i].desc, temp_size);
-        }
-    }
-    return (found ? temp : NULL);
+    /* Not found. */
+    return NULL;
 }
 
 void eth_add_to_open_list(ETH_DEV *dev)
@@ -520,22 +521,25 @@ ETH_DEV ** const eth_open_devices()
     return open_eth_devices;
 }
 
-void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on)
+void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on)
 {
     eth_copy_mac(dev->host_nic_phy_hw_addr, eth_mac_any);
     dev->have_host_nic_phy_addr = false;
 
-    if (dev->backend->eth_api != ETH_API_PCAP)
+    if (dev->backend->eth_api != ETH_API_PCAP && dev->backend->eth_api != ETH_API_TAP)
         return;
-#if defined(_WIN32) || defined(_WIN64)
-    // FIXME:
 
-#else
+    // Easy: Just copy the MAC from the previously gathered ETH_LIST data.
+    eth_copy_mac(dev->host_nic_phy_hw_addr, eth_info->eth_mac);
+    dev->have_host_nic_phy_addr = true;
+
+#if !defined(_WIN32) && !defined(_WIN64)
     char command[1024];
     FILE *f;
     int i;
     char tool[CBUFSIZE];
 
+    // Ensure the interface is up.
     memset(command, 0, sizeof(command));
     if (set_on) {
         /* try to force an otherwise unused interface to be turned on */
@@ -548,86 +552,6 @@ void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on)
             }
         }
     }
-    for (i = 0; eth_mac_lookup_commands[i].prefix && (0 == dev->have_host_nic_phy_addr); ++i) {
-        eth_format_dev_command(command, sizeof(command), &eth_mac_lookup_commands[i], devname);
-        get_glyph_nc(command, tool, 0);
-        if (sim_get_tool_path(tool)[0]) {
-            if (NULL != (f = popen(command, "r"))) {
-                while (0 == dev->have_host_nic_phy_addr) {
-                    if (fgets(command, sizeof(command) - 1, f)) {
-                        char *p1, *p2;
-
-                        p1 = strchr(command, ':');
-                        while (p1) {
-                            p2 = strchr(p1 + 1, ':');
-                            if (p2 <= p1 + 3) {
-                                uint_t mac_bytes[6];
-                                if (6 == sscanf(p1 - 2, "%02x:%02x:%02x:%02x:%02x:%02x", &mac_bytes[0], &mac_bytes[1],
-                                                &mac_bytes[2], &mac_bytes[3], &mac_bytes[4], &mac_bytes[5])) {
-                                    dev->host_nic_phy_hw_addr[0] = mac_bytes[0];
-                                    dev->host_nic_phy_hw_addr[1] = mac_bytes[1];
-                                    dev->host_nic_phy_hw_addr[2] = mac_bytes[2];
-                                    dev->host_nic_phy_hw_addr[3] = mac_bytes[3];
-                                    dev->host_nic_phy_hw_addr[4] = mac_bytes[4];
-                                    dev->host_nic_phy_hw_addr[5] = mac_bytes[5];
-                                    dev->have_host_nic_phy_addr = 1;
-                                }
-                                break;
-                            }
-                            p1 = p2;
-                        }
-                    } else
-                        break;
-                }
-                pclose(f);
-            }
-        }
-    }
 }
 #endif
 }
-
-#if defined(SHOW_ETH_DEVICES_TARGET)
-/*============================================================================*/
-/*                    Example Usage / Test Program                            */
-/*============================================================================*/
-
-int main(void)
-{
-    ETH_LIST devices[32];
-    int count;
-
-    printf("Native Network Device Enumeration\n");
-    printf("===================================\n\n");
-
-#    if defined(_WIN32) || defined(_WIN64)
-    printf("Using Windows IP Helper API with local heap allocation\n\n");
-#    elif defined(__linux__)
-    printf("Using Linux getifaddrs() with AF_PACKET\n\n");
-#    elif defined(__APPLE__)
-    printf("Using macOS getifaddrs() with AF_LINK\n\n");
-#    elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
-    printf("Using BSD getifaddrs() with AF_LINK\n\n");
-#    endif
-
-    count = eth_devices(32, devices, false);
-
-    if (count == 0) {
-        printf("No network devices found.\n");
-        printf("(This may require administrator/root privileges)\n");
-        return 1;
-    }
-
-    printf("Found %d network device%s:\n\n", count, count == 1 ? "" : "s");
-
-    for (int i = 0; i < count; i++) {
-        printf("  eth%-2d  %-50s\n", i, devices[i].name);
-        printf("         %s\n", devices[i].desc);
-
-        const uint8_t *m = (const uint8_t *)devices[i].eth_mac;
-        printf("         %02X:%02X:%02X:%02X:%02X:%02X\n", m[0], m[1], m[2], m[3], m[4], m[5]);
-    }
-
-    return 0;
-}
-#endif

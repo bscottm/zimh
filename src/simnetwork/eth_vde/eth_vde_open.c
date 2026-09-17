@@ -3,6 +3,9 @@
 
 #include "simnetwork/eth_vde/eth_vde.h"
 
+// Close and clean up.
+static void eth_vde_close(eth_backend_t *self);
+
 static const eth_api_funcs_t vde_eth_funcs = {
     .packet_wait = eth_wait_vde,
     .packet_read = eth_reader_vde,
@@ -10,7 +13,8 @@ static const eth_api_funcs_t vde_eth_funcs = {
     .write_packet = eth_writer_vde,
     .after_packet_write = NULL,
     .reader_shutdown = NULL,
-    .writer_shutdown = NULL
+    .writer_shutdown = NULL,
+    .close = eth_vde_close
 };
 
 t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
@@ -56,3 +60,9 @@ t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
 
     return SCPE_OK;
 }
+
+void eth_vde_close(eth_backend_t *self)
+{
+    vde_close(backend->state.vde);
+}
+

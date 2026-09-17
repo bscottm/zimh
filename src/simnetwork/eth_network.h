@@ -25,34 +25,31 @@ bool eth_packet_matches_filter(ETH_DEV *dev, const uint8_t *data);
 /* Return non-BPF address filter state for a received packet. */
 void eth_packet_filter_status(ETH_DEV *dev, const uint8_t *data, bool *to_me, bool *from_me);
 
+/* Core packet processing - backend agnostic */
+void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len, uint32_t caplen);
+
 /* Lookuup */
 int eth_hash_lookup(ETH_MULTIHASH hash, const uint8_t *data);
 
-/* Enumerate available network devices suitable for Ethernet emulation backends. */
-int eth_devices(int max, ETH_LIST *list, bool framers);
-
-/* Get the name and description of an Ethernet device by its index in the array returned by eth_devices().
+/* Enumerate available network devices suitable for Ethernet emulation backends.
  *
- * Returns the name on success, or NULL if not found.
+ * Returns the number of devices enumerated.
  */
-const char *eth_getname(int number, char *name, size_t name_size, char *desc, size_t desc_size);
+size_t eth_devices(size_t max, ETH_LIST *list, bool framers);
 
 /* Get the name and description of an Ethernet device by its name, as exactly matched in the array returned
  * by eth_devices().
  *
  * Returns the name on success, NULL if not found.
  */
-const char *eth_getname_byname(const char *name, char *temp, size_t temp_size, char *desc, size_t desc_size);
+const ETH_LIST *eth_getdevice_byname(const ETH_LIST *list, size_t n_list, const char *name);
 
 /* Get the name and description of an Ethernet device by its description, as exactly matched in the array
  * returned by eth_devices().
  *
  * Returns the name on success, or NULL if not found.
  */
-const char *eth_getname_bydesc(const char *desc, char *name, size_t name_size, char *ndesc, size_t ndesc_size);
-
-/* Get the simulated Ethernet's description by case-insensitive matching its name. */
-const char *eth_getdesc_byname(char *name, char *temp, size_t temp_size);
+const ETH_LIST *eth_getdevice_bydesc(const ETH_LIST *list, size_t n_list, const char *desc);
 
 /* Return the number of open emulated Ethernet devices */
 size_t eth_open_device_count();
@@ -67,6 +64,6 @@ void eth_add_to_open_list(ETH_DEV *dev);
 void eth_remove_from_open_list(ETH_DEV *dev);
 
 /* Get the underlying interface's MAC address */
-void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on);
+void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on);
 
 #endif

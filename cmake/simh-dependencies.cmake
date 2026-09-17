@@ -54,24 +54,24 @@ target_link_libraries(simh_network PRIVATE
     aio_support
 )
 
-add_executable(show_eth_devices
+add_executable(eth_show_devices
+    ${SIMH_SIMNETWORK_ROOT}/utils/eth_show_devices.c
     ${SIMH_SIMNETWORK_ROOT}/eth_devices.c
 )
 
-target_compile_definitions(show_eth_devices PRIVATE
+target_compile_definitions(eth_show_devices PRIVATE
     SHOW_ETH_DEVICES_TARGET
 )
 
-target_include_directories(show_eth_devices PRIVATE
+target_include_directories(eth_show_devices PRIVATE
     "${SIMH_CORE_ROOT}"
     "${SIMH_COMPAT_ROOT}"
     "${SIMH_INCLUDE_ROOT}"
     "${SIMH_RUNTIME_ROOT}"
-    ## "${SIMH_COMPONENTS_ROOT}"
     "${SIMH_SOURCE_ROOT}"
 )
 
-target_link_libraries(show_eth_devices PRIVATE
+target_link_libraries(eth_show_devices PRIVATE
     sim_support
     aio_support
 )

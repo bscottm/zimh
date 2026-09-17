@@ -364,8 +364,6 @@ t_stat eth_test_dev_command_format(void);
 static void ethq_item_free(sim_tailq_item_t item);
 
 #if defined(USE_NETWORK) || defined(USE_LOADED_WINPCAP)
-static void eth_get_nic_hw_addr(ETH_DEV *dev, const char *devname, int set_on);
-
 static const uchar_t framer_oui[3] = {0xaa, 0x00, 0x03};
 #endif
 
@@ -703,13 +701,17 @@ t_stat eth_show(FILE *st, UNIT *uptr, int32_t val, const void *desc)
     if (eth_open_device_count() > 0) {
         size_t i;
         char devdesc[ETH_DEV_DESC_MAX];
-        const char *d;
         ETH_DEV **const eth_devs = eth_open_devices();
+        ETH_LIST devices[ETH_MAX_DEVICE];
+        size_t n_devices;
+
+        n_devices = eth_devices(ETH_MAX_DEVICE, devices, false);
 
         fprintf(st, "Open ETH Devices:\n");
         for (i = 0; i < eth_open_device_count(); i++) {
-            if ((d = eth_getdesc_byname(eth_devs[i]->name, devdesc, sizeof(devdesc))) != NULL)
-                fprintf(st, " %-7s%s (%s)\n", eth_devs[i]->dptr->name, eth_devs[i]->dptr->units[0].filename, d);
+            const ETH_LIST *d;
+            if ((d = eth_getdevice_byname(devices, n_devices, eth_devs[i]->name)) != NULL)
+                fprintf(st, " %-7s%s (%s)\n", d->name, eth_devs[i]->dptr->units[0].filename, d->desc);
             else
                 fprintf(st, " %-7s%s\n", eth_devs[i]->dptr->name, eth_devs[i]->dptr->units[0].filename);
 
@@ -818,12 +820,7 @@ t_stat sim_ether_test(DEVICE *dptr, const char *cptr)
 
 const char *eth_capabilities(void)
 {
-#if ETH_THREADING_AVAILABLE
-    return "Threaded "
-#    else
-    return "Polled "
-#    endif
-           "Ethernet Packet transports"
+     return "Ethernet Packet transports"
 #    if defined(HAVE_PCAP_NETWORK)
            ":PCAP"
 #    endif
@@ -996,13 +993,10 @@ t_stat eth_clr_async(ETH_DEV *dev)
     if (dev == NULL)
         return SCPE_UNATT;
 
-    if (!dev->asynch_io)
-        return SCPE_OK;
-
-#if ETH_THREADING_AVAILABLE
-    eth_stop_threads(dev);
-    dev->asynch_io = false;
-#endif
+    if (dev->asynch_io) {
+        eth_stop_threads(dev);
+        dev->asynch_io = false;
+    }
 
     return SCPE_OK;
 }
@@ -1280,14 +1274,16 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
                 eth_copy_mac(&packet->msg[18], dev->host_nic_phy_hw_addr);
                 eth_packet_trace(dev, packet->msg, packet->len, "writing-fixed");
             }
-#if ETH_THREADING_AVAILABLE
-            sim_mutex_lock(&dev->self_lock);
-#    endif
+            if (aio_enabled_and_active()) {
+                sim_mutex_lock(&dev->self_lock);
+            }
+
             dev->loopback_self_sent += dev->reflections;
             dev->loopback_self_sent_total++;
-#if ETH_THREADING_AVAILABLE
-            sim_mutex_unlock(&dev->self_lock);
-#    endif
+
+            if (aio_enabled_and_active()) {
+                sim_mutex_unlock(&dev->self_lock);
+            }
         }
 
         /* dispatch write request (synchronous; no need to save write info to dev) */
@@ -1296,15 +1292,18 @@ t_stat _eth_write(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
         ++dev->packets_sent; /* basic bookkeeping */
         /* On error, correct loopback bookkeeping */
         if ((status != 0) && loopback_self_frame) {
-#if ETH_THREADING_AVAILABLE
-            sim_mutex_lock(&dev->self_lock);
-#    endif
+            if (aio_enabled_and_active()) {
+                sim_mutex_lock(&dev->self_lock);
+            }
+
             dev->loopback_self_sent -= dev->reflections;
             dev->loopback_self_sent_total--;
-#if ETH_THREADING_AVAILABLE
-            sim_mutex_unlock(&dev->self_lock);
-#    endif
+
+            if (aio_enabled_and_active()) {
+                sim_mutex_unlock(&dev->self_lock);
+            }
         }
+
         if (status != 0) {
             ++dev->transmit_packet_errors;
             eth_error(dev, "_eth_write");
@@ -1523,9 +1522,9 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
     char buf[116 + 66 * ETH_FILTER_MAX];
     char mac[20];
     t_stat status;
-#    ifdef USE_BPF
+#ifdef USE_BPF
     struct bpf_program bpf;
-#    endif
+#endif
 
     /* make sure device exists */
     if (dev == NULL)
@@ -1579,9 +1578,11 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
             sim_debug(dev->dbit, dev->dptr, "Promiscuous\n");
         }
     }
-#if ETH_THREADING_AVAILABLE
-    sim_mutex_lock(&dev->self_lock);
-#    endif
+
+    if (aio_enabled_and_active()) {
+        sim_mutex_lock(&dev->self_lock);
+    }
+
     /* Set the desired physical address */
     memset(dev->physical_addr, 0, sizeof(ETH_MAC));
     dev->loopback_self_sent = 0;
@@ -1595,9 +1596,10 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
             break;
         }
     }
-#if ETH_THREADING_AVAILABLE
-    sim_mutex_unlock(&dev->self_lock);
-#    endif
+
+    if (aio_enabled_and_active()) {
+        sim_mutex_unlock(&dev->self_lock);
+    }
 
     /* setup BPF filters and other fields to minimize packet delivery */
     eth_bpf_filter(dev, dev->addr_count, dev->filter_address, dev->all_multicast, dev->promiscuous, dev->reflections,
@@ -1608,7 +1610,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
        in our case isn't actually interesting since the filters we generate
        aren't referencing IP fields, networks or values */
 
-#    ifdef USE_BPF
+#ifdef USE_BPF
     if (dev->backend->eth_api == ETH_API_PCAP) {
         char errbuf[PCAP_ERRBUF_SIZE];
         bpf_u_int32 bpf_subnet, bpf_netmask;
@@ -1656,19 +1658,17 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
                 }
                 free(dev->bpf_filter);
                 dev->bpf_filter = bpf_filter;
-#        ifdef USE_SETNONBLOCK
+#    ifdef USE_SETNONBLOCK
                 /* set file non-blocking */
                 status = pcap_setnonblock(dev->backend->state.pcap, 1, errbuf);
-#        endif /* USE_SETNONBLOCK */
+#    endif /* USE_SETNONBLOCK */
             }
             pcap_freecode(&bpf);
         }
-#if ETH_THREADING_AVAILABLE
-        /* Lock-free queue clear */
+
         eth_tailq_clear(&dev->read_queue); /* Empty FIFO Queue when filter list changes */
-#        endif
     }
-#    endif     /* USE_BPF */
+#endif                                     /* USE_BPF */
 
     return SCPE_OK;
 }
@@ -1708,7 +1708,6 @@ void eth_show_dev(FILE *st, ETH_DEV *dev)
         fprintf(st, "  Error ReOpen Count:      %d\n", dev->error_reopen_count);
     if (dev->loopback_packets_processed)
         fprintf(st, "  Loopback Packets:        %d\n", dev->loopback_packets_processed);
-#if ETH_THREADING_AVAILABLE
     fprintf(st, "  Asynch Interrupts:       %s\n", dev->asynch_io ? "Enabled" : "Disabled");
     if (dev->asynch_io)
         fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
@@ -1717,7 +1716,6 @@ void eth_show_dev(FILE *st, ETH_DEV *dev)
     fprintf(st, "  Read Queue: Count:       %ld\n", (long)sim_tailq_count(&dev->read_queue));
     fprintf(st, "  Read Queue: Allocated:   %ld\n", (long)sim_tailq_allocated(&dev->read_queue));
     fprintf(st, "  Peak Write Queue Size:   %d\n", dev->write_queue_peak);
-#    endif
     if (dev->error_needs_reset)
         fprintf(st, "  In Error Needs Reset:    True\n");
     if (dev->error_reopen_count)

@@ -31,7 +31,7 @@ typedef t_stat (*tmxr_control_serial_fn)(SERHANDLE port, int32_t bits_to_set,
                                          int32_t *incoming_bits);
 typedef uint32_t (*tmxr_ms_sleep_fn)(uint_t msec);
 typedef SERHANDLE (*tmxr_open_serial_fn)(char *name, TMLN *lp, t_stat *status);
-typedef int (*tmxr_eth_devices_fn)(int max, ETH_LIST *dev, bool framers);
+typedef size_t (*tmxr_eth_devices_fn)(size_t max, ETH_LIST *dev, bool framers);
 typedef t_stat (*tmxr_eth_open_fn)(ETH_DEV *dev, const char *name, DEVICE *dptr,
                                    uint32_t dbit);
 typedef int (*tmxr_eth_read_fn)(ETH_DEV *dev, ETH_PACK *packet,

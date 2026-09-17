@@ -12,6 +12,9 @@
 #include "sim_sock.h"
 #include "simnetwork/eth_tap/eth_tap.h"
 
+// Close and cleanup TAP.
+static void eth_tap_close(eth_backend_t *self);
+
 /* TAP Ethernet emulation functions. */
 static const eth_api_funcs_t tap_eth_funcs = {
     .packet_wait = eth_wait_tap,
@@ -20,7 +23,8 @@ static const eth_api_funcs_t tap_eth_funcs = {
     .write_packet = eth_writer_tap,
     .after_packet_write = NULL,
     .reader_shutdown = NULL,
-    .writer_shutdown = NULL
+    .writer_shutdown = NULL,
+    .close = eth_tap_close
 };
 
 // Open a TAP device and configure it for use with the simulator. The device name is specified in the devname
@@ -122,4 +126,10 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
     dev->backend = backend;
 
     return SCPE_OK;
+}
+
+// Close and cleanup TAP.
+void eth_tap_close(eth_backend_t *self)
+{
+    sim_close_sock(self->state.eth_socket);
 }

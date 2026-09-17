@@ -3,6 +3,11 @@
 
 #include "simnetwork/eth_pcap/eth_pcap.h"
 
+/* Forward decl's */
+
+// Close and cleanup.
+static void eth_pcap_close(eth_backend_t *self);
+
 static const eth_api_funcs_t pcap_eth_funcs = {
     .packet_wait = eth_wait_pcap,
     .packet_read = eth_reader_pcap,
@@ -10,16 +15,17 @@ static const eth_api_funcs_t pcap_eth_funcs = {
     .write_packet = eth_writer_pcap,
     .after_packet_write = NULL,
     .reader_shutdown = NULL,
-    .writer_shutdown = NULL
+    .writer_shutdown = NULL,
+    .close = eth_pcap_close,
 };
     
-t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_pcap_open(const char *devname, ETH_DEV *dev)
 {
     pcap_t *pcap;
     const int bufsz = ETH_MAX_JUMBO_FRAME;
     char errbuf[PCAP_ERRBUF_SIZE];
 
-    pcap = pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
+    pcap = pcap_open_live(devname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
 
 #if !defined(_WIN32)
     if (pcap == NULL) { /* can't open device */
@@ -28,11 +34,11 @@ t_stat eth_pcap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sa
 
             /* try to force an otherwise unused interface to be turned on */
             snprintf(command, sizeof(command),
-                     (sim_get_tool_path("ifconfig")[0] != '\0') ? "ifconfig %s up" : "ip link set dev %s up", savname);
+                     (sim_get_tool_path("ifconfig")[0] != '\0') ? "ifconfig %s up" : "ip link set dev %s up", devname);
             if (system(command)) {
             };
             errbuf[0] = '\0';
-            pcap = pcap_open_live(savname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
+            pcap = pcap_open_live(devname, bufsz, ETH_PROMISC, PCAP_READ_TIMEOUT, errbuf);
         }
     }
 #endif
@@ -51,19 +57,18 @@ if (pcap == NULL) /* can't open device */
     if (pcap_setmintocopy(pcap, 0) == -1 || pcap_getevent(pcap) == NULL) {
         pcap_close(pcap);
         return sim_messagef(SCPE_OPENERR, "Eth: Can't set min to copy or get event for interface: %s\n",
-                            savname);
+                            devname);
     }
 #endif
 
-#if !ETH_THREADING_AVAILABLE
-#    ifdef USE_SETNONBLOCK
-    /* set ethernet device non-blocking so pcap_dispatch() doesn't hang */
-    if (pcap_setnonblock(backend->state.pcap, 1, errbuf) == -1) {
-        sim_printf("Eth: Failed to set non-blocking: %s\n", errbuf);
-    }
-#    endif
-#    if defined(__APPLE__)
-    {
+    if (!aio_enabled_and_active()) {
+#ifdef USE_SETNONBLOCK
+        /* set ethernet device non-blocking so pcap_dispatch() doesn't hang */
+        if (pcap_setnonblock(backend->state.pcap, 1, errbuf) == -1) {
+            sim_printf("Eth: Failed to set non-blocking: %s\n", errbuf);
+        }
+#endif
+#if defined(__APPLE__)
         /* Deliver packets immediately, needed for OS X 10.6.2 and later
          * (Snow-Leopard).
          * See this thread on libpcap and Mac Os X 10.6 Snow Leopard on
@@ -71,9 +76,8 @@ if (pcap == NULL) /* can't open device */
          */
         int v = 1;
         ioctl(pcap_fileno(backend->state.pcap), BIOCIMMEDIATE, &v);
+#endif /* defined (__APPLE__) */
     }
-#    endif /* defined (__APPLE__) */
-#endif     /* !defined (ETH_THREADING_AVAILABLE) */
 
 #ifdef USE_BPF
     /* dev->bpf_filter may have been initialized previously, since the device was opened earlier and this is
@@ -83,7 +87,7 @@ if (pcap == NULL) /* can't open device */
         int status;
         bpf_u_int32 bpf_subnet, bpf_netmask;
 
-        if (pcap_lookupnet(savname, &bpf_subnet, &bpf_netmask, errbuf) < 0)
+        if (pcap_lookupnet(devname, &bpf_subnet, &bpf_netmask, errbuf) < 0)
             bpf_netmask = 0;
         /* compile filter string */
         if ((status = pcap_compile(pcap, &bpf, dev->bpf_filter, 1, bpf_netmask)) < 0) {
@@ -123,4 +127,13 @@ if (pcap == NULL) /* can't open device */
     dev->backend = backend;
 
     return SCPE_OK;
+}
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// eth_pcap_close:
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+static void eth_pcap_close(eth_backend_t *self)
+{
+    pcap_close(self->state.pcap);
 }

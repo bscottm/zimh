@@ -21,14 +21,14 @@
 #define ETH_FRAME_SIZE (ETH_MAX_PACKET + ETH_CRC_SIZE) /* ethernet maximum frame size */
 #define ETH_MIN_JUMBO_FRAME ETH_MAX_PACKET             /* Threshold size for Jumbo Frame Processing */
 
-struct eth_packet {
+typedef struct eth_packet {
     uint8_t msg[ETH_FRAME_SIZE]; /* ethernet frame (message) */
     uint8_t *oversize;           /* oversized frame (message) */
     uint32_t len;                /* packet length without CRC */
     uint32_t used;               /* bytes processed (used in packet chaining) */
     int status;                  /* transmit/receive status */
     uint32_t crc_len;            /* packet length with CRC */
-};
+} ETH_PACK;
 
 /* Ethernet item type enumeration */
 typedef enum eth_item_type_e {
@@ -37,12 +37,12 @@ typedef enum eth_item_type_e {
     ETH_ITM_NORMAL = 2
 } eth_item_type_t;
 
-struct eth_item {
+typedef struct eth_item {
     eth_item_type_t type;
     struct eth_packet packet;
-};
+} ETH_ITEM;
 
-struct eth_queue {
+typedef struct eth_queue {
     int max;
     int count;
     int head;
@@ -50,7 +50,7 @@ struct eth_queue {
     int loss;
     int high;
     struct eth_item *item;
-};
+} ETH_QUE;
 
 typedef uint8_t ETH_MAC[6];
 
@@ -70,7 +70,7 @@ typedef enum eth_api_e {
 #define ETH_DEV_DESC_MAX 256
 
 /* Summary structure for enumerating operating system network interfaces. */
-struct eth_list {
+typedef struct eth_list {
     /* Interface's name, e.g., eth0, WiFi, ... */
     char name[ETH_DEV_NAME_MAX];
     /* Description. May be empty. */
@@ -79,24 +79,27 @@ struct eth_list {
     ETH_MAC eth_mac;
     /* Corresponding API to which this interface belongs. */
     eth_api_t eth_api;
-};
+} ETH_LIST;
 
 /* Actual struct defined in eth_backends.h */
 typedef struct eth_backend_s eth_backend_t;
 
 typedef uint8_t ETH_MULTIHASH[8];
-typedef struct eth_packet ETH_PACK;
 typedef void (*ETH_PCALLBACK)(int status);
-typedef struct eth_list ETH_LIST;
-typedef struct eth_queue ETH_QUE;
-typedef struct eth_item ETH_ITEM;
 
-struct eth_write_request {
+/* Outbound emuted Ethernet request structure */
+typedef struct eth_write_request {
     struct eth_write_request *next;
     ETH_PACK packet;
-};
+} ETH_WRITE_REQUEST;
 
-typedef struct eth_write_request ETH_WRITE_REQUEST;
+/* Interface manipulation commands: <prefix> args <suffix>, e.g.,
+ * "ip link" "eth0" "up"
+ */
+typedef struct {
+    const char *prefix;
+    const char *suffix;
+} ETH_DEV_COMMAND;
 
 /* Actual struct eth_device declared in sim_ether.h */
 typedef struct eth_device ETH_DEV;

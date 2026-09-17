@@ -3,6 +3,8 @@
 
 /* Ethernet emulation API functions for UDP point-to-point tunnels. */
 
+#include "sim_aio.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_udp/eth_udp.h"
 
 /* UDP wait implementation */
@@ -22,20 +24,17 @@ int eth_writer_udp(ETH_DEV *dev, const ETH_PACK *packet)
 /* UDP packet reader */
 int eth_reader_udp(eth_backend_t *backend, ETH_DEV *dev)
 {
-#if ETH_THREADING_AVAILABLE
-    int len;
-    u_char buf[ETH_MAX_JUMBO_FRAME];
+    if (aio_enabled_and_active()) {
+        int len;
+        u_char buf[ETH_MAX_JUMBO_FRAME];
 
-    (void)backend;
-    len = (int)sim_read_sock(backend->state.eth_socket, (char *)buf, (int32_t)sizeof(buf));
-    if (len > 0) {
-        eth_process_received_packet(dev, buf, len, len);
-        return 1;
+        len = (int)sim_read_sock(backend->state.eth_socket, (char *)buf, (int32_t)sizeof(buf));
+        if (len > 0) {
+            eth_process_received_packet(dev, buf, len, len);
+            return 1;
+        }
+        return (len < 0) ? -1 : 0;
     }
-    return (len < 0) ? -1 : 0;
-#else
-    (void)backend;
-    (void)dev;
+
     return 0;
-#endif
 }

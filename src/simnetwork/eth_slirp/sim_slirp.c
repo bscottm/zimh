@@ -21,10 +21,11 @@
 #include <errno.h>                             /* Paranoia for Win32/64 */
 
 #include "sim_defs.h"
-#include "simnetwork/eth_types.h"
+#include "sim_aio.h"
+#include "sim_ether.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_backends.h"
 #include "sim_slirp.h"
-#include "sim_ether.h"
 
 #define IS_TCP 0
 #define IS_UDP 1
@@ -175,6 +176,7 @@ static int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev);
 static bool before_slirp_send(eth_backend_t *self, ETH_DEV *dev);
 static int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet);
 static bool after_slirp_send(eth_backend_t *self, ETH_DEV *dev);
+static void eth_slirp_close(eth_backend_t *self);
 
 static const eth_api_funcs_t slirp_eth_funcs = {
     .packet_wait = eth_wait_nat,
@@ -183,7 +185,8 @@ static const eth_api_funcs_t slirp_eth_funcs = {
     .write_packet = eth_writer_nat,
     .after_packet_write = after_slirp_send,
     .reader_shutdown = sim_slirp_reader_shutdown,
-    .writer_shutdown = sim_slirp_writer_shutdown
+    .writer_shutdown = sim_slirp_writer_shutdown,
+    .close = eth_slirp_close
 };
 
 t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
@@ -242,11 +245,9 @@ t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t
         goto err_cleanup;
     }
 
-#if ETH_THREADING_AVAILABLE
-    pthread_mutex_init(&slirp->libslirp_lock, NULL);
-    pthread_cond_init(&slirp->no_sockets_cv, NULL);
-    pthread_mutex_init(&slirp->no_sockets_lock, NULL);
-#endif
+    sim_mutex_init(&slirp->libslirp_lock);
+    sim_cond_init(&slirp->no_sockets_cv);
+    sim_mutex_init(&slirp->no_sockets_lock);
 
     sim_atomic_init(&slirp->n_sockets);
 
@@ -483,22 +484,26 @@ err_cleanup:
 
 void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev)
 {
-#if ETH_THREADING_AVAILABLE
     sim_slirp_network *slirp = backend->state.slirp;
     volatile sim_atomic_type_t n_sockets = sim_atomic_get(&slirp->n_sockets);
 
     /* Set the reader thread's exit condition. If the reader thread is waiting
      * on the condvar, signal the condition. */
     sim_atomic_put(&slirp->n_sockets, -1);
-    if (n_sockets == 0)
-        pthread_cond_broadcast(&slirp->no_sockets_cv);
-#endif
+    if (n_sockets == 0 && aio_enabled_and_active())
+        sim_cond_broadcast(&slirp->no_sockets_cv);
 }
 
 void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev)
 {
     (void) backend;
     (void) dev;
+}
+
+//
+void eth_slirp_close(eth_backend_t *self)
+{
+    sim_slirp_close(self->state.slirp);
 }
 
 void sim_slirp_close(sim_slirp_network *slirp)
@@ -543,12 +548,10 @@ void sim_slirp_close(sim_slirp_network *slirp)
     slirp->fds = NULL;
 #endif
 
-#if ETH_THREADING_AVAILABLE
-    pthread_mutex_destroy(&slirp->libslirp_lock);
+    sim_mutex_destroy(&slirp->libslirp_lock);
     sim_atomic_destroy(&slirp->n_sockets);
-    pthread_cond_destroy(&slirp->no_sockets_cv);
-    pthread_mutex_destroy(&slirp->no_sockets_lock);
-#endif
+    sim_cond_destroy(&slirp->no_sockets_cv);
+    sim_mutex_destroy(&slirp->no_sockets_lock);
 
     sim_atomic_destroy(&slirp->n_sockets);
 
@@ -728,9 +731,9 @@ int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
     sim_slirp_network *slirp = dev->backend->state.slirp;
 
     /* The mutex serializes the reader and the writer threads. */
-    pthread_mutex_lock(&slirp->libslirp_lock);
+    sim_mutex_lock(&slirp->libslirp_lock);
     slirp_pollfds_poll(slirp->slirp_cxn, 0, slirp_get_events_callback, slirp);
-    pthread_mutex_unlock(&slirp->libslirp_lock);
+    sim_mutex_unlock(&slirp->libslirp_lock);
 
     /* slirp_pollfds_poll() is void, so we can't tell from its return value
      * whether packets arrived. But packets delivered via _slirp_callback()
@@ -775,7 +778,7 @@ bool before_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
     SIM_UNUSED_ARG(dev);
 
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
-    pthread_mutex_lock(&slirp->libslirp_lock);
+    sim_mutex_lock(&slirp->libslirp_lock);
 
     return true;
 }
@@ -794,7 +797,7 @@ bool after_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
     SIM_UNUSED_ARG(dev);
 
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
-    pthread_mutex_unlock(&slirp->libslirp_lock);
+    sim_mutex_unlock(&slirp->libslirp_lock);
 
     return true;
 }
