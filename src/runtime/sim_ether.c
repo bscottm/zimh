@@ -970,10 +970,9 @@ t_stat eth_set_async(ETH_DEV *dev, int latency)
     if (dev->asynch_io)
         return SCPE_OK;
 
-    /* Simulator doesn't support async I/O globally */
-    if (!aio_enabled_and_active())
-        return sim_messagef(SCPE_NOFNC,
-            "Eth: Async I/O disabled (simulator needs SIM_ASYNCH_IO)\n");
+    /* Simulator can't support AIO, usually due to a platform constraint. */
+    if (!aio_async_preference())
+        return sim_messagef(SCPE_NOFNC, "Eth: Async I/O disabled, direct I/O preferred.\n");
 
     /* Start threads for ALL backends */
     t_stat r = eth_start_threads(dev);

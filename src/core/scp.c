@@ -2711,15 +2711,6 @@ int scp_main(int argc, char *argv[])
     sim_quiet = sim_switches & SWMASK('Q');      /* -q means quiet */
     sim_on_inherit = sim_switches & SWMASK('O'); /* -o means inherit on state */
 
-#if defined(SIM_ASYNCH_IO)
-    /* Set the main thread's affinity: */
-    sim_cpu_set_t main_set;
-
-    sim_os_get_cpu_partition(&main_set, NULL, NULL);
-    if (!sim_cpu_set_empty(&main_set))
-        sim_os_set_thread_affinity(&main_set);
-#endif
-
     sim_init_sock(); /* init socket capabilities */
     aio_init();      /* init Asynch I/O */
     sim_finit();     /* init fio package */
@@ -4355,59 +4346,69 @@ t_stat sim_set_asynch(int32_t flag, const char *cptr)
 
     if (cptr && (*cptr != 0)) /* now eol? */
         return SCPE_2MARG;
-#ifdef SIM_ASYNCH_IO
+
+    if (!aio_async_preference()) {
+        if (!sim_quiet) {
+                printf("Asynchronous I/O cannot be enabled or disabled due to platform constraints.\n");
+        }
+
+        if (sim_oline == NULL && sim_log != NULL) {
+            fprintf(sim_log, "Asynchronous I/O cannot be enabled or disabled due to platform constraints.\n");
+        }
+        
+        return SCPE_NOFNC;
+    }
+
     const bool flag_bool = (flag != 0);
-    const bool old_asynch_enabled = sim_asynch_enabled;
+    const bool old_asynch_enabled = aio_async_enabled();
+
     t_stat status;
 
-    if (flag_bool == old_asynch_enabled) /* already set correctly? */
+    /* Setting didn't change? */
+    if (flag_bool == old_asynch_enabled)
         return SCPE_OK;
-    {
-        uint32_t i;
-        DEVICE *dptr;
 
-        for (i = 1; (dptr = sim_devices[i]) != NULL; i++) { /* flush attached files */
-            if ((DEV_TYPE(dptr) == DEV_ETHER) && (dptr->units->flags & UNIT_ATT))
-                return sim_messagef(SCPE_ALATT, "Can't change asynch mode with %s device attached\n", dptr->name);
-        }
-    }
-    sim_asynch_enabled = flag_bool;
-    /* Start TMXR first so failure can roll back before timers and units switch. */
-    status = tmxr_change_async();
-    if (status != SCPE_OK) {
-        sim_asynch_enabled = old_asynch_enabled;
-        (void)tmxr_change_async();
-        return status;
-    }
-    sim_timer_change_asynch();
-    {
-        uint32_t i, j;
-        DEVICE *dptr;
-        UNIT *uptr;
+    uint32_t i;
+    DEVICE *dptr;
 
-        /* Call unit flush routines to report asynch status change to device layer */
-        for (i = 1; (dptr = sim_devices[i]) != NULL; i++) { /* flush attached files */
-            for (j = 0; j < dptr->numunits; j++) {          /* if not buffered in mem */
-                uptr = dptr->units + j;
-                if ((uptr->flags & UNIT_ATT) &&             /* attached, */
-                    (uptr->io_flush))                       /* unit specific flush routine */
-                    uptr->io_flush(uptr);
-            }
-        }
+    /* FIXME: Need API function to change Ethernet interface state, not fail like the
+     * current code does. Actually, what needs to happen is an API function to change
+     * a UNIT's AIO state. */
+#if 0
+    for (i = 1; (dptr = sim_devices[i]) != NULL; i++) { /* flush attached files */
+        if ((DEV_TYPE(dptr) == DEV_ETHER) && (dptr->units->flags & UNIT_ATT))
+            return sim_messagef(SCPE_ALATT, "Can't change asynch mode with %s device attached\n", dptr->name);
     }
-    if (!sim_quiet)
-        fprintf(stdout, "Asynchronous I/O %sabled\n", sim_asynch_enabled ? "en" : "dis");
-    if ((!sim_oline) && sim_log)
-        fprintf(sim_log, "Asynchronous I/O %sabled\n", sim_asynch_enabled ? "en" : "dis");
-    return SCPE_OK;
-#else
-    (void)flag;
-    if (!sim_quiet)
-        fprintf(stdout, "Asynchronous I/O is not available in this simulator\n");
-    if ((!sim_oline) && sim_log)
-        fprintf(sim_log, "Asynchronous I/O is not available in this simulator\n");
-    return SCPE_NOFNC;
 #endif
+
+    aio_set_async_enabled(flag_bool);
+
+    /* Start TMXR first so failure can roll back before timers and units switch. */
+    if ((status = tmxr_change_async()) != SCPE_OK) {
+       aio_set_async_enabled(old_asynch_enabled);
+       (void)tmxr_change_async();
+       return status;
+    }
+
+   sim_timer_change_asynch();
+
+#if 0
+   uint32_t j;
+
+   /* Call unit flush routines to report asynch status change to device layer */
+   /* FIXME: This doesn't seem quite right either. */
+   for (i = 1; (dptr = sim_devices[i]) != NULL; i++) { /* flush attached files */
+       for (j = 0; j < dptr->numunits; j++) {          /* if not buffered in mem */
+           UNIT *uptr = dptr->units + j;
+
+           if ((uptr->flags & UNIT_ATT) != 0 &&        /* attached, */
+               uptr->io_flush != NULL)                 /* unit specific flush routine */
+               uptr->io_flush(uptr);
+        }
+   }
+#endif
+
+   return SCPE_OK;
 }
 
 /* Show asynch routine */
@@ -4422,17 +4423,19 @@ t_stat sim_show_asynch(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const c
 
     if (cptr && (*cptr != 0))
         return SCPE_2MARG;
-#ifdef SIM_ASYNCH_IO
-    fprintf(st, "Asynchronous I/O is %sabled, %s\n", (sim_asynch_enabled) ? "en" : "dis", AIO_QUEUE_MODE);
+
+    if (aio_async_preference()) {
+        fprintf(st, "Asynchronous I/O is available and %s\n", (aio_async_enabled()) ? "en" : "dis");
 #    if defined(SIM_ASYNCH_MUX)
-    fprintf(st, "Asynchronous Multiplexer support is available\n");
+        fprintf(st, "Asynchronous Multiplexer support is available\n");
 #    endif
 #    if defined(SIM_ASYNCH_CLOCKS)
-    fprintf(st, "Asynchronous Clock is %sabled\n", (sim_asynch_timer) ? "en" : "dis");
+        fprintf(st, "Asynchronous Clock is %sabled\n", (sim_asynch_timer) ? "en" : "dis");
 #    endif
-#else
-    fprintf(st, "Asynchronous I/O is not available in this simulator\n");
-#endif
+    } else {
+        fprintf(st, "Asynchronous I/O is not available, direct I/O only.\n");
+    }
+
     return SCPE_OK;
 }
 
@@ -5221,9 +5224,7 @@ t_stat show_version(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char
             fprintf(st, "\n        Virtual Hard Disk (VHD) support");
         if (sim_disk_raw_support())
             fprintf(st, "\n        RAW disk and CD/DVD ROM support");
-#if defined(SIM_ASYNCH_IO)
-        fprintf(st, "\n        Asynchronous I/O support (%s)", AIO_QUEUE_MODE);
-#endif
+        fprintf(st, "\n        Asynchronous I/O support (%sabled)", aio_enabled_and_active() ? "en" : "dis");
 #if defined(SIM_ASYNCH_MUX)
         fprintf(st, "\n        Asynchronous Multiplexer support");
 #endif

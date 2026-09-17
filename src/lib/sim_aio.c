@@ -44,7 +44,6 @@ void aio_init()
     sim_cond_init(&sim_timer_wake);
     sim_mutex_init(&sim_tmxr_poll_lock);
     sim_cond_init(&sim_tmxr_poll_cond);
-    sim_asynch_main_threadid = sim_thread_self();
 
     // Set the async I/O preference based on the number of available CPUs.
     sim_async_preference = (sim_os_get_cpu_count() >= 2);
@@ -57,6 +56,18 @@ void aio_init()
     /* NEW: Initialize MPSC queue and min-heap */
     sim_event_queue_init(&sim_event_queue);
     sim_event_heap_init(&sim_event_heap);
+
+    /* Set the simulator thread's ID (since this is ALWAYS called by the simulator's thread,
+     * set its default thread affinity. */
+    sim_asynch_main_threadid = sim_thread_self();
+    if (sim_async_preference) {
+        /* Set the main thread's affinity: */
+        sim_cpu_set_t main_set;
+
+        sim_os_get_cpu_partition(&main_set, NULL, NULL);
+        if (!sim_cpu_set_empty(&main_set))
+            sim_os_set_thread_affinity(&main_set);
+    }
 }
 
 void aio_cleanup()

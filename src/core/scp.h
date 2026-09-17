@@ -286,10 +286,9 @@ extern t_value *sim_eval;
 extern volatile bool stop_cpu;
 extern const char *sim_prog_name;                       /* executable program name */
 extern FILE *stdnul;
-#if defined(SIM_ASYNCH_IO)
+
 int sim_aio_update_queue (void);
 void sim_aio_activate (ACTIVATE_API caller, UNIT *uptr, int32_t event_time);
-#endif
 
 /* VM interface */
 

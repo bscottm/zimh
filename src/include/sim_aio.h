@@ -57,6 +57,21 @@ static inline bool aio_enabled_and_active() {
     return (sim_async_preference && sim_asynch_enabled);
 }
 
+/* Get the simulator's asynchronous preference */
+static inline const bool aio_async_preference() {
+    return sim_async_preference;
+}
+
+/* Get the async enabled flag. */
+static inline const bool aio_async_enabled() {
+    return sim_asynch_enabled;
+}
+
+static inline void aio_set_async_enabled(const bool flag) {
+    sim_asynch_enabled = flag;
+}
+
+    
 /* Executing in the simulator's thread? */
 static inline bool is_simulator_thread() {
     return sim_thread_equal(sim_thread_self(), sim_asynch_main_threadid);
@@ -116,7 +131,6 @@ extern int sim_aio_process_heap(int32_t current_time);
 /* This approach uses intrinsics to manage access to the link list head     */
 /* sim_asynch_queue.  This implementation is a completely lock free design  */
 /* which avoids the potential ABA issues.                                   */
-#        define AIO_QUEUE_MODE "Lock free asynchronous event queue"
 #        ifdef _WIN32
 #        elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
 #            define InterlockedCompareExchangePointer(Destination, Exchange, Comparand)                                \
@@ -143,7 +157,6 @@ extern int sim_aio_process_heap(int32_t current_time);
 /* This approach uses a pthread mutex to manage access to the link list     */
 /* head sim_asynch_queue.  It will always work, but may be slower than the  */
 /* lock free approach when using USE_AIO_INTRINSICS                         */
-#        define AIO_QUEUE_MODE "Lock based asynchronous event queue"
 #        define AIO_ILOCK aio_global_lock()
 #        define AIO_IUNLOCK aio_global_unlock()
 #        define AIO_QUEUE_VAL sim_asynch_queue
