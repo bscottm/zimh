@@ -3,6 +3,7 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "simnetwork/eth_network.h"
 #include "simnetwork/eth_tap/eth_tap.h"
 
 /* TAP wait implementation */

@@ -4,6 +4,7 @@
 #if !defined(SIM_ETH_NETWORK_H)
 #define SIM_ETH_NETWORK_H
 
+#include <stddef.h>
 #include <stdbool.h>
 
 #include "simnetwork/eth_types.h"

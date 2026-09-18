@@ -361,7 +361,6 @@
 /* Internal routine - forward declaration */
 static int _eth_get_system_id(char *buf, size_t buf_size);
 t_stat eth_test_dev_command_format(void);
-static void ethq_item_free(sim_tailq_item_t item);
 
 #if defined(USE_NETWORK) || defined(USE_LOADED_WINPCAP)
 static const uchar_t framer_oui[3] = {0xaa, 0x00, 0x03};
@@ -700,7 +699,6 @@ t_stat eth_show(FILE *st, UNIT *uptr, int32_t val, const void *desc)
     }
     if (eth_open_device_count() > 0) {
         size_t i;
-        char devdesc[ETH_DEV_DESC_MAX];
         ETH_DEV **const eth_devs = eth_open_devices();
         ETH_LIST devices[ETH_MAX_DEVICE];
         size_t n_devices;

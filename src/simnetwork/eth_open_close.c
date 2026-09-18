@@ -152,8 +152,6 @@ void eth_initialize_device(ETH_DEV *dev)
 
 t_stat eth_open_port(const char *savname, size_t savname_size, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit)
 {
-    (void)savname_size;
-
     /* attempt to connect device */
     if (0 == strncmp("test:", savname, 5)) {
         const char *test_label = savname + 5;

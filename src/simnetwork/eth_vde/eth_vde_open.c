@@ -17,7 +17,7 @@ static const eth_api_funcs_t vde_eth_funcs = {
     .close = eth_vde_close
 };
 
-t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_vde_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size)
 {
     char vdeswitch_s[CBUFSIZE]; /* VDE switch name */
     char vdeport_s[CBUFSIZE];   /* VDE switch port (optional), numeric */
@@ -63,6 +63,6 @@ t_stat eth_vde_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
 
 void eth_vde_close(eth_backend_t *self)
 {
-    vde_close(backend->state.vde);
+    vde_close(self->state.vde);
 }
 

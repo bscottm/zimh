@@ -35,7 +35,7 @@ static const eth_api_funcs_t tap_eth_funcs = {
 // SCPE_OK: The TAP device was opened and configured successfully.
 // SCPE_OPENERR: An error occurred while opening or configuring the TAP device.
 // SCPE_MEM: An error occurred while allocating memory for the eth_backend_t structure.
-t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t savname_size)
+t_stat eth_tap_open(const char *devname, ETH_DEV *dev, const char *savname, size_t savname_size)
 {
     if (!strcmp(savname, "tap:tapN"))
         return sim_messagef(SCPE_OPENERR, "Eth: Must specify actual tap device name (i.e. tap:tap0)\n");
@@ -59,8 +59,6 @@ t_stat eth_tap_open(const char *devname, ETH_DEV *dev, char *savname, size_t sav
             if (ioctl(tun, FIONBIO, &on)) {
                 close(tun);
                 return sim_messagef(SCPE_OPENERR, "Eth: ioctl(FIONBIO) on %s failed: %s\n", devname, strerror(errno));
-            } else {
-                strlcpy(savname, ifr.ifr_name, savname_size);
             }
         } else {
             close(tun);

@@ -38,9 +38,11 @@
 #    include <unistd.h>
 #    ifdef __linux__
 #        include <linux/if_packet.h>
+#        include <linux/if_arp.h>
 #        include <net/ethernet.h>
 #    elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #        include <net/if_dl.h>
+#        include <net/if_arp.h>
 #    endif
 #endif
 
@@ -58,6 +60,8 @@
 #    define sim_printf printf
 #    undef tolower
 #endif
+
+static void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname);
 
 static ETH_DEV **open_eth_devices = NULL;
 static size_t n_eth_devices = 0;
@@ -290,7 +294,7 @@ static size_t eth_devices_native_unix(int max, ETH_LIST *list, bool include_fram
 
             snprintf(list[used].name, sizeof(list[used].name), "%s", ifa->ifa_name);
             snprintf(list[used].desc, sizeof(list[used].desc), "Ethernet adapter %s", ifa->ifa_name);
-            eth_copy_mac(list[used].eth_mac, (ETH_MAC)sll->sll_addr);
+            eth_copy_mac(list[used].eth_mac, sll->sll_addr);
             list[used].eth_api = ETH_API_PCAP; /* Native, but PCAP-compatible */
             used++;
         }
@@ -544,7 +548,7 @@ void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on)
     if (set_on) {
         /* try to force an otherwise unused interface to be turned on */
         for (i = 0; eth_turnon_commands[i].prefix; ++i) {
-            eth_format_dev_command(command, sizeof(command), &eth_turnon_commands[i], devname);
+            eth_format_dev_command(command, sizeof(command), &eth_turnon_commands[i], eth_info->name);
             get_glyph_nc(command, tool, 0);
             if (sim_get_tool_path(tool)[0]) {
                 if (NULL != (f = popen(command, "r")))
@@ -554,4 +558,17 @@ void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on)
     }
 }
 #endif
+
+/* Build a shell command using a literal snprintf format for compiler checks. */
+void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname)
+{
+    size_t format_len;
+    int devname_len;
+
+    format_len = strlen(cmd->prefix) + strlen("%.*s") + strlen(cmd->suffix);
+    if (command_size <= format_len + 2)
+        devname_len = 0;
+    else
+        devname_len = (int)(command_size - (2 + format_len));
+    snprintf(command, command_size, "%s%.*s%s", cmd->prefix, devname_len, devname, cmd->suffix);
 }
