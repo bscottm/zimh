@@ -41,9 +41,6 @@ extern bool sim_async_preference;
  * of threads for I/O. */
 extern bool sim_asynch_enabled;
 
-// Pending asynchronous UNIT service requests. FIXME: Replace with sim_tailq_t:
-extern UNIT *volatile sim_asynch_queue;
-
 extern volatile bool sim_idle_wait;
 
 extern sim_atomic_value_t sim_asynch_check;

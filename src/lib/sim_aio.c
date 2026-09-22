@@ -17,10 +17,6 @@ int32_t sim_tmxr_poll_count;
 
 sim_thread_t sim_asynch_main_threadid;
 
-/* DEPRECATED: Old intrusive queue - NO LONGER USED
- * Kept for binary compatibility until UNIT.a_next can be removed */
-UNIT *volatile sim_asynch_queue;
-
 /* NEW: MPSC queue for producer-side enqueue */
 static sim_event_mpsc_queue_t sim_event_queue;
 
@@ -57,10 +53,7 @@ void aio_init()
     // Async I/O is enabled if the preference is true. It can be disabled via the CLI.
     sim_asynch_enabled = sim_async_preference;
 
-    /* OLD: Empty list/list end uses the point value (void *) 1. */
-    sim_asynch_queue = QUEUE_LIST_END;
-
-    /* NEW: Initialize MPSC queue and min-heap */
+    /* Initialize MPSC queue and min-heap */
     sim_event_queue_init(&sim_event_queue);
     sim_event_heap_init(&sim_event_heap);
 

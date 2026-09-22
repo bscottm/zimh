@@ -425,9 +425,6 @@ struct UNIT {
     // Async I/O support:
     void (*a_check_completion)(UNIT *);
     bool (*a_is_active)(const UNIT * const);
-    UNIT *a_next; /* next asynch active */
-    int32_t a_event_time;
-    ACTIVATE_API a_activate_call;
     /* Asynchronous Polling control */
     /* These fields should only be referenced when holding the sim_tmxr_poll_lock */
     bool a_polling_now;          /* polling active flag */
