@@ -7811,7 +7811,7 @@ t_stat run_cmd(int32_t flag, const char *cptr)
     sim_cancel(&sim_flush_unit);                             /* cancel flush timer */
     sim_cancel_step();                                       /* cancel step timer */
     sim_throt_cancel();                                      /* cancel throttle */
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     UPDATE_SIM_TIME;                                         /* update sim time */
     return r | ((sim_switches & SWMASK('Q')) ? SCPE_NOMESSAGE : 0);
 }
@@ -9986,7 +9986,7 @@ t_stat sim_process_event(void)
         stop_cpu = false;
         return SCPE_STOP;
     }
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
 
     /* NEW: Process async events from heap with time <= current simulator time */
     if (aio_enabled_and_active()) {
@@ -10269,7 +10269,7 @@ t_stat sim_cancel(UNIT *uptr)
             return cancel_status;
     }
     AIO_CANCEL(uptr);
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     if (sim_clock_queue == QUEUE_LIST_END)
         return SCPE_OK;
     if (!sim_is_active(uptr))
@@ -10319,7 +10319,7 @@ t_stat sim_cancel(UNIT *uptr)
 bool sim_is_active(UNIT *uptr)
 {
     is_simulator_thread_assert(uptr);
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     return (((uptr->next) || is_unit_aio_active(uptr) ||
              ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active(uptr) : false))
                 ? true
