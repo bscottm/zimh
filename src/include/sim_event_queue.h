@@ -166,6 +166,18 @@ static inline size_t sim_event_heap_count(const sim_event_heap_t *heap)
     return heap->count;
 }
 
+/* Query: Get event at specific index (for display/debugging)
+ *
+ * Returns: Pointer to event at index, or NULL if index >= count
+ * Note: This is for read-only access (display). Do not modify the returned event.
+ */
+static inline sim_unit_event_t *sim_event_heap_get_at(const sim_event_heap_t *heap, size_t index)
+{
+    if (index >= heap->count)
+        return NULL;
+    return heap->events[index];
+}
+
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
  * Internal heap operations (exposed for testing, not part of public API)
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/

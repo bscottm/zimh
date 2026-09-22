@@ -11,6 +11,7 @@
 #    include "sim_threads.h"
 #    include "sim_atomic.h"
 #    include "sim_atomic_ptr.h"
+#    include "sim_event_queue.h"
 
 #    define SIM_ASYNCH_CLOCKS 1
 
@@ -126,6 +127,10 @@ extern void aio_cleanup();
 /* NEW: Process events from the min-heap with time <= current_time
  * Should be called from sim_process_event() after AIO_UPDATE_QUEUE */
 extern int sim_aio_process_heap(int32_t current_time);
+
+/* NEW: Get the async I/O event heap for display/debugging
+ * Returns: Pointer to the internal event heap (read-only access) */
+extern const sim_event_heap_t *sim_aio_get_event_heap(void);
 
 /* Notes on macro replacements:
  *

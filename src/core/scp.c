@@ -5533,20 +5533,32 @@ t_stat show_queue(FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, cons
     aio_global_lock();
     sim_mfile = &buf;
     fprintf(st, "asynchronous pending event queue\n");
-    if (sim_asynch_queue == QUEUE_LIST_END)
+
+    /* Display events from the MPSC heap */
+    const sim_event_heap_t *heap = sim_aio_get_event_heap();
+    size_t event_count = sim_event_heap_count(heap);
+
+    if (event_count == 0) {
         fprintf(st, "  Empty\n");
-    else {
-        /* FIXME!! Iterate through the min-heap */
-        for (uptr = sim_asynch_queue; uptr != QUEUE_LIST_END; uptr = uptr->a_next) {
+    } else {
+        fprintf(st, "  %zu event%s pending:\n", event_count, event_count == 1 ? "" : "s");
+        for (size_t i = 0; i < event_count; i++) {
+            sim_unit_event_t *event = sim_event_heap_get_at(heap, i);
+            if (event == NULL)
+                break;
+
+            uptr = event->unit;
             if ((dptr = find_dev_from_unit(uptr)) != NULL) {
-                fprintf(st, "  %s", sim_dname(dptr));
+                fprintf(st, "    %s", sim_dname(dptr));
                 if (dptr->numunits > 1)
                     fprintf(st, " unit %d", (int32_t)(uptr - dptr->units));
             } else
-                fprintf(st, "  Unknown");
-            fprintf(st, " event delay %d\n", uptr->a_event_time);
+                fprintf(st, "    Unknown");
+            fprintf(st, " - time %d, seq %llu\n", event->event_time,
+                    (unsigned long long)event->sequence);
         }
     }
+
     fprintf(st, "asynch latency: %d nanoseconds\n", sim_asynch_latency);
     fprintf(st, "asynch instruction latency: %d %s\n", sim_asynch_inst_latency, sim_vm_interval_units);
     aio_global_unlock();

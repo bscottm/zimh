@@ -27,6 +27,12 @@ static sim_event_mpsc_queue_t sim_event_queue;
 /* NEW: Min-heap for consumer-side processing */
 static sim_event_heap_t sim_event_heap;
 
+/* Accessor for queue display - returns pointer to the async I/O event heap */
+const sim_event_heap_t *sim_aio_get_event_heap(void)
+{
+    return &sim_event_heap;
+}
+
 // Async I/O preference gate.
 bool sim_async_preference;
 // Async I/O enabled flag.
