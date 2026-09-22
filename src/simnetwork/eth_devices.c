@@ -58,7 +58,6 @@
 #if defined(SHOW_ETH_DEVICES_TARGET)
 #    undef fprintf
 #    define sim_printf printf
-#    undef tolower
 #endif
 
 static void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname);
@@ -556,8 +555,8 @@ void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on)
             }
         }
     }
-}
 #endif
+}
 
 /* Build a shell command using a literal snprintf format for compiler checks. */
 void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname)

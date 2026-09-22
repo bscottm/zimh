@@ -210,8 +210,15 @@ static bool sim_catchup_ticks = true;
 bool sim_asynch_timer = false;
 
 #if defined(SIM_ASYNCH_CLOCKS)
-UNIT *volatile sim_wallclock_queue = QUEUE_LIST_END;
-UNIT *volatile sim_wallclock_entry = NULL;
+/* Wallclock timer event structure (non-intrusive) */
+typedef struct sim_wallclock_event_s {
+    UNIT *unit;
+    double a_due_time;  /* Wall clock time (seconds since epoch) */
+    struct sim_wallclock_event_s *next;
+} sim_wallclock_event_t;
+
+static sim_wallclock_event_t *volatile sim_wallclock_queue = NULL;
+static sim_wallclock_event_t *volatile sim_wallclock_entry = NULL;
 #endif
 
 #define sleep1Samples 100
@@ -267,7 +274,7 @@ uint32_t sim_idle_ms_sleep(uint_t msec)
     if (pthread_cond_timedwait(&sim_asynch_wake, &sim_asynch_lock, &end_time))
         timedout = true;
     else
-        sim_asynch_check = 0; /* force check of asynch queue now */
+        sim_atomic_put(&sim_asynch_check, 0); /* Force check of async queue now */
     sim_idle_wait = false;
     aio_global_unlock();
     (void)sim_clock_gettime(CLOCK_REALTIME, &done_time);
@@ -472,7 +479,7 @@ void sim_timer_reset_test_state(void)
     memset(&sim_throttle_unit, 0, sizeof(sim_throttle_unit));
     sim_interval = 0;
 #if defined(SIM_ASYNCH_CLOCKS)
-    sim_wallclock_queue = QUEUE_LIST_END;
+    sim_wallclock_queue = NULL;
     sim_wallclock_entry = NULL;
 #endif
     sim_idle_enab = false;
@@ -1099,11 +1106,13 @@ t_stat sim_show_clock_queues(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, c
         struct timespec due;
         time_t time_t_due;
 
-        if (sim_wallclock_queue == QUEUE_LIST_END)
+        if (sim_wallclock_queue == NULL)
             fprintf(st, "%s wall clock event queue empty\n", sim_name);
         else {
+            sim_wallclock_event_t *event;
             fprintf(st, "%s wall clock event queue status\n", sim_name);
-            for (uptr = sim_wallclock_queue; uptr != QUEUE_LIST_END; uptr = uptr->a_next) {
+            for (event = sim_wallclock_queue; event != NULL; event = event->next) {
+                uptr = event->unit;
                 if ((dptr = find_dev_from_unit(uptr)) != NULL) {
                     fprintf(st, "  %s", sim_dname(dptr));
                     if (dptr->numunits > 1)
@@ -1111,7 +1120,7 @@ t_stat sim_show_clock_queues(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, c
                 } else
                     fprintf(st, "  Unknown");
                 tim = sim_fmt_secs(uptr->a_usec_delay / 1000000.0);
-                _double_to_timespec(&due, uptr->a_due_time);
+                _double_to_timespec(&due, event->a_due_time);
                 time_t_due = (time_t)due.tv_sec;
                 {
                     char time_buf[16];
@@ -2300,33 +2309,36 @@ static THREAD_FUNC_DEFN(_timer_thread)
         double wait_usec;
         int32_t inst_delay;
         double inst_per_sec;
-        UNIT *uptr, *cptr, *prvptr;
+        UNIT *uptr;
+        sim_wallclock_event_t *event, *cptr, *prvptr;
 
         if (sim_wallclock_entry) { /* something to insert in queue? */
 
-            sim_debug(DBG_TIM, &sim_timer_dev, "_timer_thread() - timing %s for %s\n", sim_uname(sim_wallclock_entry),
-                      sim_fmt_secs(sim_wallclock_entry->a_usec_delay / 1000000.0));
+            sim_debug(DBG_TIM, &sim_timer_dev, "_timer_thread() - timing %s for %s\n",
+                      sim_uname(sim_wallclock_entry->unit),
+                      sim_fmt_secs(sim_wallclock_entry->unit->a_usec_delay / 1000000.0));
 
-            uptr = sim_wallclock_entry;
+            event = sim_wallclock_entry;
             sim_wallclock_entry = NULL;
 
+            /* Sorted insertion by due_time */
             prvptr = NULL;
-            for (cptr = sim_wallclock_queue; cptr != QUEUE_LIST_END; cptr = cptr->a_next) {
-                if (uptr->a_due_time < cptr->a_due_time)
+            for (cptr = sim_wallclock_queue; cptr != NULL; cptr = cptr->next) {
+                if (event->a_due_time < cptr->a_due_time)
                     break;
                 prvptr = cptr;
             }
             if (prvptr == NULL) { /* insert at head */
-                cptr = uptr->a_next = sim_wallclock_queue;
-                sim_wallclock_queue = uptr;
+                event->next = sim_wallclock_queue;
+                sim_wallclock_queue = event;
             } else {
-                cptr = uptr->a_next = prvptr->a_next; /* insert at prvptr */
-                prvptr->a_next = uptr;
+                event->next = prvptr->next; /* insert after prvptr */
+                prvptr->next = event;
             }
         }
 
         /* determine wait time */
-        if (sim_wallclock_queue != QUEUE_LIST_END) {
+        if (sim_wallclock_queue != NULL) {
             /* due time adjusted by 1/2 a minimal sleep interval */
             /* the goal being to let the last fractional part of the due time */
             /* be done by counting instructions */
@@ -2337,20 +2349,23 @@ static THREAD_FUNC_DEFN(_timer_thread)
         }
         (void)sim_clock_gettime(CLOCK_REALTIME, &start_time);
         wait_usec = floor(1000000.0 * (_timespec_to_double(&due_time) - _timespec_to_double(&start_time)));
-        if (sim_wallclock_queue == QUEUE_LIST_END)
+        if (sim_wallclock_queue == NULL)
             sim_debug(DBG_TIM, &sim_timer_dev, "_timer_thread() - waiting forever\n");
         else
             sim_debug(DBG_TIM, &sim_timer_dev, "_timer_thread() - waiting for %.0f usecs until %.6f for %s\n",
-                      wait_usec, sim_wallclock_queue->a_due_time, sim_uname(sim_wallclock_queue));
+                      wait_usec, sim_wallclock_queue->a_due_time, sim_uname(sim_wallclock_queue->unit));
         if ((wait_usec <= 0.0) || (0 != pthread_cond_timedwait(&sim_timer_wake, &sim_timer_lock, &due_time))) {
 
-            if (sim_wallclock_queue == QUEUE_LIST_END) /* queue empty? */
-                continue;                              /* wait again */
+            if (sim_wallclock_queue == NULL) /* queue empty? */
+                continue;                    /* wait again */
             inst_per_sec = sim_timer_inst_per_sec();
 
-            uptr = sim_wallclock_queue;
-            sim_wallclock_queue = uptr->a_next;
-            uptr->a_next = NULL; /* hygiene */
+            event = sim_wallclock_queue;
+            sim_wallclock_queue = event->next;
+            uptr = event->unit;
+
+            /* Free the event structure */
+            free(event);
 
             (void)sim_clock_gettime(CLOCK_REALTIME, &stop_time);
             if (1 != sim_timespec_compare(&due_time, &stop_time))
@@ -2662,10 +2677,14 @@ void sim_stop_timer_services(void)
         pthread_mutex_unlock(&sim_timer_lock);
         pthread_join(sim_timer_thread, NULL);
         /* Any wallclock queued events are now migrated to the normal event queue */
-        while (sim_wallclock_queue != QUEUE_LIST_END) {
-            UNIT *uptr = sim_wallclock_queue;
+        while (sim_wallclock_queue != NULL) {
+            sim_wallclock_event_t *event = sim_wallclock_queue;
+            UNIT *uptr = event->unit;
             double inst_delay_d = uptr->a_due_gtime - sim_gtime();
             int32_t inst_delay;
+
+            sim_wallclock_queue = event->next;
+            free(event);  /* Free the event structure */
 
             uptr->cancel(uptr);
             if (inst_delay_d < 0.0)
@@ -2830,10 +2849,18 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
 #if defined(SIM_ASYNCH_CLOCKS)
     if ((sim_asynch_timer) && (usec_delay > sim_idle_rate_ms * 1000.0)) {
         double d_now = sim_timenow_double();
-        UNIT *cptr, *prvptr;
+        sim_wallclock_event_t *event, *cptr, *prvptr;
+
+        /* Allocate new event structure */
+        event = (sim_wallclock_event_t *)malloc(sizeof(sim_wallclock_event_t));
+        if (event == NULL)
+            return SCPE_MEM;
+
+        event->unit = uptr;
+        event->a_due_time = d_now + (usec_delay / 1000000.0);
+        event->next = NULL;
 
         uptr->a_usec_delay = usec_delay;
-        uptr->a_due_time = d_now + (usec_delay / 1000000.0);
         uptr->a_due_gtime = sim_gtime() + (sim_timer_inst_per_sec() * (usec_delay / 1000000.0));
         uptr->cancel = &_sim_wallclock_cancel; /* bind cleanup method */
         uptr->a_is_active = _sim_wallclock_is_active;
@@ -2846,33 +2873,33 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
 
         sim_debug(DBG_TIM, &sim_timer_dev,
                   "sim_timer_activate_after(%s, %.0f usecs) - queueing wallclock addition at %.6f\n", sim_uname(uptr),
-                  usec_delay, uptr->a_due_time);
+                  usec_delay, event->a_due_time);
 
         pthread_mutex_lock(&sim_timer_lock);
-        for (cptr = sim_wallclock_queue, prvptr = NULL; cptr != QUEUE_LIST_END; cptr = cptr->a_next) {
-            if (uptr->a_due_time < cptr->a_due_time)
+        /* Find insertion point (sorted by due_time) */
+        for (cptr = sim_wallclock_queue, prvptr = NULL; cptr != NULL; cptr = cptr->next) {
+            if (event->a_due_time < cptr->a_due_time)
                 break;
             prvptr = cptr;
         }
         if (prvptr == NULL) {                 /* inserting at head */
-            uptr->a_next = QUEUE_LIST_END;    /* Temporarily mark as active */
             if (sim_timer_thread_running) {
                 while (sim_wallclock_entry) { /* wait for any prior entry has been digested */
                     sim_debug(DBG_TIM, &sim_timer_dev,
                               "sim_timer_activate_after(%s, %.0f usecs) - queue insert entry %s busy waiting for 1ms\n",
-                              sim_uname(uptr), usec_delay, sim_uname(sim_wallclock_entry));
+                              sim_uname(uptr), usec_delay, sim_uname(sim_wallclock_entry->unit));
                     pthread_mutex_unlock(&sim_timer_lock);
                     sim_os_ms_sleep(1);
                     pthread_mutex_lock(&sim_timer_lock);
                 }
             }
-            sim_wallclock_entry = uptr;
+            sim_wallclock_entry = event;
             pthread_cond_signal(&sim_timer_wake); /* wake the timer thread to deal with it */
             pthread_mutex_unlock(&sim_timer_lock);
             return SCPE_OK;
-        } else {                                  /* inserting at prvptr */
-            uptr->a_next = prvptr->a_next;
-            prvptr->a_next = uptr;
+        } else {                                  /* inserting after prvptr */
+            event->next = prvptr->next;
+            prvptr->next = event;
             pthread_mutex_unlock(&sim_timer_lock);
             return SCPE_OK;
         }
@@ -3032,7 +3059,7 @@ t_stat sim_clock_coschedule_tmr_abs(UNIT *uptr, int32_t tmr, int32_t ticks)
 /* Cancel a unit on the coschedule queue */
 static bool _sim_coschedule_cancel(UNIT *uptr)
 {
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     if (uptr->next) { /* On a queue? */
         int tmr;
         UNIT *nptr;
@@ -3105,7 +3132,7 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
     int32_t tmr;
     bool b_return = false;
 
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     pthread_mutex_lock(&sim_timer_lock);
     /* If this is a clock unit, we need to cancel both this and the related timer unit */
     for (tmr = 0; tmr <= SIM_NTIMERS; tmr++) {
@@ -3116,43 +3143,51 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
             break;
         }
     }
-    if (uptr->a_next) {
-        UNIT *cptr;
 
-        if (uptr == sim_wallclock_entry) { /* Pending on the queue? */
-            sim_wallclock_entry = NULL;
-            uptr->a_next = NULL;
-            sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Queue Pending Timer Event for %s\n", sim_uname(uptr));
-        } else {
-            if (uptr == sim_wallclock_queue) {
-                sim_wallclock_queue = uptr->a_next;
-                uptr->a_next = NULL;
-                sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Top Timer Event for %s\n", sim_uname(uptr));
-                pthread_cond_signal(&sim_timer_wake);
-            } else {
-                for (cptr = sim_wallclock_queue; (cptr != QUEUE_LIST_END); cptr = cptr->a_next) {
-                    if (cptr->a_next == (uptr)) {
-                        cptr->a_next = (uptr)->a_next;
-                        uptr->a_next = NULL;
-                        sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Timer Event for %s\n", sim_uname(uptr));
-                        break;
-                    }
+    /* Check if event is pending in staging area */
+    if (sim_wallclock_entry && sim_wallclock_entry->unit == uptr) {
+        sim_wallclock_event_t *event = sim_wallclock_entry;
+        sim_wallclock_entry = NULL;
+        free(event);
+        sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Queue Pending Timer Event for %s\n", sim_uname(uptr));
+        b_return = true;
+    } else {
+        /* Search the queue for this unit */
+        sim_wallclock_event_t *event, *prev;
+
+        for (event = sim_wallclock_queue, prev = NULL; event != NULL; prev = event, event = event->next) {
+            if (event->unit == uptr) {
+                /* Found it - remove from queue */
+                if (prev == NULL) {
+                    /* Removing head */
+                    sim_wallclock_queue = event->next;
+                    sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Top Timer Event for %s\n", sim_uname(uptr));
+                    pthread_cond_signal(&sim_timer_wake);
+                } else {
+                    /* Removing middle/tail */
+                    prev->next = event->next;
+                    sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Timer Event for %s\n", sim_uname(uptr));
                 }
+                free(event);
+                b_return = true;
+                break;
             }
-        }
-        if (uptr->a_next == NULL) { /* Was canceled? */
-            uptr->a_due_time = uptr->a_due_gtime = uptr->a_usec_delay = 0;
-            uptr->cancel = NULL;
-            uptr->a_is_active = NULL;
-            if (tmr <= SIM_NTIMERS) { /* Timer Unit? */
-                RTC *rtc = &rtcs[tmr];
-
-                rtc->clock_unit->cancel = NULL;
-                rtc->clock_unit->a_is_active = NULL;
-            }
-            b_return = true;
         }
     }
+
+    /* Clean up UNIT fields if canceled */
+    if (b_return) {
+        uptr->a_due_gtime = uptr->a_usec_delay = 0;
+        uptr->cancel = NULL;
+        uptr->a_is_active = NULL;
+        if (tmr <= SIM_NTIMERS) { /* Timer Unit? */
+            RTC *rtc = &rtcs[tmr];
+
+            rtc->clock_unit->cancel = NULL;
+            rtc->clock_unit->a_is_active = NULL;
+        }
+    }
+
     pthread_mutex_unlock(&sim_timer_lock);
     return b_return;
 }
@@ -3160,16 +3195,29 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
 static bool _sim_wallclock_is_active(const UNIT * const uptr)
 {
     int32_t tmr;
+    UNIT *check_unit = (UNIT *)uptr;  /* Cast away const for comparison */
 
-    if (uptr->a_next)
-        return true;
     /* If this is a clock unit, we need to examine the related timer unit instead */
     for (tmr = 0; tmr <= SIM_NTIMERS; tmr++) {
         RTC *rtc = &rtcs[tmr];
 
-        if (rtc->clock_unit == uptr)
-            return (sim_timer_units[tmr].a_next != NULL);
+        if (rtc->clock_unit == uptr) {
+            check_unit = &sim_timer_units[tmr];
+            break;
+        }
     }
+
+    /* Check staging area */
+    if (sim_wallclock_entry && sim_wallclock_entry->unit == check_unit)
+        return true;
+
+    /* Search the wallclock queue */
+    sim_wallclock_event_t *event;
+    for (event = sim_wallclock_queue; event != NULL; event = event->next) {
+        if (event->unit == check_unit)
+            return true;
+    }
+
     return false;
 }
 #endif /* defined(SIM_ASYNCH_CLOCKS) */
@@ -3184,7 +3232,8 @@ int32_t _sim_timer_activate_time(UNIT *uptr)
         double d_result;
 
         pthread_mutex_lock(&sim_timer_lock);
-        if (uptr == sim_wallclock_entry) {
+        /* Check staging area */
+        if (sim_wallclock_entry && sim_wallclock_entry->unit == uptr) {
             d_result = uptr->a_due_gtime - sim_gtime();
             if (d_result < 0.0)
                 d_result = 0.0;
@@ -3193,8 +3242,10 @@ int32_t _sim_timer_activate_time(UNIT *uptr)
             pthread_mutex_unlock(&sim_timer_lock);
             return ((int32_t)d_result) + 1;
         }
-        for (cptr = sim_wallclock_queue; cptr != QUEUE_LIST_END; cptr = cptr->a_next)
-            if (uptr == cptr) {
+        /* Search wallclock queue */
+        sim_wallclock_event_t *event;
+        for (event = sim_wallclock_queue; event != NULL; event = event->next) {
+            if (event->unit == uptr) {
                 d_result = uptr->a_due_gtime - sim_gtime();
                 if (d_result < 0.0)
                     d_result = 0.0;
@@ -3203,10 +3254,9 @@ int32_t _sim_timer_activate_time(UNIT *uptr)
                 pthread_mutex_unlock(&sim_timer_lock);
                 return ((int32_t)d_result) + 1;
             }
+        }
         pthread_mutex_unlock(&sim_timer_lock);
     }
-    if (uptr->a_next)
-        return uptr->a_event_time + 1;
 #endif /* defined(SIM_ASYNCH_CLOCKS) */
 
     if (uptr->cancel == &_sim_coschedule_cancel) {
@@ -3256,7 +3306,8 @@ double sim_timer_activate_time_usecs(UNIT *uptr)
 #if defined(SIM_ASYNCH_CLOCKS)
     if (uptr->a_is_active == &_sim_wallclock_is_active) {
         pthread_mutex_lock(&sim_timer_lock);
-        if (uptr == sim_wallclock_entry) {
+        /* Check staging area */
+        if (sim_wallclock_entry && sim_wallclock_entry->unit == uptr) {
             result = uptr->a_due_gtime - sim_gtime();
             if (result < 0.0)
                 result = 0.0;
@@ -3267,8 +3318,10 @@ double sim_timer_activate_time_usecs(UNIT *uptr)
                       sim_uname(uptr), result, sim_timer_inst_per_sec());
             return result;
         }
-        for (cptr = sim_wallclock_queue; cptr != QUEUE_LIST_END; cptr = cptr->a_next)
-            if (uptr == cptr) {
+        /* Search wallclock queue */
+        sim_wallclock_event_t *event;
+        for (event = sim_wallclock_queue; event != NULL; event = event->next) {
+            if (event->unit == uptr) {
                 result = uptr->a_due_gtime - sim_gtime();
                 if (result < 0.0)
                     result = 0.0;
@@ -3279,13 +3332,8 @@ double sim_timer_activate_time_usecs(UNIT *uptr)
                           sim_uname(uptr), result, sim_timer_inst_per_sec());
                 return result;
             }
+        }
         pthread_mutex_unlock(&sim_timer_lock);
-    }
-    if (uptr->a_next) {
-        result = uptr->usecs_remaining + (1000000.0 * (uptr->a_event_time / sim_timer_inst_per_sec())) + 1;
-        sim_debug(DBG_QUE, &sim_timer_dev, "sim_timer_activate_time_usecs(%s) asynch - %.0f usecs, inst_per_sec=%.0f\n",
-                  sim_uname(uptr), result, sim_timer_inst_per_sec());
-        return result;
     }
 #endif /* defined(SIM_ASYNCH_CLOCKS) */
 

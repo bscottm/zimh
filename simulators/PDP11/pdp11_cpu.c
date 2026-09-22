@@ -849,7 +849,7 @@ while (reason == 0)  {
         break;
         }
 
-    AIO_CHECK_EVENT;
+    aio_check_event();
     if (sim_interval <= 0) {                            /* intv cnt expired? */
         /* Make sure all intermediate state is visible in simh registers */
         PSW = get_PSW ();

@@ -3914,7 +3914,7 @@ sim_debug_unit (ctx->dbit, uptr, "sim_disk_reset(unit=%d)\n", (int)(uptr - ctx->
 
 _sim_disk_io_flush(uptr);
 is_simulator_thread_assert(uptr);
-AIO_UPDATE_QUEUE;
+sim_aio_update_queue();
 return SCPE_OK;
 }
 

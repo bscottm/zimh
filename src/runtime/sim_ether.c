@@ -362,7 +362,7 @@
 static int _eth_get_system_id(char *buf, size_t buf_size);
 t_stat eth_test_dev_command_format(void);
 
-#if defined(USE_NETWORK) || defined(USE_LOADED_WINPCAP)
+#if 0 && (defined(USE_NETWORK) || defined(USE_LOADED_WINPCAP))
 static const uchar_t framer_oui[3] = {0xaa, 0x00, 0x03};
 #endif
 

@@ -676,7 +676,7 @@ for ( ;; ) {
         }
     fault_PC = PC;
     recqptr = 0;                                        /* clr recovery q */
-    AIO_CHECK_EVENT;                                    /* queue async events */
+    aio_check_event();                                  /* queue async events */
     if (sim_interval <= 0) {                            /* chk clock queue */
         temp = sim_process_event ();
         if (temp)

@@ -127,8 +127,7 @@ typedef enum sim_memory_order_e {
 } sim_memory_order_t;
 
 #    else
-/* Windows Interlocked* don't use memory order parameters,
- * but we define the enum for API consistency */
+/* Windows Interlocked* doesn't use memory order parameters, but we define the enum for API consistency */
 typedef enum sim_memory_order_e {
     SIM_ATOMIC_RELAXED = 0,
     SIM_ATOMIC_ACQUIRE = 1,
