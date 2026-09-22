@@ -10,7 +10,7 @@
 #    include "sim_defs.h"
 #    include "sim_threads.h"
 #    include "sim_atomic.h"
-#include "sim_atomic_ptr.h"
+#    include "sim_atomic_ptr.h"
 
 #    define SIM_ASYNCH_CLOCKS 1
 
@@ -45,7 +45,7 @@ extern UNIT *volatile sim_asynch_queue;
 
 extern volatile bool sim_idle_wait;
 
-extern int32_t sim_asynch_check;
+extern sim_atomic_value_t sim_asynch_check;
 extern int32_t sim_asynch_latency;
 extern int32_t sim_asynch_inst_latency;
 
@@ -77,9 +77,12 @@ static inline bool is_simulator_thread() {
     return sim_thread_equal(sim_thread_self(), sim_asynch_main_threadid);
 }
 
-/* Does the unit have pending asynchronous I/O? */
+/* Does the unit have pending asynchronous I/O?
+ * NOTE: With the new MPSC queue, we can no longer check if a unit has pending
+ * async I/O by looking at intrusive list pointers. Units must provide an
+ * a_is_active callback if they need this functionality. */
 static inline bool is_unit_aio_active(const UNIT *unit) {
-    return ((unit->a_is_active != NULL ? unit->a_is_active(unit) : false) || unit->a_next != NULL);
+    return (unit->a_is_active != NULL ? unit->a_is_active(unit) : false);
 }
 
 /* Ensure that an AIO-related function is executing in the simulator's thread.
@@ -102,6 +105,15 @@ static inline void aio_global_unlock() {
     sim_mutex_unlock(&sim_asynch_lock);
 }
 
+static inline void aio_check_event() {
+    sim_atomic_type_t checkval = sim_atomic_dec(&sim_asynch_check);
+    if (0 > checkval) {
+        sim_atomic_put(&sim_asynch_check, sim_asynch_inst_latency);
+        sim_aio_update_queue();
+    }
+
+}
+
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
 // Extern functions:
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -115,9 +127,17 @@ extern void aio_cleanup();
  * Should be called from sim_process_event() after AIO_UPDATE_QUEUE */
 extern int sim_aio_process_heap(int32_t current_time);
 
+/* Notes on macro replacements:
+ *
+ * AIO_CHECK_EVENT -> aio_check_event()
+ * AIO_UPDATE_QUEUE -> sim_aio_update_queue()
+ * AIO_ACTIVATE -> sim_aio_activate()
+ * AIO_LOCK, AIO_ILOCK -> aio_global_lock()
+ * AIO_LOCK_UNLOCK, AIO_IUNLOCK -> aio_global_unlock()
+ */
 #    if defined(SIM_ASYNCH_MUX)
 #        define AIO_CANCEL(uptr)                                                                                       \
-            if (((uptr)->dynflags & UNIT_TM_POLL) && !((uptr)->next) && !((uptr)->a_next)) {                           \
+            if (((uptr)->dynflags & UNIT_TM_POLL) && !((uptr)->next)) {                                                \
                 (uptr)->a_polling_now = false;                                                                         \
                 sim_tmxr_poll_count -= (uptr)->a_poll_waiter_count;                                                    \
                 (uptr)->a_poll_waiter_count = 0;                                                                       \
@@ -128,74 +148,21 @@ extern int sim_aio_process_heap(int32_t current_time);
 #    endif /* !defined(AIO_CANCEL) */
 
 #    ifdef USE_AIO_INTRINSICS
-/* This approach uses intrinsics to manage access to the link list head     */
-/* sim_asynch_queue.  This implementation is a completely lock free design  */
-/* which avoids the potential ABA issues.                                   */
-#        ifdef _WIN32
-#        elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
-#            define InterlockedCompareExchangePointer(Destination, Exchange, Comparand)                                \
-                __sync_val_compare_and_swap(Destination, Comparand, Exchange)
-#        else
-#            error                                                                                                     \
-                "Implementation of function InterlockedCompareExchangePointer() is needed to build with USE_AIO_INTRINSICS"
-#        endif
+#        define AIO_ILOCK
+#        define AIO_IUNLOCK
+#    else
 #        define AIO_ILOCK aio_global_lock()
 #        define AIO_IUNLOCK aio_global_unlock()
-#        define AIO_QUEUE_VAL                                                                                          \
-            (UNIT *)(InterlockedCompareExchangePointer((void *volatile *)&sim_asynch_queue, (void *)sim_asynch_queue,  \
-                                                       NULL))
-#        define AIO_QUEUE_SET(newval, oldval)                                                                          \
-            (UNIT *)(InterlockedCompareExchangePointer((void *volatile *)&sim_asynch_queue, (void *)newval, oldval))
-#        define AIO_UPDATE_QUEUE sim_aio_update_queue()
-#        define AIO_ACTIVATE(caller, uptr, event_time)                                                                 \
-            if (!is_simulator_thread()) {                                      \
-                sim_aio_activate((ACTIVATE_API)caller, uptr, event_time);                                              \
-                return SCPE_OK;                                                                                        \
-            } else                                                                                                     \
-                (void)0
-#    else /* !USE_AIO_INTRINSICS */
-/* This approach uses a pthread mutex to manage access to the link list     */
-/* head sim_asynch_queue.  It will always work, but may be slower than the  */
-/* lock free approach when using USE_AIO_INTRINSICS                         */
-#        define AIO_ILOCK aio_global_lock()
-#        define AIO_IUNLOCK aio_global_unlock()
-#        define AIO_QUEUE_VAL sim_asynch_queue
-#        define AIO_QUEUE_SET(newval, oldval) ((sim_asynch_queue = newval), oldval)
-#        define AIO_UPDATE_QUEUE sim_aio_update_queue()
-#        define AIO_ACTIVATE(caller, uptr, event_time)                                                                 \
-            if (!is_simulator_thread()) {                                                                              \
-                sim_debug(SIM_DBG_AIO_QUEUE, sim_dflt_dev, "Queueing Asynch event for %s after %d instructions\n",     \
-                          sim_uname(uptr), event_time);                                                                \
-                aio_global_lock();                                                                                              \
-                if (uptr->a_next) { /* already queued? */                                                              \
-                    uptr->a_activate_call = sim_activate_abs;                                                          \
-                } else {                                                                                               \
-                    uptr->a_next = sim_asynch_queue;                                                                   \
-                    uptr->a_event_time = event_time;                                                                   \
-                    uptr->a_activate_call = (ACTIVATE_API) & caller;                                                   \
-                    sim_asynch_queue = uptr;                                                                           \
-                }                                                                                                      \
-                sim_asynch_check = 0;                                                                                  \
-                if (sim_idle_wait) {                                                                                   \
-                    if (sim_deb) { /* only while debug do lock/unlock overhead */                                      \
-                        aio_global_unlock();                                                                                    \
-                        sim_debug(TIMER_DBG_IDLE, &sim_timer_dev, "waking due to event on %s after %d instructions\n", \
-                                  sim_uname(uptr), event_time);                                                        \
-                        aio_global_lock();                                                                                      \
-                    }                                                                                                  \
-                    pthread_cond_signal(&sim_asynch_wake);                                                             \
-                }                                                                                                      \
-                aio_global_unlock();                                                                                            \
-                return SCPE_OK;                                                                                        \
-            } else                                                                                                     \
-                (void)0
 #    endif /* USE_AIO_INTRINSICS */
-#    define AIO_CHECK_EVENT                                                                                            \
-        if (0 > --sim_asynch_check) {                                                                                  \
-            AIO_UPDATE_QUEUE;                                                                                          \
-            sim_asynch_check = sim_asynch_inst_latency;                                                                \
-        } else                                                                                                         \
+
+/* AIO_ACTIVATE macro - calls sim_aio_activate() from async threads */
+#    define AIO_ACTIVATE(caller, uptr, event_time)                                                                 \
+        if (!is_simulator_thread()) {                                                                              \
+            sim_aio_activate((ACTIVATE_API)caller, uptr, event_time);                                              \
+            return SCPE_OK;                                                                                        \
+        } else                                                                                                     \
             (void)0
+
 #    define AIO_SET_INTERRUPT_LATENCY(instpersec)                                                                      \
         do {                                                                                                           \
             sim_asynch_inst_latency = (int32_t)((((double)(instpersec)) * sim_asynch_latency) / 1000000000);           \
