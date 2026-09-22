@@ -2671,7 +2671,7 @@ int scp_main(int argc, char *argv[])
     stdnul = fopen(NULL_DEVICE, "wb");
     sim_prog_name = argv[0]; /* save a pointer to the program name */
     if (argc > 1) {          /* Check for special argument to invoke register test */
-        if (sim_strcasecmp(argv[1], "RegisterSanityCheck") == 0) {
+        if (strcasecmp(argv[1], "RegisterSanityCheck") == 0) {
             register_check = true;
             --argc;          /* Remove special argument to avoid confusion later */
             for (i = 1; i < argc; i++)
@@ -4368,13 +4368,13 @@ t_stat sim_set_asynch(int32_t flag, const char *cptr)
     if (flag_bool == old_asynch_enabled)
         return SCPE_OK;
 
-    uint32_t i;
-    DEVICE *dptr;
-
     /* FIXME: Need API function to change Ethernet interface state, not fail like the
      * current code does. Actually, what needs to happen is an API function to change
      * a UNIT's AIO state. */
 #if 0
+    uint32_t i;
+    DEVICE *dptr;
+
     for (i = 1; (dptr = sim_devices[i]) != NULL; i++) { /* flush attached files */
         if ((DEV_TYPE(dptr) == DEV_ETHER) && (dptr->units->flags & UNIT_ATT))
             return sim_messagef(SCPE_ALATT, "Can't change asynch mode with %s device attached\n", dptr->name);
@@ -7613,7 +7613,7 @@ t_stat run_cmd(int32_t flag, const char *cptr)
             sim_switches = 0;
             GET_SWITCHES(cptr);
             if (((*cptr == '\'') || (*cptr == '"')) || /* Expect UNTIL condition */
-                (!sim_strncasecmp(cptr, "HALTAFTER=", 10))) {
+                (!strncasecmp(cptr, "HALTAFTER=", 10))) {
                 r = expect_cmd(1, cptr);
                 if (r != SCPE_OK)
                     return r;
