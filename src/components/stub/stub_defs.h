@@ -32,6 +32,7 @@
 #include <stdint.h>
 
 #include "sim_defs.h"
+#include "sim_aio.h"
 
 #define STOP_HALT       1
 #define STOP_IBKPT      2

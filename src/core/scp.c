@@ -2711,8 +2711,8 @@ int scp_main(int argc, char *argv[])
     sim_quiet = sim_switches & SWMASK('Q');      /* -q means quiet */
     sim_on_inherit = sim_switches & SWMASK('O'); /* -o means inherit on state */
 
-    sim_init_sock(); /* init socket capabilities */
     aio_init();      /* init Asynch I/O */
+    sim_init_sock(); /* init socket capabilities */
     sim_finit();     /* init fio package */
     sim_disk_init(); /* init disk package */
     sim_tape_init(); /* init tape package */
