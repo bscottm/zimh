@@ -944,11 +944,11 @@ static t_stat scp300f_dev_set_rom(UNIT* uptr, int32_t value, const char* cptr, v
     if (cptr == NULL)
         return SCPE_ARG;
 
-    if (!sim_strncasecmp(cptr, "TARBELL", 7)) {
+    if (!strncasecmp(cptr, "TARBELL", 7)) {
         sim_printf("Tarbell Double-Density ROM selected.\n");
         scp300f_info->rom_type = SCP300F_ROM_TARBELL;
     }
-    else if (!sim_strncasecmp(cptr, "CROMEMCO", 8)) {
+    else if (!strncasecmp(cptr, "CROMEMCO", 8)) {
         sim_printf("Cromemco 16FDC ROM selected.\n");
         scp300f_info->rom_type = SCP300F_ROM_CROMEMCO;
     }

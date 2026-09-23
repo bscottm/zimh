@@ -342,10 +342,10 @@ sim_load(FILE * fileref, const char *cptr, const char *fnam, int flag)
              for(addr = 0; *p >= '0' && *p <= '7'; p++)
                 addr = (addr << 3) + *p - '0';
              while(*p == ' ' || *p == '\t') p++;
-             if(sim_strncasecmp(p, "BCD", 3) == 0) {
+             if(strncasecmp(p, "BCD", 3) == 0) {
                  p += 4;
                  parse_sym(++p, addr, &cpu_unit, &M[addr], SWMASK('C'));
-             } else if (sim_strncasecmp(p, "OCT", 3) == 0) {
+             } else if (strncasecmp(p, "OCT", 3) == 0) {
                 p += 4;
                 for(; *p == ' ' || *p == '\t'; p++);
                 parse_sym(p, addr, &cpu_unit, &M[addr], 0);

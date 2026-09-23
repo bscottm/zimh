@@ -637,11 +637,11 @@ static t_stat load_icl(FILE *fileref)
         for (cp = &buf[0]; *cp == ' ' || *cp == '\t'; cp++);
         if (*cp++ != '*')
             continue;                       /* if line does not start with *, ignore */
-        if (sim_strncasecmp(cp, "END", 3) == 0) {
+        if (strncasecmp(cp, "END", 3) == 0) {
             return SCPE_OK;                 /* we are done */
         }
         else
-        if (sim_strncasecmp(cp, "DEV", 3) == 0) {
+        if (strncasecmp(cp, "DEV", 3) == 0) {
             /* process device entry */
             /*
             |----+----+----+----+----+----+----+----|
@@ -709,7 +709,7 @@ static t_stat load_icl(FILE *fileref)
             SPAD[sa] = intr;                /* put the device interrupt entry into the spad */
         }
         else
-        if (sim_strncasecmp(cp, "INT", 3) == 0) {
+        if (strncasecmp(cp, "INT", 3) == 0) {
             /* process interrupt entry */
             /*
             |----+----+----+----+----+----+----+----|
@@ -1453,11 +1453,11 @@ t_stat parse_sym (const char *cptr, t_addr addr, UNIT *uptr, t_value *val, int32
             /* check for memory reference instruction */
             if (i == TYPE_A || i == TYPE_E) {
                 /* test for base opcode name without B, H, W, D applied */
-                if (sim_strncasecmp(tab->name, gbuf, l - 1) == 0)
+                if (strncasecmp(tab->name, gbuf, l - 1) == 0)
                     break;                  /* found */
             } else
             /* test the full opcode name */
-            if (sim_strcasecmp(tab->name, gbuf) == 0)
+            if (strcasecmp(tab->name, gbuf) == 0)
                 break;                      /* found */
         }
         if (tab->name == NULL)              /* see if anything found */
@@ -1673,11 +1673,11 @@ t_stat parse_sym (const char *cptr, t_addr addr, UNIT *uptr, t_value *val, int32
             /* check for memory reference instruction */
             if (i == TYPE_A || i == TYPE_E) {
                 /* test for base opcode name without B, H, W, D applied */
-                if (sim_strncasecmp(tab->name, gbuf, l - 1) == 0)
+                if (strncasecmp(tab->name, gbuf, l - 1) == 0)
                     break;                  /* found */
             } else
             /* test the full opcode name */
-            if (sim_strcasecmp(tab->name, gbuf) == 0)
+            if (strcasecmp(tab->name, gbuf) == 0)
                 break;                      /* found */
         }
         if (tab->name == NULL)              /* see if anything found */
