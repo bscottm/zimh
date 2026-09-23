@@ -461,7 +461,7 @@ t_stat wd179x_attach(UNIT *uptr, const char *cptr)
         }
     } else {
         char* file_extension = strrchr(uptr->filename, '.');
-        if ((file_extension != NULL) && (!sim_strcasecmp(file_extension, ".IMD"))) {
+        if ((file_extension != NULL) && (!strcasecmp(file_extension, ".IMD"))) {
             /* create a disk image file in IMD format. */
             if (diskCreate(uptr->fileref, "$Id: wd179x.c 1999 2008-07-22 04:25:28Z hharte $") != SCPE_OK) {
                 sim_printf("WD179X: Failed to create IMD disk.\n");
