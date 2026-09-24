@@ -450,23 +450,14 @@ t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t
     initialize_poll_fds(slirp);
 
     if (do_redirects(slirp, slirp->rtcp)) {
-        sim_slirp_close(slirp);
-        slirp = NULL;
-    } else {
-        sim_slirp_show(slirp, stdout);
-        if (sim_log != NULL && sim_log != stdout) {
-            sim_slirp_show(slirp, sim_log);
-            if (sim_deb != sim_log)
-                sim_slirp_show(slirp, sim_deb);
-        }
+        goto err_cleanup;
     }
-
-    free(targs);
 
     eth_backend_t *backend;
 
     if ((backend = (eth_backend_t *) calloc(1, sizeof(eth_backend_t))) == NULL) {
         sim_slirp_close(slirp);
+        free(targs);
         return sim_messagef(SCPE_MEM, "Eth: Unable to allocate memory for SLiRP backend\n");
     }
 
@@ -474,6 +465,18 @@ t_stat sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t
     backend->state.slirp = slirp;
     backend->eth_funcs = &slirp_eth_funcs;
 
+    eth_dev->backend = backend;
+
+    sim_slirp_show(slirp, stdout);
+    if (sim_log != NULL && sim_log != stdout) {
+        sim_slirp_show(slirp, sim_log);
+    }
+
+    if (sim_deb != sim_log) {
+        sim_slirp_show(slirp, sim_deb);
+    }
+
+    free(targs);
     return SCPE_OK;
 
 err_cleanup:

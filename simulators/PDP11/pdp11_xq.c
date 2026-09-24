@@ -2624,7 +2624,8 @@ t_stat xq_wr(int32_t ldata, int32_t PA, int32_t access)
               xq->var->mode = XQ_T_DELQA_PLUS;
               xq->var->srr = XQ_SRR_TRBO;
               sim_cancel(xq->unit); /* Turn off receive processing until explicitly enabled */
-              eth_clr_async(xq->var->etherface);
+              /* Clear pending packets without stopping async threads */
+              eth_clear_queues(xq->var->etherface);
             }
             xq->var->iba = u32_put_high_u16(xq->var->iba, data);
           }
@@ -2716,7 +2717,7 @@ t_stat xq_reset(DEVICE* dptr)
   ethq_clear(&xq->var->ReadQ);
 
   /* reset ethernet interface */
-  if (xq->var->etherface) {
+  if (xq->var->etherface != NULL) {
     /* restore filter on ROM mac address */
     status = eth_filter (xq->var->etherface, 1, &xq->var->mac, 0, 0);
     xq_csr_set_clr(xq, XQ_CSR_OK, 0);
@@ -2724,8 +2725,9 @@ t_stat xq_reset(DEVICE* dptr)
     /* start service timer */
     sim_activate_after(&xq->unit[1], 250000);
 
-    /* stop the receiver */
-    eth_clr_async(xq->var->etherface);
+    /* Clear any pending packets from queues without stopping async threads.
+     * This discards stale packets while keeping the I/O threads running. */
+    eth_clear_queues(xq->var->etherface);
   }
 
   /* stop the receiver */
@@ -3001,7 +3003,15 @@ t_stat xq_attach(UNIT* uptr, const char* cptr)
     return status;
   }
   eth_set_throttle (xq->var->etherface, xq->var->throttle_time, xq->var->throttle_burst, xq->var->throttle_delay);
+
+  /* Note: xq->var->poll is a timing parameter for polling delay in synchronous mode,
+   * NOT a flag to disable async I/O. Thread startup is controlled by the global AIO
+   * preference (aio_enabled_and_active()). If poll=0, we want async mode with the
+   * specified latency. If poll!=0, we accept whatever mode eth_open() chose based on
+   * global AIO settings - threads may be running or not depending on system capability.
+   * The must_poll flag indicates whether we need to explicitly poll in sync mode. */
   if (xq->var->poll == 0) {
+    /* Explicitly request async mode with device-specific latency */
     status = eth_set_async(xq->var->etherface, xq->var->coalesce_latency_ticks);
     if (status != SCPE_OK) {
       eth_close(xq->var->etherface);
@@ -3012,7 +3022,10 @@ t_stat xq_attach(UNIT* uptr, const char* cptr)
     }
     xq->var->must_poll = 0;
   } else {
-    xq->var->must_poll = (SCPE_OK != eth_clr_async(xq->var->etherface));
+    /* Accept whatever mode eth_open() established based on global AIO preference.
+     * If async mode is active, packets arrive via callbacks. If sync mode is active
+     * (because AIO unavailable), we need to poll. The poll value controls timing. */
+    xq->var->must_poll = !xq->var->etherface->asynch_io;
   }
   if (SCPE_OK != eth_check_address_conflict (xq->var->etherface, xq->var->mac)) {
     eth_close(xq->var->etherface);

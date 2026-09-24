@@ -26,6 +26,12 @@ uint32_t *M;
 uint32_t R[16];
 uint32_t STK[5];
 uint32_t PSL;
+uint32_t P0BR;
+uint32_t P0LR;
+uint32_t P1BR;
+uint32_t P1LR;
+uint32_t SBR;
+uint32_t SLR;
 uint32_t SISR;
 uint32_t fault_PC;
 uint32_t p1;
@@ -38,8 +44,6 @@ int32_t in_ie;
 int32_t ibcnt;
 int32_t ppc;
 int32_t mapen;
-TLBENT stlb[VA_TBSIZE];
-TLBENT ptlb[VA_TBSIZE];
 DEVICE cpu_dev;
 UNIT cpu_unit;
 UNIT clk_unit;
@@ -54,17 +58,6 @@ DEVICE ve_dev;
 DEVICE lk_dev;
 DEVICE vs_dev;
 jmp_buf save_env;
-
-TLBENT fill(uint32_t va, int32_t lnt, int32_t acc, int32_t *stat)
-{
-    /* Stubbed MMU fill for uncalled memory access paths. */
-    (void)va;
-    (void)lnt;
-    (void)acc;
-    (void)stat;
-
-    return (TLBENT){0, 0};
-}
 
 int32_t ReadIO(uint32_t pa, int32_t lnt)
 {

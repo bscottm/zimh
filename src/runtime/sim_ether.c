@@ -360,7 +360,6 @@
 
 /* Internal routine - forward declaration */
 static int _eth_get_system_id(char *buf, size_t buf_size);
-t_stat eth_test_dev_command_format(void);
 
 #if 0 && (defined(USE_NETWORK) || defined(USE_LOADED_WINPCAP))
 static const uchar_t framer_oui[3] = {0xaa, 0x00, 0x03};
@@ -858,7 +857,6 @@ int pcap_sendpacket(pcap_t *handle, const u_char *msg, int len)
 }
 #    endif                                           /* !HAS_PCAP_SENDPACKET */
 
-#if defined(FIXME_MIGRATE_TESTING)
 /* Build a shell command using a literal snprintf format for compiler checks. */
 static void eth_format_dev_command(char *command, size_t command_size, const ETH_DEV_COMMAND *cmd, const char *devname)
 {
@@ -872,7 +870,6 @@ static void eth_format_dev_command(char *command, size_t command_size, const ETH
         devname_len = (int)(command_size - (2 + format_len));
     snprintf(command, command_size, "%s%.*s%s", cmd->prefix, devname_len, devname, cmd->suffix);
 }
-#endif
 
 #    if defined(__APPLE__)
 #        include <uuid/uuid.h>
@@ -1078,7 +1075,7 @@ static t_stat eth_check_address_conflict_ex(ETH_DEV *dev, const ETH_MAC mac, int
     uint32_t offset, function;
     char mac_string[ETH_MAC_STRING_SIZE];
 
-    if (reflections)
+    if (reflections != NULL)
         *reflections = 0;
     eth_mac_fmt(mac, mac_string, sizeof(mac_string));
     sim_debug(dev->dbit, dev->dptr, "Determining Address Conflict for MAC address: %s\n", mac_string);
@@ -1224,7 +1221,7 @@ t_stat eth_check_address_conflict(ETH_DEV *dev, const ETH_MAC mac)
     return eth_check_address_conflict_ex(dev, mac, NULL, false);
 }
 
-static t_stat eth_reflect(ETH_DEV *dev)
+t_stat eth_reflect(ETH_DEV *dev)
 {
     t_stat r;
 
@@ -1534,11 +1531,6 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count, const ETH_MAC addresses[
     else if (!addresses && (addr_count != 0))
         return SCPE_ARG;
 
-    /* test reflections.  This is done early in this routine since eth_reflect */
-    /* calls eth_filter recursively and thus changes the state of the device. */
-    if (dev->reflections == -1)
-        status = eth_reflect(dev);
-
     /* set new filter addresses */
     for (i = 0; i < addr_count; i++)
         eth_copy_mac(dev->filter_address[i], addresses[i]);
@@ -1792,51 +1784,6 @@ static t_stat eth_test_crc32(DEVICE *dptr)
     return (errors == 0) ? SCPE_OK : SCPE_IERR;
 }
 
-#if defined(FIXME_MIGRATE_TESTING)
-t_stat eth_test_dev_command_format(void)
-{
-    int errors = 0;
-    char command[256];
-    struct {
-        const ETH_DEV_COMMAND *cmd;
-        const char *devname;
-        const char *expected;
-    } tests[] = {
-        {&eth_turnon_commands[0], "en0", "ip link set dev en0 up 2>/dev/null"},
-        {&eth_turnon_commands[1], "en0", "ifconfig en0 up 2>/dev/null"},
-        {&eth_mac_lookup_commands[0], "en0", "ip link show en0 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
-        {&eth_mac_lookup_commands[1], "en0", "ip link show en0 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
-        {&eth_mac_lookup_commands[2], "en0", "ifconfig en0 2>/dev/null | grep " ETH_MAC_FIXED_PATTERN},
-        {&eth_mac_lookup_commands[3], "en0", "ifconfig en0 2>/dev/null | grep -E " ETH_MAC_EXTENDED_PATTERN},
-        {&eth_turnon_commands[1], "en%0x", "ifconfig en%0x up 2>/dev/null"},
-        {NULL, NULL, NULL}};
-    int i;
-
-    for (i = 0; tests[i].cmd; ++i) {
-        memset(command, 0, sizeof(command));
-        eth_format_dev_command(command, sizeof(command), tests[i].cmd, tests[i].devname);
-        if (strcmp(command, tests[i].expected) != 0) {
-            sim_printf("Eth: Expected command '%s', got '%s'\n", tests[i].expected, command);
-            ++errors;
-        }
-    }
-
-    memset(command, 0xA5, sizeof(command));
-    eth_format_dev_command(command, 48, &eth_turnon_commands[1], "abcdefghijklmnopqrstuvwxyz");
-    if (strcmp(command, "ifconfig abcdefghijklmnopqr up 2>/dev/null") != 0) {
-        sim_printf("Eth: Expected truncated command, got '%s'\n", command);
-        ++errors;
-    }
-    if ((uchar_t)command[48] != 0xA5) {
-        sim_printf("Eth: Command formatting wrote past the output buffer\n");
-        ++errors;
-    }
-
-    return (errors == 0) ? SCPE_OK : SCPE_IERR;
-}
-#endif
-
-#if defined(FIXME_MIGRATE_TESTING)
 static t_stat eth_test_bpf(DEVICE *dptr)
 {
     int errors = 0;
@@ -1973,7 +1920,6 @@ static t_stat eth_test_bpf(DEVICE *dptr)
 #    endif /* USE_BPF */
     return (errors == 0) ? SCPE_OK : SCPE_IERR;
 }
-#endif
 
 #    include <setjmp.h>
 
@@ -1989,10 +1935,7 @@ t_stat sim_ether_test(DEVICE *dptr, const char *cptr)
     sim_printf("Testing %s device sim_ether APIs\n", dptr->name);
 
     SIM_TEST(eth_test_crc32(dptr));
-#if defined(FIXME_MIGRATE_TESTING)
-    SIM_TEST(eth_test_dev_command_format());
     SIM_TEST(eth_test_bpf(dptr));
-#endif
     return stat;
 }
 

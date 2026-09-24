@@ -46,9 +46,9 @@ int eth_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
     }
 
     /* Dequeue from reader's queue. Lock-free dequeue - sim_tailq_t is SPSC safe */
-    if (status > 0 && !sim_tailq_empty(&dev->read_queue)) {
+    if (status >= 0 && !sim_tailq_empty(&dev->read_queue)) {
         struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
-        if (item) {
+        if (item != NULL) {
             const uint8_t *src_data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
             packet->len = item->packet.len;
             packet->crc_len = item->packet.crc_len;

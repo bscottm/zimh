@@ -251,7 +251,7 @@ sim_disk_clear_all_test_backends (void)
 #define AIO_CALLSETUP                                               \
 struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;   \
                                                                     \
-if ((!callback) || !ctx->asynch_io)
+if ((callback == NULL) || !ctx->asynch_io)
 
 #define AIO_CALL(op, _lba, _buf, _rsects, _sects,  _callback)   \
     if (ctx->asynch_io) {                                       \
@@ -264,7 +264,7 @@ if ((!callback) || !ctx->asynch_io)
       "sim_disk AIO_CALL(op=%d, unit=%d, lba=0x%X, sects=%d)\n",\
                 op, (int)(uptr - ctx->dptr->units), _lba, _sects);\
                                                                 \
-        if (ctx->callback)                                      \
+        if (ctx->callback != NULL)                              \
             abort(); /* horrible mistake, stop */               \
         ctx->io_dop = op;                                       \
         ctx->lba = _lba;                                        \

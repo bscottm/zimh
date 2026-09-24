@@ -12,12 +12,12 @@
 /* Function declarations for Ethernet emulation */
 
 /* Compute the Ethernet FCS (CRC-32/AUTODIN-II CRC) on data */
-uint32_t crc32_fast    (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_fast    (const void* data, size_t length, uint32_t previousCrc32);
 
 /* SIMH's API function to compute the Ethernet FCS. */
 inline uint32_t eth_crc32(uint32_t crc, const void *vbuf, size_t len)
 {
-    return crc32_fast(vbuf, len, crc);
+    return sbrumme_crc32_fast(vbuf, len, crc);
 }
 
 /* Return whether a non-BPF receive path should deliver a packet to dev. */
@@ -66,5 +66,14 @@ void eth_remove_from_open_list(ETH_DEV *dev);
 
 /* Get the underlying interface's MAC address */
 void eth_get_nic_hw_addr(ETH_DEV *dev, const ETH_LIST *eth_info, int set_on);
+
+/* Clear read and write queues without stopping threads.
+ *
+ * This is useful during device reset when you want to discard pending packets
+ * but keep threads running. In contrast, eth_clr_async() stops threads entirely.
+ *
+ * Thread-safe: Can be called while reader/writer threads are running.
+ */
+void eth_clear_queues(ETH_DEV *dev);
 
 #endif

@@ -238,6 +238,8 @@ struct eth_device {
 
 t_stat eth_open(ETH_DEV *dev, const char *name,                 /* open ethernet interface */
                 DEVICE *dptr, uint32_t dbit);
+t_stat eth_open_ex(ETH_DEV *dev, const char *name,              /* open with thread control */
+                   DEVICE *dptr, uint32_t dbit, bool start_threads);
 t_stat eth_close(ETH_DEV *dev);                                 /* close ethernet interface */
 t_stat eth_attach_help(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
 t_stat eth_write(ETH_DEV *dev, ETH_PACK *packet,                /* write synchronous packet; */
@@ -254,6 +256,7 @@ t_stat eth_filter_hash_ex(ETH_DEV *dev, int addr_count,         /* set filter on
                           const ETH_MAC addresses[], bool all_multicast, bool promiscuous, bool match_broadcast,
                           ETH_MULTIHASH *const hash);           /* AUTODIN II based 8 byte imperfect hash */
 t_stat eth_check_address_conflict(ETH_DEV *dev, const ETH_MAC address);
+t_stat eth_reflect(ETH_DEV *dev);                               /* measure backend reflections */
 const char *eth_version(void);                                  /* Version of dynamically loaded library (pcap) */
 void eth_setcrc(ETH_DEV *dev, int need_crc);                    /* enable/disable CRC mode */
 t_stat eth_set_async(ETH_DEV *dev, int latency);                /* set read behavior to be async */

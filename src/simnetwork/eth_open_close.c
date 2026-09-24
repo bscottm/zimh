@@ -11,7 +11,7 @@
 #include "simnetwork/eth_backends.h"
 
 // ETH_DEV initializer
-static void eth_initialize_device(ETH_DEV *dev);
+static t_stat eth_construct_device(ETH_DEV *dev);
 // Open an emulated Ethernet "port"
 static t_stat eth_open_port(const char *savname, size_t savname_size, ETH_DEV *eth_dev, DEVICE *dptr, uint32_t dbit);
 // Close the emulated Ethernet "port".
@@ -19,20 +19,34 @@ static t_stat eth_close_port(eth_backend_t *backend, SOCKET socket_fd);
 /* Return true when a name explicitly identifies an integrated pseudo backend. */
 static bool eth_is_explicit_pseudo_device(const char *name);
 
-/* Principal entry point for simulators to open an emulated Ethernet connection to a backend */
-t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
+/* Extended entry point for simulators to open an emulated Ethernet connection with control over thread startup.
+ *
+ * Parameters:
+ *   dev          - Ethernet device structure to initialize
+ *   name         - Device name to open (e.g., "eth0", "test:label", "tap:tap0")
+ *   dptr         - DEVICE pointer for debugging
+ *   dbit         - Debug bit mask
+ *   start_threads - If true, start reader/writer threads (if AIO available)
+ *                   If false, initialize structures but don't start threads
+ *
+ * Notes:
+ *   - Threads can only start if AIO is globally enabled (aio_enabled_and_active())
+ *   - If start_threads=true but AIO unavailable, falls back to sync mode
+ *   - Device can later call eth_set_async()/eth_clr_async() to toggle mode
+ */
+t_stat eth_open_ex(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit, bool start_threads)
 {
     t_stat r;
     int num;
     const char *openname = name;
-    const char *desc = NULL;
     const ETH_LIST *the_device = NULL;
     char namebuf[4 * CBUFSIZE];
     ETH_LIST devices[ETH_MAX_DEVICE];
     size_t n_devices;
-    
+
     /* initialize the ETH_DEV device structure. */
-    eth_initialize_device(dev);
+    if ((r = eth_construct_device(dev)) != SCPE_OK)
+        return r;
 
     /* Acquire the device list */
     if ((n_devices = eth_devices(ETH_MAX_DEVICE, devices, false)) == 0) {
@@ -62,23 +76,24 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
             the_device = devices + num;
             openname = the_device->name;
         }
-    } else if ((the_device = eth_getdevice_bydesc(devices, n_devices, name)) == NULL ||
-               (the_device = eth_getdevice_byname(devices, n_devices, name)) == NULL) {
-        return sim_messagef(SCPE_OPENERR, "%s does not match an Ethernet device name or description.\n", name);
     } else {
+        if ((the_device = eth_getdevice_bydesc(devices, n_devices, name)) == NULL ||
+            (the_device = eth_getdevice_byname(devices, n_devices, name)) == NULL) {
+            return sim_messagef(SCPE_OPENERR, "%s does not match an Ethernet device name or description.\n", name);
+        }
+
         openname = the_device->name;
     }
 
-    if (strchr(namebuf, ':')) {
+    if (strchr(openname, ':')) {
         // Ensure the prefix is lower case.
         strlcpy(namebuf, openname, sizeof(namebuf));
         namebuf[sizeof(namebuf) - 1] = '\0';
 
         size_t i;
-        
-        for (i = 0; namebuf[num] != ':' && namebuf[i] != '\0'; i++)
-            if (isupper(namebuf[num]))
-                namebuf[num] = tolower(namebuf[num]);
+
+        for (i = 0; namebuf[i] != ':' && namebuf[i] != '\0'; i++)
+            namebuf[i] = tolower(namebuf[i]);
 
         openname = namebuf;
     }
@@ -86,12 +101,12 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     if ((r = eth_open_port(openname, strlen(openname), dev, dptr, dbit)) != SCPE_OK)
         return r;
 
-    desc = strcmp(the_device->desc, "No description available") != 0 ? the_device->desc : NULL;
-
-    sim_messagef(SCPE_OK, "Eth: opened OS device %s%s%s\n", the_device->name, desc != NULL ? " - " : "", desc != NULL ? desc : "");
+    const char *desc = (the_device != NULL && strcmp(the_device->desc, "No description available") != 0) ? the_device->desc : NULL;
+    sim_messagef(SCPE_OK, "Eth: opened OS device %s%s%s\n", openname, desc != NULL ? " - " : "", desc != NULL ? desc : "");
 
     /* get the NIC's hardware MAC address */
-    eth_get_nic_hw_addr(dev, the_device, 1);
+    if (the_device != NULL)
+        eth_get_nic_hw_addr(dev, the_device, 1);
 
     /* save name of device */
     dev->name = strdup(openname);
@@ -101,20 +116,30 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
     dev->dbit = dbit;
 
     /* Test backend doesn't generate self-reflections */
-    if (dev->backend->eth_api == ETH_API_TEST)
+    if (dev->backend->eth_api == ETH_API_TEST) {
         dev->reflections = 0;
-
-    /* Always initialize threading structures if platform supports it */
-    r = eth_init_threading_structures(dev);
-    if (r != SCPE_OK) {
-        dev->backend->eth_funcs->close(dev->backend);
-        free(dev->name);
-        eth_initialize_device(dev);
-        return r;
+    } else {
+        /* Measure reflections for real backends BEFORE starting async threads.
+         * This ensures eth_reflect() runs synchronously using _eth_write/eth_read directly. */
+        if ((r = eth_reflect(dev)) != SCPE_OK)
+            goto cleanup_after_open;
     }
 
-    /* Start threads ONLY if sim_asynch_enabled is true */
-    if (aio_enabled_and_active()) {
+    /* Always initialize threading structures if platform supports it */
+    if ((r = eth_init_threading_structures(dev)) != SCPE_OK)
+        goto cleanup_after_open;
+
+    /*
+     * Install a total filter on a newly opened interface and let the device
+     * simulator install an appropriate filter that reflects the device's
+     * configuration. This must happen BEFORE starting async threads to ensure
+     * proper BPF filter setup.
+     */
+    if ((r = eth_filter_hash(dev, 0, NULL, false, false, NULL)) != SCPE_OK)
+        goto cleanup_after_open;
+
+    /* Start threads based on start_threads parameter AND global AIO availability */
+    if (start_threads && aio_enabled_and_active()) {
         r = eth_start_threads(dev);
         if (r != SCPE_OK) {
             sim_printf("Eth: Warning - failed to start async threads, "
@@ -125,25 +150,40 @@ t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
             dev->asynch_io_latency = 1000; /* Default 1ms */
         }
     } else {
-        /* AIO isn't available. */
+        /* AIO isn't available or threads not requested. */
         dev->asynch_io = false;
     }
 
     eth_add_to_open_list(dev);
-    /*
-     * install a total filter on a newly opened interface and let the device
-     * simulator install an appropriate filter that reflects the device's
-     * configuration.
-     */
-    return eth_filter_hash(dev, 0, NULL, false, false, NULL);
+    return SCPE_OK;
+
+cleanup_after_open:
+    eth_close(dev);
+    return r;
+}
+
+/* Standard entry point - starts threads based on global AIO preference.
+ * This is the most common case: honor the system-wide async I/O setting.
+ */
+t_stat eth_open(ETH_DEV *dev, const char *name, DEVICE *dptr, uint32_t dbit)
+{
+    return eth_open_ex(dev, name, dptr, dbit, aio_enabled_and_active());
 }
 
 /* Initialize an ETH_DEV device. */
-void eth_initialize_device(ETH_DEV *dev)
+t_stat eth_construct_device(ETH_DEV *dev)
 {
     /* set all members to NULL OR 0 */
     memset(dev, 0, sizeof(ETH_DEV));
     dev->reflections = -1; /* not established yet */
+
+    t_stat r;
+
+    if ((r = eth_init_threading_structures(dev)) != SCPE_OK) {
+        return sim_messagef(r, "Eth: Failed to initialize threading structures\n");
+    }
+
+    return SCPE_OK;
 }
 
 //=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
@@ -228,10 +268,13 @@ t_stat eth_open_port(const char *savname, size_t savname_size, ETH_DEV *eth_dev,
 bool eth_is_explicit_pseudo_device(const char *name)
 {
     static const char *prefixes[] = {"test:", "tap:", "vde:", "nat:", "udp:"};
+    const size_t n_prefixes = sizeof(prefixes) / sizeof(prefixes[0]);
+    size_t i;
 
-    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i)
+    for (i = 0; i < n_prefixes; ++i) {
         if (strncasecmp(name, prefixes[i], strlen(prefixes[i])) == 0)
             return true;
+    }
 
     return false;
 }
@@ -245,7 +288,7 @@ t_stat eth_close(ETH_DEV *dev)
         return SCPE_OK;
 
     /* close the device */
-    dev->have_host_nic_phy_addr = 0;
+    dev->have_host_nic_phy_addr = false;
 
     /* Stop threads if running */
     if (dev->threads_running)
@@ -261,7 +304,7 @@ t_stat eth_close(ETH_DEV *dev)
     /* Clean up device resources */
     free(dev->name);
     free(dev->bpf_filter);
-    eth_initialize_device(dev);
+    memset(dev, 0, sizeof(ETH_DEV));
     eth_remove_from_open_list(dev);
 
     return SCPE_OK;

@@ -96,14 +96,14 @@ THREAD_FUNC_DEFN(_eth_reader)
     /* Starting up... */
     sim_atomic_put(&dev->reader_status, ETH_READER_INIT);
 
-    int start_status = eth_reader_init(dev);
+    eth_reader_status_t thr_status = eth_reader_init(dev);
 
-    if (start_status != ETH_READER_RUNNING) {
+    if (thr_status != ETH_READER_RUNNING) {
         goto error_out;
     }
 
-    sim_atomic_put(&dev->reader_status, start_status);
-    while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
+    sim_atomic_put(&dev->reader_status, thr_status);
+    while ((thr_status = (eth_reader_status_t) sim_atomic_get(&dev->reader_status)) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
         eth_backend_t *backend = dev->backend;
         int status = backend->eth_funcs->packet_wait(backend, dev, ETH_READER_POLL_TMO);
@@ -119,15 +119,18 @@ THREAD_FUNC_DEFN(_eth_reader)
          * Note: libslirp is notorious for putting packets on the read queue even if no packets are
          * actually read from an active socket. Hence the "status >= 0" check, which will succeed and the
          * check for a non-empty read queue. */
-        if (status >= 0 && dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
+        if (status >= 0 && !sim_tailq_empty(&dev->read_queue)) {
             sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
             sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
-        } else if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
-            /* Handle select errors */
-            goto error_out;
+        } else if (status < 0) {
+            if (errno != EINTR && !eth_reader_error_handler(dev)) {
+                /* Handle select errors */
+                goto error_out;
+            }
         }
     }
 
+    sim_messagef(SCPE_OK, "%s: Reader thread shutting down, thr_status %d\n", sim_dname(dev->dptr), thr_status);
     sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
     return THREAD_FUNC_RETURN(0);
 
@@ -298,16 +301,14 @@ t_stat eth_init_threading_structures(ETH_DEV *dev)
 {
     t_stat r;
 
-    if (!dev || dev->threading_initialized)
+    if (dev == NULL || dev->threading_initialized)
         return SCPE_OK;
 
     /* Initialize FIFO queues */
-    r = eth_tailq_init(&dev->read_queue, 200);
-    if (r != SCPE_OK)
+    if ((r = eth_tailq_init(&dev->read_queue, 200)) != SCPE_OK)
         return r;
 
-    r = eth_tailq_init(&dev->write_requests, 200);
-    if (r != SCPE_OK) {
+    if ((r = eth_tailq_init(&dev->write_requests, 200)) != SCPE_OK) {
         eth_tailq_destroy(&dev->read_queue);
         return r;
     }
@@ -319,6 +320,10 @@ t_stat eth_init_threading_structures(ETH_DEV *dev)
     sim_mutex_init(&dev->startup_lock);
     sim_cond_init(&dev->writer_cond);
     sim_cond_init(&dev->startup_cond);
+
+    /* Atomics: */
+    sim_atomic_init(&dev->reader_status);
+    sim_atomic_init(&dev->writer_status);
 
     dev->threading_initialized = true;
     dev->threads_running = false;
@@ -386,7 +391,7 @@ t_stat eth_start_threads(ETH_DEV *dev)
     int create_status;
     const char *thread_name = "reader";
 
-    if (!dev)
+    if (dev == NULL)
         return SCPE_ARG;
 
     if (dev->threads_running)
@@ -397,22 +402,47 @@ t_stat eth_start_threads(ETH_DEV *dev)
 
     dev->threads_ready = 0;
 
+    sim_mutex_lock(&dev->startup_lock);
     create_status = sim_thread_create(&dev->reader_thread, _eth_reader, (void *)dev);
     if (create_status == 0) {
+        sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
+
+        /* Don't unlock the startup lock... we still hold it after the condition wait. */
         thread_name = "writer";
         create_status = sim_thread_create(&dev->writer_thread, _eth_writer, (void *)dev);
         if (create_status == 0) {
-            sim_mutex_lock(&dev->startup_lock);
-            while (dev->threads_ready < 2) {
-                sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
-            }
+            sim_cond_wait(&dev->startup_cond, &dev->startup_lock);
             sim_mutex_unlock(&dev->startup_lock);
-
             dev->threads_running = true;
             return SCPE_OK;
         }
     }
 
+    /* Bad juju. */
+    eth_stop_threads(dev);
     return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
                        thread_name, strerror(create_status));
+}
+
+/* Clear read and write queues without stopping threads.
+ *
+ * This is useful during device reset when you want to discard pending packets
+ * but keep threads running. In contrast, eth_clr_async() stops threads entirely.
+ *
+ * Thread-safe: Can be called while reader/writer threads are running.
+ */
+void eth_clear_queues(ETH_DEV *dev)
+{
+    if (dev == NULL)
+        return;
+
+    /* Clear read queue (lock-free SPSC queue - single producer, single consumer) */
+    eth_tailq_clear(&dev->read_queue);
+
+    /* Clear write queue - need mutex since multiple producers possible */
+    if (dev->threading_initialized) {
+        sim_mutex_lock(&dev->writer_lock);
+        eth_tailq_clear(&dev->write_requests);
+        sim_mutex_unlock(&dev->writer_lock);
+    }
 }

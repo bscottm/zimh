@@ -8,7 +8,7 @@
 #include "test_cmocka.h"
 
 #include "sim_defs.h"
-#include "sim_ether_test.h"
+#include "simnetwork/eth_test/sim_ether_test.h"
 #include "vax_defs.h"
 #include "vax_xs.h"
 

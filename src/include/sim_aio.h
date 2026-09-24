@@ -56,12 +56,12 @@ static inline bool aio_enabled_and_active() {
 }
 
 /* Get the simulator's asynchronous preference */
-static inline const bool aio_async_preference() {
+static inline bool aio_async_preference() {
     return sim_async_preference;
 }
 
 /* Get the async enabled flag. */
-static inline const bool aio_async_enabled() {
+static inline bool aio_async_enabled() {
     return sim_asynch_enabled;
 }
 

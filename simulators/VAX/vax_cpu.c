@@ -187,8 +187,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "sim_types.h"
-#include "xalloc.h"
 #include "vax_defs.h"
 #include "vax_cis.h"
 #include "vax_cmode.h"

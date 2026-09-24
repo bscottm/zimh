@@ -10,6 +10,9 @@
 // see http://create.stephan-brumme.com/disclaimer.html
 //
 
+// NOTE: These functions are prefixed with "sbrumme_" to avoid name collisions with other CRC32
+// implementations, notably the one in libz.
+
 // if running on an embedded system, you might consider shrinking the
 // big Crc32Lookup table by undefining these lines:
 #define CRC32_USE_LOOKUP_TABLE_BYTE
@@ -33,41 +36,41 @@
 
 // crc32_fast selects the fastest algorithm depending on flags (CRC32_USE_LOOKUP_...)
 /// compute CRC32 using the fastest algorithm for large datasets on modern CPUs
-uint32_t crc32_fast    (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_fast    (const void* data, size_t length, uint32_t previousCrc32);
 
 /// merge two CRC32 such that result = crc32(dataB, lengthB, crc32(dataA, lengthA))
-uint32_t crc32_combine (uint32_t crcA, uint32_t crcB, size_t lengthB);
+uint32_t sbrumme_crc32_combine (uint32_t crcA, uint32_t crcB, size_t lengthB);
 
 /// compute CRC32 (bitwise algorithm)
-uint32_t crc32_bitwise (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_bitwise (const void* data, size_t length, uint32_t previousCrc32);
 /// compute CRC32 (half-byte algoritm)
-uint32_t crc32_halfbyte(const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_halfbyte(const void* data, size_t length, uint32_t previousCrc32);
 
 #ifdef CRC32_USE_LOOKUP_TABLE_BYTE
 /// compute CRC32 (standard algorithm)
-uint32_t crc32_1byte   (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_1byte   (const void* data, size_t length, uint32_t previousCrc32);
 #endif
 
 /// compute CRC32 (byte algorithm) without lookup tables
-uint32_t crc32_1byte_tableless (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_1byte_tableless (const void* data, size_t length, uint32_t previousCrc32);
 /// compute CRC32 (byte algorithm) without lookup tables
-uint32_t crc32_1byte_tableless2(const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_1byte_tableless2(const void* data, size_t length, uint32_t previousCrc32);
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_4
 /// compute CRC32 (Slicing-by-4 algorithm)
-uint32_t crc32_4bytes  (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_4bytes  (const void* data, size_t length, uint32_t previousCrc32);
 #endif
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_8
 /// compute CRC32 (Slicing-by-8 algorithm)
-uint32_t crc32_8bytes  (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_8bytes  (const void* data, size_t length, uint32_t previousCrc32);
 /// compute CRC32 (Slicing-by-8 algorithm), unroll inner loop 4 times
-uint32_t crc32_4x8bytes(const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_4x8bytes(const void* data, size_t length, uint32_t previousCrc32);
 #endif
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_16
 /// compute CRC32 (Slicing-by-16 algorithm)
-uint32_t crc32_16bytes (const void* data, size_t length, uint32_t previousCrc32);
+uint32_t sbrumme_crc32_16bytes (const void* data, size_t length, uint32_t previousCrc32);
 #endif
 
 // //////////////////////////////////////////////////////////
@@ -145,7 +148,7 @@ extern const uint32_t Crc32Lookup[MaxSlice][256]; // extern is needed to keep co
 
 
 /// compute CRC32 (bitwise algorithm)
-uint32_t crc32_bitwise(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_bitwise(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint8_t* current = (const uint8_t*) data;
@@ -172,7 +175,7 @@ uint32_t crc32_bitwise(const void* data, size_t length, uint32_t previousCrc32)
 
 
 /// compute CRC32 (half-byte algoritm)
-uint32_t crc32_halfbyte(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_halfbyte(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint8_t* current = (const uint8_t*) data;
@@ -197,7 +200,7 @@ uint32_t crc32_halfbyte(const void* data, size_t length, uint32_t previousCrc32)
 
 #ifdef CRC32_USE_LOOKUP_TABLE_BYTE
 /// compute CRC32 (standard algorithm)
-uint32_t crc32_1byte(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_1byte(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint8_t* current = (const uint8_t*) data;
@@ -211,7 +214,7 @@ uint32_t crc32_1byte(const void* data, size_t length, uint32_t previousCrc32)
 
 
 /// compute CRC32 (byte algorithm) without lookup tables
-uint32_t crc32_1byte_tableless(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_1byte_tableless(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint8_t* current = (const uint8_t*) data;
@@ -292,7 +295,7 @@ uint32_t crc32_1byte_tableless2(const void* data, size_t length, uint32_t previo
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_4
 /// compute CRC32 (Slicing-by-4 algorithm)
-uint32_t crc32_4bytes(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_4bytes(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t  crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint32_t* current = (const uint32_t*) data;
@@ -329,7 +332,7 @@ uint32_t crc32_4bytes(const void* data, size_t length, uint32_t previousCrc32)
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_8
 /// compute CRC32 (Slicing-by-8 algorithm)
-uint32_t crc32_8bytes(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_8bytes(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint32_t* current = (const uint32_t*) data;
@@ -374,7 +377,7 @@ uint32_t crc32_8bytes(const void* data, size_t length, uint32_t previousCrc32)
 
 
 /// compute CRC32 (Slicing-by-8 algorithm), unroll inner loop 4 times
-uint32_t crc32_4x8bytes(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_4x8bytes(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint32_t* current = (const uint32_t*) data;
@@ -429,7 +432,7 @@ uint32_t crc32_4x8bytes(const void* data, size_t length, uint32_t previousCrc32)
 
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_16
 /// compute CRC32 (Slicing-by-16 algorithm)
-uint32_t crc32_16bytes(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_16bytes(const void* data, size_t length, uint32_t previousCrc32)
 {
   uint32_t crc = ~previousCrc32; // same as previousCrc32 ^ 0xFFFFFFFF
   const uint32_t* current = (const uint32_t*) data;
@@ -500,24 +503,24 @@ uint32_t crc32_16bytes(const void* data, size_t length, uint32_t previousCrc32)
 #endif // CRC32_USE_LOOKUP_TABLE_SLICING_BY_16
 
 /// compute CRC32 using the fastest algorithm for large datasets on modern CPUs
-uint32_t crc32_fast(const void* data, size_t length, uint32_t previousCrc32)
+uint32_t sbrumme_crc32_fast(const void* data, size_t length, uint32_t previousCrc32)
 {
 #ifdef CRC32_USE_LOOKUP_TABLE_SLICING_BY_16
-  return crc32_16bytes (data, length, previousCrc32);
+  return sbrumme_crc32_16bytes (data, length, previousCrc32);
 #elif defined(CRC32_USE_LOOKUP_TABLE_SLICING_BY_8)
-  return crc32_8bytes  (data, length, previousCrc32);
+  return sbrumme_crc32_8bytes  (data, length, previousCrc32);
 #elif defined(CRC32_USE_LOOKUP_TABLE_SLICING_BY_4)
-  return crc32_4bytes  (data, length, previousCrc32);
+  return sbrumme_crc32_4bytes  (data, length, previousCrc32);
 #elif defined(CRC32_USE_LOOKUP_TABLE_BYTE)
-  return crc32_1byte   (data, length, previousCrc32);
+  return sbrumme_crc32_1byte   (data, length, previousCrc32);
 #else
-  return crc32_halfbyte(data, length, previousCrc32);
+  return sbrumme_crc32_halfbyte(data, length, previousCrc32);
 #endif
 }
 
 
 /// merge two CRC32 such that result = crc32(dataB, lengthB, crc32(dataA, lengthA))
-uint32_t crc32_combine(uint32_t crcA, uint32_t crcB, size_t lengthB)
+uint32_t sbrumme_crc32_combine(uint32_t crcA, uint32_t crcB, size_t lengthB)
 {
   // based on Mark Adler's crc_combine from
   // https://github.com/madler/pigz/blob/master/pigz.c
@@ -553,8 +556,8 @@ uint32_t crc32_combine(uint32_t crcA, uint32_t crcB, size_t lengthB)
   /// CRC32 => 32 bits
   const uint32_t CrcBits = 32;
 
-  uint32_t odd [CrcBits]; // odd-power-of-two  zeros operator
-  uint32_t even[CrcBits]; // even-power-of-two zeros operator
+  uint32_t odd [32 /* CrcBits */]; // odd-power-of-two  zeros operator
+  uint32_t even[32 /* CrcBits */]; // even-power-of-two zeros operator
 
   // put operator for one zero bit in odd
   odd[0] = Polynomial;    // CRC-32 polynomial
