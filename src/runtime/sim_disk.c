@@ -152,7 +152,7 @@ struct disk_context {
 #if defined _WIN32
     HANDLE              disk_handle;        /* OS specific Raw device handle */
 #endif
-    int                 asynch_io;          /* Asynchronous Interrupt scheduling enabled */
+    bool                asynch_io;          /* Asynchronous Interrupt scheduling enabled */
     int                 asynch_io_latency;  /* instructions to delay pending interrupt */
     sim_mutex_t         lock;
     sim_thread_t        io_thread;          /* I/O Thread Id */
@@ -675,44 +675,42 @@ return filesystem_size;
 
 /* Enable asynchronous operation */
 
-t_stat sim_disk_set_async (UNIT *uptr, int latency)
+t_stat sim_disk_set_async(UNIT *uptr, int latency)
 {
-struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
-int create_status;
+    struct disk_context *ctx = (struct disk_context *)uptr->disk_ctx;
+    int create_status;
 
-sim_debug_unit (ctx->dbit, uptr, "sim_disk_set_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
+    sim_debug_unit(ctx->dbit, uptr, "sim_disk_set_async(unit=%d)\n", (int)(uptr - ctx->dptr->units));
 
-ctx->asynch_io = aio_enabled_and_active();
-ctx->asynch_io_latency = latency;
-if (ctx->asynch_io) {
-    sim_mutex_init (&ctx->io_lock);
-    sim_cond_init (&ctx->io_cond);
-    sim_cond_init (&ctx->io_done);
-    sim_cond_init (&ctx->startup_cond);
-    sim_mutex_lock (&ctx->io_lock);
-    ctx->io_thread_running = false;
-    create_status = sim_thread_create (&ctx->io_thread, _disk_io, uptr);
-    if (create_status != 0) {
-        sim_mutex_unlock (&ctx->io_lock);
-        sim_cond_destroy (&ctx->startup_cond);
-        sim_cond_destroy (&ctx->io_done);
-        sim_cond_destroy (&ctx->io_cond);
-        sim_mutex_destroy (&ctx->io_lock);
-        ctx->asynch_io = false;
-        return sim_messagef (
-            SCPE_IOERR,
-            "%s: can't start asynchronous disk I/O thread: %s\n",
-            sim_uname (uptr), strerror (create_status));
+    uptr->a_check_completion = _disk_completion_dispatch;
+    uptr->a_is_active = _disk_is_active;
+    uptr->cancel = _disk_cancel;
+
+    ctx->asynch_io_latency = latency;
+    if ((ctx->asynch_io = aio_enabled_and_active()) == true && !ctx->io_thread_running) {
+        sim_mutex_init(&ctx->io_lock);
+        sim_cond_init(&ctx->io_cond);
+        sim_cond_init(&ctx->io_done);
+        sim_cond_init(&ctx->startup_cond);
+        sim_mutex_lock(&ctx->io_lock);
+        ctx->io_thread_running = false;
+        create_status = sim_thread_create(&ctx->io_thread, _disk_io, uptr);
+        if (create_status != 0) {
+            sim_mutex_unlock(&ctx->io_lock);
+            sim_cond_destroy(&ctx->startup_cond);
+            sim_cond_destroy(&ctx->io_done);
+            sim_cond_destroy(&ctx->io_cond);
+            sim_mutex_destroy(&ctx->io_lock);
+            ctx->asynch_io = false;
+            return sim_messagef(SCPE_IOERR, "%s: can't start asynchronous disk I/O thread: %s\n", sim_uname(uptr),
+                                strerror(create_status));
+        }
+        while (!ctx->io_thread_running) /* Wait for thread to stabilize */
+            sim_cond_wait(&ctx->startup_cond, &ctx->io_lock);
+        sim_mutex_unlock(&ctx->io_lock);
+        sim_cond_destroy(&ctx->startup_cond);
     }
-    while (!ctx->io_thread_running)            /* Wait for thread to stabilize */
-        sim_cond_wait (&ctx->startup_cond, &ctx->io_lock);
-    sim_mutex_unlock (&ctx->io_lock);
-    sim_cond_destroy (&ctx->startup_cond);
-    }
-uptr->a_check_completion = _disk_completion_dispatch;
-uptr->a_is_active = _disk_is_active;
-uptr->cancel = _disk_cancel;
-return SCPE_OK;
+    return SCPE_OK;
 }
 
 /* Disable asynchronous operation */
@@ -728,7 +726,7 @@ sim_debug_unit (ctx->dbit, uptr, "sim_disk_clr_async(unit=%d)\n", (int)(uptr - c
 
 if (ctx->asynch_io) {
     sim_mutex_lock (&ctx->io_lock);
-    ctx->asynch_io = 0;
+    ctx->asynch_io = false;
     sim_cond_signal (&ctx->io_cond);
     sim_mutex_unlock (&ctx->io_lock);
     sim_thread_join (ctx->io_thread, NULL);
