@@ -494,10 +494,11 @@ static DIB cr_dib = { IOBA_AUTO, IOLN_CR, &cr_rd, &cr_wr,
         1, DFLT_IVCL, VEC_AUTO, { cr_intac } };
 
 static UNIT cr_unit = {
-    UDATA (&cr_svc,
+    UDATA_WAIT (&cr_svc,
       UNIT_ATTABLE+UNIT_SEQ+UNIT_ROABLE+UNIT_DISABLE+
-      DFLT_TYPE+UNIT_AUTOEOF+UNIT_RDCHECK+DFLT_AIECO, 0),
-        (60 * 1000000) / (DFLT_CPM * 80) };
+      DFLT_TYPE+UNIT_AUTOEOF+UNIT_RDCHECK+DFLT_AIECO, 0,
+        (60 * 1000000) / (DFLT_CPM * 80) )
+};
 
 static const REG cr_reg[] = {
     { GRDATAD (BUF,    cr_unit.buf, DEV_RDX,  8, 0, "ASCII value of last column processed") },

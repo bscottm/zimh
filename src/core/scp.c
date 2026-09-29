@@ -5052,10 +5052,10 @@ t_stat show_unit(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag)
 const char *sprint_capac(DEVICE *dptr, UNIT *uptr)
 {
     static char capac_buf[MAX_WIDTH + 12];
-    t_offset kval = (uptr->flags & UNIT_BINK) ? 1024 : 1000;
-    t_offset mval;
+    sim_off_t kval = (uptr->flags & UNIT_BINK) ? 1024 : 1000;
+    sim_off_t mval;
     double remfrac;
-    t_offset psize = (t_offset)uptr->capac;
+    sim_off_t psize = (sim_off_t)uptr->capac;
     const char *scale, *width;
 
     if (sim_switches & SWMASK('B'))
@@ -5922,16 +5922,16 @@ t_stat pwd_cmd(int32_t flg, const char *cptr)
 
 typedef struct {
     char LastDir[PATH_MAX + 1];
-    t_offset TotalBytes;
+    sim_off_t TotalBytes;
     int TotalDirs;
     int TotalFiles;
     int DirChanges;
     int DirCount;
     int FileCount;
-    t_offset ByteCount;
+    sim_off_t ByteCount;
 } DIR_CTX;
 
-static void sim_dir_entry(const char *directory, const char *filename, t_offset FileSize, const struct stat *filestat,
+static void sim_dir_entry(const char *directory, const char *filename, sim_off_t FileSize, const struct stat *filestat,
                           void *context)
 {
     DIR_CTX *ctx = (DIR_CTX *)context;
@@ -6031,7 +6031,7 @@ typedef struct {
     t_stat stat;
 } TYPE_CTX;
 
-static void sim_type_entry(const char *directory, const char *filename, t_offset FileSize, const struct stat *filestat,
+static void sim_type_entry(const char *directory, const char *filename, sim_off_t FileSize, const struct stat *filestat,
                            void *context)
 {
     /* Generic directory scan callback signature.
@@ -6124,7 +6124,7 @@ typedef struct {
     t_stat stat;
 } DEL_CTX;
 
-static void sim_delete_entry(const char *directory, const char *filename, t_offset FileSize,
+static void sim_delete_entry(const char *directory, const char *filename, sim_off_t FileSize,
                              const struct stat *filestat, void *context)
 {
     /* Generic directory scan callback signature.
@@ -6168,7 +6168,7 @@ typedef struct {
     char destname[CBUFSIZE];
 } COPY_CTX;
 
-static void sim_copy_entry(const char *directory, const char *filename, t_offset FileSize, const struct stat *filestat,
+static void sim_copy_entry(const char *directory, const char *filename, sim_off_t FileSize, const struct stat *filestat,
                            void *context)
 {
     /* Generic directory scan callback signature.
@@ -7144,7 +7144,7 @@ t_stat sim_save(FILE *sfile)
     }
     fputc('\n', sfile);                                /* end devices */
     if (!ferror(sfile)) {
-        t_offset pos = sim_ftell(sfile);               /* get current position */
+        sim_off_t pos = sim_ftell(sfile);               /* get current position */
 
         if (pos < 0)                                   /* error? */
             return SCPE_IOERR;                         /* done! */

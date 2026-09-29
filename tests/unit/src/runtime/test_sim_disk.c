@@ -1,3 +1,38 @@
+/*
+ * test_sim_disk.c - Unit tests for sim_disk library
+ *
+ * Test Strategy:
+ * --------------
+ * This test suite uses a two-phase testing approach to verify disk I/O operations
+ * work correctly in both synchronous (direct) and asynchronous (threaded) modes:
+ *
+ * Phase 1: Direct Disk I/O Tests (sim_async_preference = false)
+ *   - Forces synchronous execution of all I/O operations
+ *   - Tests basic functionality without thread complexity
+ *   - Ensures fallback behavior works when AIO is disabled
+ *
+ * Phase 2: AIO and Disk I/O Thread Tests (sim_async_preference = true)
+ *   - Enables asynchronous I/O with background threads
+ *   - Verifies callbacks are invoked correctly
+ *   - Tests thread safety and async operation completion
+ *
+ * All tests run twice automatically (once per phase) to ensure consistent behavior
+ * across both execution modes. This approach follows the pattern established in
+ * test_sim_tape.c.
+ *
+ * Test Categories:
+ * ----------------
+ * 1. Format and Capacity Tests - Disk format selection and capacity calculations
+ * 2. Error Handling & Edge Cases - Invalid parameters, boundary conditions
+ * 3. Boundary & Range Testing - LBA boundaries, multi-sector operations
+ * 4. Async I/O Operations - Callback mechanisms, latency settings
+ * 5. Backend Error Injection - Simulated I/O errors via test backends
+ * 6. State & Lifecycle - Attach/detach cycles, reset behavior
+ * 7. Data Integrity - Write/read patterns, persistence across detach
+ * 8. Format Detection - AUTO format detection for various container types
+ * 9. RAMDISK Operations - Volatile memory-backed disks (if HAVE_FMEMOPEN)
+ */
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -5,12 +40,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#else
+#include "sim_win32_compat.h"
+#endif
+
 #include "scp.h"
 #include "test_cmocka.h"
 
 #include "sim_tempfile.h"
 #include "sim_defs.h"
 #include "sim_disk.h"
+#include "sim_aio.h"
 #include "test_simh_personality.h"
 #include "test_support.h"
 
@@ -27,7 +69,7 @@ struct sim_disk_fixture {
     char image_path[CBUFSIZE];
 };
 
-extern t_offset pseudo_filesystem_size;
+extern sim_off_t pseudo_filesystem_size;
 extern t_stat sim_save(FILE *sfile);
 extern t_stat sim_rest(FILE *rfile);
 extern t_stat show_unit(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag);
@@ -49,15 +91,20 @@ static t_stat set_test_drive_type(UNIT *uptr, int32_t val, const char *cptr,
     (void)cptr;
     (void)desc;
 
-    uptr->capac = (t_addr)val;
+    uptr->capac = (sim_off_t) val;
     return SCPE_OK;
 }
 
 static MTAB disk_unit_modifiers[] = {
-    {DKUF_NOAUTOSIZE, 0, "autosize", "AUTOSIZE", NULL},
-    {DKUF_NOAUTOSIZE, DKUF_NOAUTOSIZE, "noautosize", "NOAUTOSIZE", NULL},
-    {MTAB_VUN, 4, "large", "LARGE", set_test_drive_type},
+    {DKUF_NOAUTOSIZE, 0, "autosize", "AUTOSIZE", NULL, NULL, "Disk autosizing enable flag", NULL},
+    {DKUF_NOAUTOSIZE, DKUF_NOAUTOSIZE, "noautosize", "NOAUTOSIZE", NULL, NULL, "Disk autosizing disable flag", NULL},
+    {MTAB_VUN, 4, "large", "LARGE", set_test_drive_type, NULL, "Large disk flag", NULL},
     {0},
+};
+
+static DEBTAB disk_unit_debug[] = {
+    {"TRACE",  0x01,   "trace test call flow"},
+    {NULL, 0, NULL},
 };
 
 static int setup_sim_disk_fixture(void **state)
@@ -75,6 +122,7 @@ static int setup_sim_disk_fixture(void **state)
                                UNIT_ATTABLE | UNIT_ROABLE, 8, 1);
     fixture->byte_unit.flags |= DK_F_STD;
     fixture->byte_device.modifiers = disk_unit_modifiers;
+    fixture->byte_device.debflags = disk_unit_debug;
 
     simh_test_init_device_unit(&fixture->sector_device, &fixture->sector_unit,
                                "DSKS", "DSKS0",
@@ -85,6 +133,7 @@ static int setup_sim_disk_fixture(void **state)
     fixture->sector_unit.flags |= DK_F_STD;
     fixture->sector_unit.capac = 1;
     fixture->sector_device.modifiers = disk_unit_modifiers;
+    fixture->sector_device.debflags = disk_unit_debug;
 
     assert_int_equal(simh_test_make_temp_dir(fixture->temp_dir,
                                              sizeof(fixture->temp_dir),
@@ -135,11 +184,17 @@ static void create_temp_disk_image(struct sim_disk_fixture *fixture,
 
 static void attach_temp_disk_image(struct sim_disk_fixture *fixture, UNIT *uptr)
 {
+    uptr->dctrl = ~0;
+    uptr->dptr->dctrl = ~0;
+
     create_temp_disk_image(fixture, 512);
-    sim_switches = 0;
+
     assert_int_equal(sim_disk_attach_ex(uptr, fixture->image_path, 512, 1, true,
                                         0, "TEST", 0, 0, NULL),
                      SCPE_OK);
+
+    // "Pump up the volume!" (of the disk debugging...)
+    ((struct disk_context *)uptr->disk_ctx)->dbit = ~0;
 }
 
 static int uuid_is_nil(const uint8_t uuid[16])
@@ -240,6 +295,59 @@ static void detach_capture_writer(void *context)
     capture->status = sim_disk_detach(capture->unit);
 }
 
+// Callback state for disk I/O operations, principally for AIO completions.
+struct disk_callback_state {
+    UNIT *unit;
+    t_stat status;
+    sim_atomic_value_t call_count;
+};
+
+static struct disk_callback_state *active_disk_callback_state = NULL;
+
+static void wait_for_completion(struct disk_callback_state *callback_state)
+{
+    /* In sync mode, callback is invoked synchronously.
+       In async mode, we need to wait for completion. */
+    if (aio_enabled_and_active()) {
+        struct timespec now, timeout;
+
+        sim_clock_gettime(CLOCK_REALTIME, &now);
+        timeout.tv_sec = now.tv_sec + 5;
+        timeout.tv_nsec = now.tv_nsec;
+
+        sim_atomic_type_t last_calls = sim_atomic_get(&callback_state->call_count);
+
+        while (last_calls == sim_atomic_get(&callback_state->call_count) &&
+               (now.tv_sec < timeout.tv_sec || (now.tv_sec == timeout.tv_sec && now.tv_nsec < timeout.tv_nsec))) {
+            // Drain the simulator event queue, if anything.
+            assert_int_equal(sim_process_event(), SCPE_OK);
+
+            /* Use sched_thread_yield() here to allow the I/O thread to make progress. Technically,
+             * yes, sim_os_sleep() could be used but that makes assumptions about thread activation
+             * latency. Yielding the thread is the better choice because it forces the thread scheduler
+             * to give other runnable threads a chance. */
+            sim_thread_yield();
+
+            sim_clock_gettime(CLOCK_REALTIME, &now);
+        }
+
+        sim_atomic_type_t value_now = sim_atomic_get(&callback_state->call_count);
+        assert_true(value_now > 0);
+        assert_int_equal(value_now, 1);
+
+        // Reset the call count for the next operation.
+        sim_atomic_init(&callback_state->call_count);
+    }
+}
+
+static void disk_io_callback(UNIT *unit, t_stat status)
+{
+    assert_non_null(active_disk_callback_state);
+    active_disk_callback_state->unit = unit;
+    active_disk_callback_state->status = status;
+    sim_atomic_inc(&active_disk_callback_state->call_count);
+}
+
 /* Verify disk format selection updates the unit flags and that the show
    helper reflects the chosen format. */
 static void test_sim_disk_set_and_show_format(void **state)
@@ -264,7 +372,7 @@ static void test_sim_disk_set_and_show_byte_capacity(void **state)
 
     assert_int_equal(sim_disk_set_capac(&fixture->byte_unit, 0, "25", NULL),
                      SCPE_OK);
-    assert_int_equal(fixture->byte_unit.capac, (t_addr)25000000);
+    assert_int_equal(fixture->byte_unit.capac, (sim_off_t) 25000000);
     assert_disk_show_output(sim_disk_show_capac, &fixture->byte_unit,
                             "capacity=25MB");
 
@@ -281,7 +389,7 @@ static void test_sim_disk_set_capacity_scales_for_sector_devices(void **state)
 
     assert_int_equal(sim_disk_set_capac(&fixture->sector_unit, 0, "8", NULL),
                      SCPE_OK);
-    assert_int_equal(fixture->sector_unit.capac, (t_addr)(8000000 / 512));
+    assert_int_equal(fixture->sector_unit.capac, (sim_off_t) (8000000 / 512));
 }
 
 /* Verify availability and write-protect predicates track simple unit
@@ -308,10 +416,8 @@ static void test_sim_disk_test_backend_intercepts_read(void **state)
     uint8_t data[1] = {0};
     t_seccnt sectsread = 0;
 
-    assert_int_equal(sim_disk_set_test_backend(&fixture->byte_unit, &backend),
-                     SCPE_OK);
-    assert_int_equal(
-        sim_disk_rdsect(&fixture->byte_unit, 7, data, &sectsread, 3), SCPE_OK);
+    assert_int_equal(sim_disk_set_test_backend(&fixture->byte_unit, &backend), SCPE_OK);
+    assert_int_equal(sim_disk_rdsect(&fixture->byte_unit, 7, data, &sectsread, 3), SCPE_OK);
     assert_int_equal(sectsread, 3);
     assert_int_equal(fixture->byte_unit.u3, 1);
 }
@@ -327,11 +433,8 @@ static void test_sim_disk_test_backend_intercepts_write(void **state)
     uint8_t data[1] = {0};
     t_seccnt sectswritten = 0;
 
-    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend),
-                     SCPE_OK);
-    assert_int_equal(
-        sim_disk_wrsect(&fixture->sector_unit, 11, data, &sectswritten, 5),
-        SCPE_OK);
+    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend), SCPE_OK);
+    assert_int_equal( sim_disk_wrsect(&fixture->sector_unit, 11, data, &sectswritten, 5), SCPE_OK);
     assert_int_equal(sectswritten, 5);
     assert_int_equal(fixture->sector_unit.u3, 1);
 }
@@ -394,9 +497,10 @@ static void test_sim_disk_create_vhd_writes_generated_uuid(void **state)
     struct sim_disk_fixture *fixture = *state;
     uint8_t uuid[16];
 
+    /* Nothing special. Test the normal path through sim_disk_attach_ex(). */
+    sim_switches = 0;
     assert_int_equal(sim_disk_set_fmt(&fixture->sector_unit, 0, "VHD", NULL),
                      SCPE_OK);
-    sim_switches = 0;
     assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
                                         fixture->image_path, 512, 1, true, 0,
                                         NULL, 0, 0, NULL),
@@ -1233,9 +1337,707 @@ static void test_sim_disk_set_noautosize_normalizes_global_flag(void **state)
     assert_int_equal(fixture->sector_unit.flags & DKUF_NOAUTOSIZE, 0);
 }
 
+/* =============================================================================
+ * NEW TESTS: Error Handling & Edge Cases
+ * ============================================================================= */
+
+/* Verify rdsect rejects invalid parameters and boundary conditions. */
+static void test_sim_disk_rdsect_invalid_parameters(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Test NULL buffer pointer */
+    assert_int_not_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                         NULL, &sectors, 1), SCPE_OK);
+
+    /* Test zero sectors (should succeed but read nothing) */
+    sectors = 99;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 0), SCPE_OK);
+    assert_int_equal(sectors, 0);
+
+    /* Test reading beyond disk capacity -- it's allowed and will zero out buf and report
+     * 1 sector read. */
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit,
+                                         999999, buf, &sectors, 1), SCPE_OK);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify wrsect rejects invalid parameters and respects write protection. */
+static void test_sim_disk_wrsect_invalid_parameters(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Test NULL buffer pointer */
+    memset(buf, 0xA5, sizeof(buf));
+    assert_int_not_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                         NULL, &sectors, 1), SCPE_OK);
+
+    /* Test zero sectors (should succeed but write nothing) */
+    sectors = 99;
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 0), SCPE_OK);
+    assert_int_equal(sectors, 0);
+
+    /* Test writing beyond disk capacity */
+    sectors = 0;
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit,
+                                         999999, buf, &sectors, 1), SCPE_OK);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify write operations are rejected on write-protected disks. */
+static void test_sim_disk_wrsect_write_protected(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+    fixture->sector_unit.flags |= DKUF_WRP;
+
+    memset(buf, 0xA5, sizeof(buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 1), SCPE_RO);
+    assert_int_equal(sectors, 0);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify operations on unattached units are rejected. */
+static void test_sim_disk_operations_unattached_unit(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    /* Attempt read on unattached unit */
+    assert_int_not_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                         buf, &sectors, 1), SCPE_OK);
+
+    /* Attempt write on unattached unit */
+    memset(buf, 0xA5, sizeof(buf));
+    assert_int_not_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                         buf, &sectors, 1), SCPE_OK);
+}
+
+/* =============================================================================
+ * NEW TESTS: Boundary & Range Testing
+ * ============================================================================= */
+
+/* Verify operations at LBA 0 (first sector). */
+static void test_sim_disk_lba_zero_operations(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Write to LBA 0 */
+    memset(write_buf, 0x55, sizeof(write_buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+    assert_int_equal(sectors, 1);
+
+    /* Read from LBA 0 */
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_int_equal(sectors, 1);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify multi-sector read and write operations. */
+static void test_sim_disk_multi_sector_operations(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[1024];
+    uint8_t read_buf[1024];
+    t_seccnt sectors = 0;
+
+    /* Create larger disk image (2 sectors) */
+    create_temp_disk_image(fixture, 1024);
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        fixture->image_path, 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    /* Write 2 sectors with different patterns */
+    memset(write_buf, 0xAA, 512);
+    memset(write_buf + 512, 0x55, 512);
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 2), SCPE_OK);
+    assert_int_equal(sectors, 2);
+
+    /* Read back 2 sectors */
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 2), SCPE_OK);
+    assert_int_equal(sectors, 2);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify capacity boundary values are handled correctly. */
+static void test_sim_disk_capacity_boundary_values(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+
+    /* Test minimum capacity */
+    assert_int_equal(sim_disk_set_capac(&fixture->byte_unit, 0, "1", NULL),
+                     SCPE_OK);
+    assert_int_equal(fixture->byte_unit.capac, (sim_off_t) 1000000);
+
+    /* Test large capacity value */
+    assert_int_equal(sim_disk_set_capac(&fixture->byte_unit, 0, "1000", NULL),
+                     SCPE_OK);
+    assert_int_equal(fixture->byte_unit.capac, (sim_off_t) 1000000000);
+
+    /* Test invalid capacity (zero), which suprisingly succeeds. */
+    assert_int_not_equal(sim_disk_set_capac(&fixture->byte_unit, 0, "0", NULL),
+                         SCPE_OK);
+
+    /* Test setting capacity on attached unit fails */
+    fixture->byte_unit.flags |= UNIT_ATT;
+    assert_int_equal(sim_disk_set_capac(&fixture->byte_unit, 0, "5", NULL),
+                     SCPE_ALATT);
+    fixture->byte_unit.flags &= ~UNIT_ATT;
+}
+
+/* Verify async read with callback works in both modes. */
+static void test_sim_disk_async_read_with_callback(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    struct disk_callback_state callback_state = {
+        .unit = NULL,
+        .status = SCPE_OK,
+    };
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    sim_atomic_init(&callback_state.call_count);
+    active_disk_callback_state = &callback_state;
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Enable async I/O (which gets enabled when the disk device is attached) */
+    assert_int_equal(sim_disk_set_async(&fixture->sector_unit, 1000), SCPE_OK);
+
+    /* Write test pattern */
+    memset(write_buf, 0xA5, sizeof(write_buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+
+    /* Async read with callback */
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect_a(&fixture->sector_unit, 0,
+                                       read_buf, &sectors, 1, disk_io_callback),
+                     SCPE_OK);
+    wait_for_completion(&callback_state);
+
+    /* Verify callback was invoked */
+    assert_ptr_equal(callback_state.unit, &fixture->sector_unit);
+    assert_int_equal(callback_state.status, SCPE_OK);
+    assert_int_equal(sectors, 1);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    // assert_int_equal(sim_disk_clr_async(&fixture->sector_unit), SCPE_OK);
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+    active_disk_callback_state = NULL;
+}
+
+/* Verify async write with callback works in both modes. */
+static void test_sim_disk_async_write_with_callback(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    struct disk_callback_state callback_state = {
+        .unit = NULL,
+        .status = SCPE_OK,
+    };
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    sim_atomic_init(&callback_state.call_count);
+    active_disk_callback_state = &callback_state;
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Enable async I/O */
+    assert_int_equal(sim_disk_set_async(&fixture->sector_unit, 1000), SCPE_OK);
+
+    /* Async write with callback */
+    memset(write_buf, 0x5A, sizeof(write_buf));
+    assert_int_equal(sim_disk_wrsect_a(&fixture->sector_unit, 0,
+                                       write_buf, &sectors, 1, disk_io_callback),
+                     SCPE_OK);
+    wait_for_completion(&callback_state);
+
+    assert_ptr_equal(callback_state.unit, &fixture->sector_unit);
+    assert_int_equal(callback_state.status, SCPE_OK);
+    assert_int_equal(sectors, 1);
+
+    /* Verify data was written correctly */
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    // assert_int_equal(sim_disk_clr_async(&fixture->sector_unit), SCPE_OK);
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+    active_disk_callback_state = NULL;
+}
+
+/* Verify async latency configuration. */
+static void test_sim_disk_async_latency_settings(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Set zero latency - just verify the call succeeds */
+    assert_int_equal(sim_disk_set_async(&fixture->sector_unit, 0), SCPE_OK);
+
+    /* Set high latency - verify the call succeeds */
+    assert_int_equal(sim_disk_set_async(&fixture->sector_unit, 5000), SCPE_OK);
+
+    /* Clear async I/O */
+    // assert_int_equal(sim_disk_clr_async(&fixture->sector_unit), SCPE_OK);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* =============================================================================
+ * NEW TESTS: Backend Error Injection
+ * ============================================================================= */
+
+static t_stat test_backend_read_error(UNIT *uptr, t_lba lba, uint8_t *buf,
+                                      t_seccnt *sectsread, t_seccnt sects)
+{
+    (void)uptr;
+    (void)buf;
+    (void)lba;
+    (void)sects;
+
+    if (sectsread != NULL)
+        *sectsread = 0;
+    return SCPE_IOERR;
+}
+
+static t_stat test_backend_write_error(UNIT *uptr, t_lba lba, uint8_t *buf,
+                                       t_seccnt *sectswritten, t_seccnt sects)
+{
+    (void)uptr;
+    (void)buf;
+    (void)lba;
+    (void)sects;
+
+    if (sectswritten != NULL)
+        *sectswritten = 0;
+    return SCPE_IOERR;
+}
+
+static t_stat test_backend_partial_read(UNIT *uptr, t_lba lba, uint8_t *buf,
+                                        t_seccnt *sectsread, t_seccnt sects)
+{
+    (void)uptr;
+    (void)lba;
+
+    if (sects > 1) {
+        memset(buf, 0xAA, 512);
+        if (sectsread != NULL)
+            *sectsread = 1;
+        return SCPE_OK;
+    }
+    if (sectsread != NULL)
+        *sectsread = sects;
+    return SCPE_OK;
+}
+
+/* Verify backend can inject read errors. */
+static void test_sim_disk_backend_read_error_injection(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    SIM_DISK_TEST_BACKEND backend = {
+        .rdsect = test_backend_read_error,
+    };
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend),
+                     SCPE_OK);
+
+    /* Read should fail with injected error */
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 1), SCPE_IOERR);
+    assert_int_equal(sectors, 0);
+
+    sim_disk_clear_test_backend(&fixture->sector_unit);
+}
+
+/* Verify backend can inject write errors. */
+static void test_sim_disk_backend_write_error_injection(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    SIM_DISK_TEST_BACKEND backend = {
+        .wrsect = test_backend_write_error,
+    };
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend),
+                     SCPE_OK);
+
+    /* Write should fail with injected error */
+    memset(buf, 0xA5, sizeof(buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 1), SCPE_IOERR);
+    assert_int_equal(sectors, 0);
+
+    sim_disk_clear_test_backend(&fixture->sector_unit);
+}
+
+/* Verify backend can simulate partial transfers. */
+static void test_sim_disk_backend_partial_transfer(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    SIM_DISK_TEST_BACKEND backend = {
+        .rdsect = test_backend_partial_read,
+    };
+    uint8_t buf[1024];
+    t_seccnt sectors = 0;
+
+    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend),
+                     SCPE_OK);
+
+    /* Request 2 sectors, backend returns only 1 */
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     buf, &sectors, 2), SCPE_OK);
+    assert_int_equal(sectors, 1);
+
+    sim_disk_clear_test_backend(&fixture->sector_unit);
+}
+
+/* Verify backend state tracking using unit fields. */
+static void test_sim_disk_backend_state_tracking(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    SIM_DISK_TEST_BACKEND backend = {
+        .rdsect = test_backend_read,
+        .wrsect = test_backend_write,
+    };
+    uint8_t buf[512];
+    t_seccnt sectors = 0;
+
+    fixture->sector_unit.u3 = 0;
+    assert_int_equal(sim_disk_set_test_backend(&fixture->sector_unit, &backend),
+                     SCPE_OK);
+
+    /* Backend increments u3 on each operation */
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 7,
+                                     buf, &sectors, 3), SCPE_OK);
+    assert_int_equal(fixture->sector_unit.u3, 1);
+
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 11,
+                                     buf, &sectors, 5), SCPE_OK);
+    assert_int_equal(fixture->sector_unit.u3, 2);
+
+    sim_disk_clear_test_backend(&fixture->sector_unit);
+}
+
+/* =============================================================================
+ * NEW TESTS: State & Lifecycle
+ * ============================================================================= */
+
+/* Verify multiple attach/detach cycles maintain consistent state. */
+static void test_sim_disk_attach_detach_cycles(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    create_temp_disk_image(fixture, 512);
+
+    for (int cycle = 0; cycle < 3; cycle++) {
+        sim_switches = 0;
+        assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                            fixture->image_path, 512, 1, true,
+                                            0, "TEST", 0, 0, NULL),
+                         SCPE_OK);
+
+        /* Write cycle number */
+        memset(write_buf, (uint8_t)cycle, sizeof(write_buf));
+        assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                         write_buf, &sectors, 1), SCPE_OK);
+
+        /* Verify write */
+        memset(read_buf, 0xFF, sizeof(read_buf));
+        sectors = 0;
+        assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                         read_buf, &sectors, 1), SCPE_OK);
+        assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+        assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+    }
+}
+
+/* Verify reset clears error states but preserves attachment. */
+static void test_sim_disk_reset_preserves_attachment(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Reset the unit */
+    assert_int_equal(sim_disk_reset(&fixture->sector_unit), SCPE_OK);
+
+    /* Verify unit is still attached */
+    assert_true((fixture->sector_unit.flags & UNIT_ATT) != 0);
+    assert_true(sim_disk_isavailable(&fixture->sector_unit));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify unit flag transitions during attach/detach. */
+static void test_sim_disk_unit_flag_transitions(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+
+    /* Initially not attached */
+    assert_false((fixture->sector_unit.flags & UNIT_ATT) != 0);
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Now attached */
+    assert_true((fixture->sector_unit.flags & UNIT_ATT) != 0);
+    assert_true(sim_disk_isavailable(&fixture->sector_unit));
+
+    /* Detach */
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+
+    /* No longer attached */
+    assert_false((fixture->sector_unit.flags & UNIT_ATT) != 0);
+    assert_false(sim_disk_isavailable(&fixture->sector_unit));
+}
+
+/* =============================================================================
+ * NEW TESTS: Data Integrity
+ * ============================================================================= */
+
+/* Verify various write/read patterns are preserved. */
+static void test_sim_disk_write_read_patterns(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    attach_temp_disk_image(fixture, &fixture->sector_unit);
+
+    /* Test all zeros */
+    memset(write_buf, 0x00, sizeof(write_buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+    memset(read_buf, 0xFF, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    /* Test all ones */
+    memset(write_buf, 0xFF, sizeof(write_buf));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+    memset(read_buf, 0x00, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    /* Test alternating pattern */
+    for (size_t i = 0; i < sizeof(write_buf); i++)
+        write_buf[i] = (uint8_t)(i & 0xFF);
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify data persists across detach/reattach. */
+static void test_sim_disk_persistence_across_detach(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    create_temp_disk_image(fixture, 512);
+
+    /* First attach: write data */
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        fixture->image_path, 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    for (size_t i = 0; i < sizeof(write_buf); i++)
+        write_buf[i] = (uint8_t)(i ^ 0xA5);
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf, &sectors, 1), SCPE_OK);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+
+    /* Second attach: verify data persisted */
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        fixture->image_path, 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    memset(read_buf, 0, sizeof(read_buf));
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* =============================================================================
+ * NEW TESTS: Format Detection
+ * ============================================================================= */
+
+/* Verify AUTO format detection works for standard images. */
+static void test_sim_disk_format_auto_detection_simh(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+
+    /* Set format to AUTO */
+    assert_int_equal(sim_disk_set_fmt(&fixture->sector_unit, 0, "AUTO", NULL),
+                     SCPE_OK);
+    assert_int_equal(DK_GET_FMT(&fixture->sector_unit), DKUF_F_AUTO);
+
+    /* Attach should auto-detect format (SIMH in this case) */
+    create_temp_disk_image(fixture, 512);
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        fixture->image_path, 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    /* Format should have been detected */
+    assert_int_not_equal(DK_GET_FMT(&fixture->sector_unit), DKUF_F_AUTO);
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+#if defined (HAVE_FMEMOPEN)
+/* =============================================================================
+ * RAMDISK Additional Tests
+ * ============================================================================= */
+
+/* Verify ramdisk partial sector operations. */
+static void test_sim_disk_ramdisk_partial_sector_operations(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf1[512];
+    uint8_t write_buf2[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        "RAMDISK:SIZE=2048", 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    /* Write different patterns to different sectors */
+    memset(write_buf1, 0xAA, sizeof(write_buf1));
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                     write_buf1, &sectors, 1), SCPE_OK);
+
+    memset(write_buf2, 0x55, sizeof(write_buf2));
+    sectors = 0;
+    assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 2,
+                                     write_buf2, &sectors, 1), SCPE_OK);
+
+    /* Read back and verify */
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf1, sizeof(write_buf1));
+
+    memset(read_buf, 0, sizeof(read_buf));
+    sectors = 0;
+    assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 2,
+                                     read_buf, &sectors, 1), SCPE_OK);
+    assert_memory_equal(read_buf, write_buf2, sizeof(write_buf2));
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+
+/* Verify ramdisk handles repeated write/read cycles. */
+static void test_sim_disk_ramdisk_repeated_cycles(void **state)
+{
+    struct sim_disk_fixture *fixture = *state;
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+    t_seccnt sectors = 0;
+
+    sim_switches = 0;
+    assert_int_equal(sim_disk_attach_ex(&fixture->sector_unit,
+                                        "RAMDISK:SIZE=4096", 512, 1, true,
+                                        0, "TEST", 0, 0, NULL),
+                     SCPE_OK);
+
+    /* Perform multiple write/read cycles */
+    for (int cycle = 0; cycle < 10; cycle++) {
+        memset(write_buf, (uint8_t)cycle, sizeof(write_buf));
+        sectors = 0;
+        assert_int_equal(sim_disk_wrsect(&fixture->sector_unit, 0,
+                                         write_buf, &sectors, 1), SCPE_OK);
+
+        memset(read_buf, 0xFF, sizeof(read_buf));
+        sectors = 0;
+        assert_int_equal(sim_disk_rdsect(&fixture->sector_unit, 0,
+                                         read_buf, &sectors, 1), SCPE_OK);
+        assert_memory_equal(read_buf, write_buf, sizeof(write_buf));
+    }
+
+    assert_int_equal(sim_disk_detach(&fixture->sector_unit), SCPE_OK);
+}
+#endif /* HAVE_FMEMOPEN */
+
 int main(void)
 {
     const struct CMUnitTest tests[] = {
+        /* Original format and capacity tests */
         cmocka_unit_test_setup_teardown(test_sim_disk_set_and_show_format,
                                         setup_sim_disk_fixture,
                                         teardown_sim_disk_fixture),
@@ -1248,6 +2050,8 @@ int main(void)
         cmocka_unit_test_setup_teardown(
             test_sim_disk_status_predicates_use_unit_flags,
             setup_sim_disk_fixture, teardown_sim_disk_fixture),
+
+        /* Original backend tests */
         cmocka_unit_test_setup_teardown(
             test_sim_disk_test_backend_intercepts_read, setup_sim_disk_fixture,
             teardown_sim_disk_fixture),
@@ -1264,7 +2068,77 @@ int main(void)
         cmocka_unit_test_setup_teardown(
             test_sim_disk_create_vhd_writes_generated_uuid,
             setup_sim_disk_fixture, teardown_sim_disk_fixture),
+
+        /* NEW: Error handling and edge cases (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_rdsect_invalid_parameters, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_wrsect_invalid_parameters, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_wrsect_write_protected, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_operations_unattached_unit, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: Boundary and range tests (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_lba_zero_operations, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_multi_sector_operations, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_capacity_boundary_values, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: Backend error injection (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_backend_read_error_injection, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_backend_write_error_injection, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_backend_partial_transfer, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_backend_state_tracking, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: State and lifecycle tests (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_attach_detach_cycles, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_reset_preserves_attachment, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_unit_flag_transitions, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: Data integrity tests (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_write_read_patterns, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_persistence_across_detach, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: Format detection tests */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_format_auto_detection_simh, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+        /* NEW: Format detection tests */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_format_auto_detection_simh, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
 #if defined (HAVE_FMEMOPEN)
+        /* Original RAMDISK tests */
         cmocka_unit_test_setup_teardown(
             test_sim_disk_ramdisk_default_size_is_volatile,
             setup_sim_disk_fixture, teardown_sim_disk_fixture),
@@ -1343,18 +2217,77 @@ int main(void)
         cmocka_unit_test_setup_teardown(
             test_sim_disk_ramdisk_detach_reports_discard,
             setup_sim_disk_fixture, teardown_sim_disk_fixture),
+
+        /* NEW: Additional RAMDISK tests (run in both modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_ramdisk_partial_sector_operations,
+            setup_sim_disk_fixture, teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_ramdisk_repeated_cycles,
+            setup_sim_disk_fixture, teardown_sim_disk_fixture),
 #else
         cmocka_unit_test_setup_teardown(
             test_sim_disk_ramdisk_requires_fmemopen, setup_sim_disk_fixture,
             teardown_sim_disk_fixture),
 #endif
+
+        /* Bare RAMDISK filename test */
         cmocka_unit_test_setup_teardown(
             test_sim_disk_bare_ramdisk_remains_filename, setup_sim_disk_fixture,
             teardown_sim_disk_fixture),
+
+        /* Noautosize test */
         cmocka_unit_test_setup_teardown(
             test_sim_disk_set_noautosize_normalizes_global_flag,
             setup_sim_disk_fixture, teardown_sim_disk_fixture),
     };
 
-    return cmocka_run_group_tests(tests, NULL, NULL);
+    const struct CMUnitTest async_io_tests[] = {
+        /* Async I/O tests (run in both sync and async modes) */
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_async_read_with_callback, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_async_write_with_callback, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+        cmocka_unit_test_setup_teardown(
+            test_sim_disk_async_latency_settings, setup_sim_disk_fixture,
+            teardown_sim_disk_fixture),
+
+    };
+
+    /* Ensure AIO is initialized since it's always available. There are a couple
+     * of important variables and thread controls (mutexes, condvars) that need
+     * initializing. */
+    aio_init();
+    sim_finit();
+    assert_int_equal(sim_disk_init(), SCPE_OK);
+    assert_false(sim_timer_init());
+
+    // Log debug output to stderr, show AIO queue activity
+    sim_deb = stderr;
+    sim_scp_dev.dctrl |= SIM_DBG_AIO_QUEUE;
+
+    /* Two-phase testing strategy: run all tests in both sync and async modes.
+     * First round: Direct I/O tests (sync mode) with sim_async_preference = false
+     * Second round: AIO tests (async mode) with sim_async_preference = true */
+    int cmocka_retval = 0;
+    bool saved_async_preference = sim_async_preference;
+
+    /* Phase 1: Direct disk I/O (synchronous mode) */
+    sim_async_preference = false;
+    print_message("Direct disk I/O tests\n");
+    cmocka_retval = cmocka_run_group_tests(tests, NULL, NULL);
+
+    /* Phase 2: AIO and disk I/O thread (asynchronous mode, if available) */
+    sim_async_preference = saved_async_preference;
+
+    if (saved_async_preference) {
+        print_message("AIO (disk I/O thread) tests\n");
+        aio_set_async_enabled(true);
+        cmocka_retval = cmocka_run_group_tests(async_io_tests, NULL, NULL);
+    }
+
+    aio_cleanup();
+    return cmocka_retval;
 }

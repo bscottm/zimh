@@ -81,7 +81,7 @@ DIB lpt_dib = {
     };
 
 UNIT lpt_unit = {
-    UDATA (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE+UNIT_TEXT, 0), SERIAL_OUT_WAIT
+    UDATA_WAIT (&lpt_svc, UNIT_SEQ+UNIT_ATTABLE+UNIT_TEXT, 0, SERIAL_OUT_WAIT)
     };
 
 REG lpt_reg[] = {

@@ -23,6 +23,7 @@
 #    include <stdio.h>
 #    include <stdlib.h>
 #    include <string.h>
+#    include <inttypes.h>
 
 #    ifndef EXIT_FAILURE
 #        define EXIT_FAILURE 1
@@ -31,7 +32,7 @@
 #        define EXIT_SUCCESS 0
 #    endif
 
-#    ifdef _WIN32
+#    if defined(_WIN32) || defined(_WIN64)
 #        include <winsdkver.h>
 #        include <sdkddkver.h>
 
@@ -49,6 +50,9 @@
 #        undef ERROR      /* avoid macro name collision */
 #        undef MEM_MAPPED /* avoid macro name collision */
 #        include <process.h>
+#    else
+         /* off_t */
+#        include <sys/types.h>
 #    endif
 
 #    include "c_attrs.h"
@@ -108,5 +112,39 @@
 #            define MIN(a, b) (((a) <= (b)) ? (a) : (b))
 #        endif
 #    endif
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// Meta-types: These are cross-platform types, such as sim_off_t for file offsets. Unix style names, i.e.,
+// lowercased names are preferred over Windows style uppercased "shouting" names.
+//
+// Also included are the custom PRI macros for printing meta-types.
+//
+// sim_off_t: File offset type
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+#if !defined(_WIN32) && !defined(_WIN64)
+// POSIX
+typedef off_t sim_off_t;
+
+#define PRIsim_off_t "lld"
+#else
+// Windows...
+typedef LONGLONG sim_off_t;
+
+#define PRIsim_off_t PRId64
+#endif
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// Utilty macros:
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+// Unreachable code.
+#if defined(_MSC_VER)
+    #define SIM_UNREACHABLE() __assume(0)
+#elif defined(__GNUC__) || defined(__clang__)
+    #define SIM_UNREACHABLE() __builtin_unreachable()
+#else
+    #define SIM_UNREACHABLE() do { } while (0)
+#endif
 
 #endif /* SIM_PLATFORM_H */

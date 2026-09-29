@@ -145,7 +145,7 @@ static int teardown_sim_fio_fixture(void **state)
 }
 
 static void filelist_callback(const char *directory, const char *filename,
-                              t_offset file_size, const struct stat *filestat,
+                              sim_off_t file_size, const struct stat *filestat,
                               void *context)
 {
     struct filelist_context *result = context;
@@ -502,8 +502,8 @@ test_sim_fread_and_fwrite_round_trip_in_big_endian_mode(void **state)
     assert_non_null(file);
 
     assert_int_equal(sim_fwrite(words_out, sizeof(words_out[0]), 3, file), 3);
-    assert_int_equal(sim_fsize_ex(file), (t_offset)sizeof(words_out));
-    assert_int_equal(sim_ftell(file), (t_offset)sizeof(words_out));
+    assert_int_equal(sim_fsize_ex(file), (sim_off_t)sizeof(words_out));
+    assert_int_equal(sim_ftell(file), (sim_off_t)sizeof(words_out));
 
     assert_int_equal(sim_fseeko(file, 0, SEEK_SET), 0);
     assert_int_equal(fread(raw_bytes, 1, sizeof(raw_bytes), file),
@@ -513,8 +513,8 @@ test_sim_fread_and_fwrite_round_trip_in_big_endian_mode(void **state)
                         sizeof(raw_bytes));
 
     assert_int_equal(sim_fseeko(file, sizeof(words_out[0]), SEEK_SET), 0);
-    assert_int_equal(sim_fsize_ex(file), (t_offset)sizeof(words_out));
-    assert_int_equal(sim_ftell(file), (t_offset)sizeof(words_out[0]));
+    assert_int_equal(sim_fsize_ex(file), (sim_off_t)sizeof(words_out));
+    assert_int_equal(sim_ftell(file), (sim_off_t)sizeof(words_out[0]));
 
     assert_int_equal(sim_fseeko(file, 0, SEEK_SET), 0);
     assert_int_equal(sim_fread(words_in, sizeof(words_in[0]), 3, file), 3);
@@ -599,7 +599,7 @@ static void test_sim_finit_sets_endian_and_large_file_flags(void **state)
 
     result = sim_finit();
     assert_int_equal(result, sim_end);
-    assert_int_equal(sim_toffset_64, sizeof(t_offset) > sizeof(int32_t));
+    assert_int_equal(sim_toffset_64, sizeof(sim_off_t) > sizeof(int32_t));
     assert_int_equal(sim_taddr_64,
                      sim_toffset_64 && (sizeof(t_addr) > sizeof(int32_t)));
 }

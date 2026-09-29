@@ -1,7 +1,7 @@
-# # Various and sundry operating system features.
-# #
-# # Author: B. Scott Michel
-# # "scooter me fecit"
+## Various and sundry operating system features.
+##
+## Author: B. Scott Michel
+## "scooter me fecit"
 
 include_guard(GLOBAL)
 
@@ -41,7 +41,6 @@ if(NOT TARGET aio_support)
     add_library(aio_support STATIC
         ${SIMH_LIB_ROOT}/sim_threads.c
         ${SIMH_LIB_ROOT}/sim_tailq.c
-        ${SIMH_LIB_ROOT}/sim_aio.c
         ${SIMH_LIB_ROOT}/sim_event_queue.c
     )
     target_include_directories(aio_support PRIVATE
@@ -62,13 +61,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT DEFINED WINVER)
         NTDDI_VERSION=0x0A000002
     )
 elseif(CMAKE_HOST_SYSTEM MATCHES "Linux")
-    # # Linux: Make sure _GNU_SOURCE is defined.
+    ## Linux: Make sure _GNU_SOURCE is defined.
     list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 
-    # # Expose _GNU_SOURCE publicly from the sim_support library, since everything uses it.
+    ## Expose _GNU_SOURCE publicly from the sim_support library, since everything uses it.
     target_compile_definitions(sim_support PUBLIC _GNU_SOURCE)
 
-    # # Privately, in the aio_support library, it's also needed, but aio_support doesn't depend on sim_support.
+    ## Privately, in the aio_support library, it's also needed, but aio_support doesn't depend on sim_support.
     target_compile_definitions(aio_support PRIVATE _GNU_SOURCE)
 endif()
 
@@ -99,7 +98,7 @@ include(uuid-dep)
 
 set(NEED_LIBRT FALSE)
 
-# # Editline support?
+## Editline support?
 find_package(EDITLINE)
 
 if(TARGET Editline::Editline)
@@ -107,7 +106,7 @@ if(TARGET Editline::Editline)
 endif()
 
 if(WITH_ASYNC)
-    # # semaphores and sem_timedwait support (OS feature):
+    ## semaphores and sem_timedwait support (OS feature):
     check_include_file(semaphore.h semaphore_h_found)
 
     if(semaphore_h_found)
@@ -133,7 +132,7 @@ if(WITH_ASYNC)
         check_symbol_exists(sem_timedwait "semaphore.h;time.h" have_sem_timedwait)
 
         if(NOT have_sem_timedwait)
-            # # Maybe it's in librt, like shm_open (and more likely, it's not.)
+            ## Maybe it's in librt, like shm_open (and more likely, it's not.)
             list(APPEND CMAKE_REQUIRED_LIBRARIES rt)
             check_symbol_exists(sem_timedwait semaphore.h have_sem_timedwait_rt)
 
@@ -236,34 +235,34 @@ endif()
 # OS-specific header files:
 # =============================================================================
 
-# # <sys/ioctl.h>
+## <sys/ioctl.h>
 check_include_file(sys/ioctl.h have_sys_ioctl_h)
 
 if(have_sys_ioctl_h)
     target_compile_definitions(sim_support INTERFACE HAVE_SYS_IOCTL)
 endif(have_sys_ioctl_h)
 
-# # <linux/cdrom.h>
+## <linux/cdrom.h>
 check_include_file(linux/cdrom.h have_linux_cdrom_h)
 
 if(have_linux_cdrom_h)
     target_compile_definitions(sim_support INTERFACE HAVE_LINUX_CDROM)
 endif(have_linux_cdrom_h)
 
-# # <utime.h>
+## <utime.h>
 check_include_file(utime.h have_utime_h)
 
 if(have_utime_h)
     target_compile_definitions(sim_support INTERFACE HAVE_UTIME)
 endif(have_utime_h)
 
-# # <glob.h>
+## <glob.h>
 check_include_file(glob.h have_glob_h)
 
 if(have_glob_h)
     target_compile_definitions(sim_support INTERFACE HAVE_GLOB)
 else()
-    # # <fnmatch.h>
+    ## <fnmatch.h>
     check_include_file(fnmatch.h have_fnmatch_h)
 
     if(have_fnmatch_h)
@@ -313,7 +312,7 @@ endif()
 
 cmake_pop_check_state()
 
-# # <sys/mman.h> and shm_open
+## <sys/mman.h> and shm_open
 check_include_file(sys/mman.h have_sys_mman_h)
 
 if(have_sys_mman_h)
@@ -322,7 +321,7 @@ if(have_sys_mman_h)
     check_symbol_exists(shm_open sys/mman.h have_shm_open)
 
     if(NOT have_shm_open OR NEED_LIBRT)
-        # # Linux: shm_open is in the rt library?
+        ## Linux: shm_open is in the rt library?
         set(CMAKE_REQUIRED_LIBRARIES rt)
         check_symbol_exists(shm_open sys/mman.h have_shm_open_lrt)
     endif(NOT have_shm_open OR NEED_LIBRT)
@@ -362,7 +361,7 @@ if(TARGET PTW::PTW OR TARGET Threads::Threads)
     get_property(zz_thread_incs TARGET aio_support PROPERTY INCLUDE_DIRECTORIES)
     get_property(zz_aio_support TARGET aio_support PROPERTY LINK_LIBRARIES)
 
-    # # CMAKE_REQUIRED_DEFINITIONS needs "-D" in front of each def.
+    ## CMAKE_REQUIRED_DEFINITIONS needs "-D" in front of each def.
     foreach(DEF ${zz_thread_defs})
         list(APPEND CMAKE_REQUIRED_DEFINITIONS "-D${DEF}")
     endforeach()
@@ -564,10 +563,10 @@ target_compile_definitions(sim_support PUBLIC
     SIM_USE_SELECT=${sim_use_select}
 )
 
-# # Windows: winmm (for ms timer functions), socket functions (even when networking is
-# # disabled. Also squelch the deprecation warnings (these warnings can be enabled
-# # via the -DENABLE_WINAPI_DEPRECATION_WARNINGS:Bool=On flag at configure
-# # time.)
+## Windows: winmm (for ms timer functions), socket functions (even when networking is
+## disabled. Also squelch the deprecation warnings (these warnings can be enabled
+## via the -DENABLE_WINAPI_DEPRECATION_WARNINGS:Bool=On flag at configure
+## time.)
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(sim_support INTERFACE ws2_32 winmm)
     target_compile_definitions(sim_support INTERFACE HAVE_WINMM)
@@ -581,7 +580,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     endif()
 endif()
 
-# # Cygwin also wants winmm. Note: Untested but should work.
+## Cygwin also wants winmm. Note: Untested but should work.
 if(CYGWIN)
     check_library_exists(winmm timeGetTime "" HAS_WINMM)
 
@@ -589,4 +588,22 @@ if(CYGWIN)
         target_link_libraries(sim_support INTERFACE ws2_32 winmm)
         target_compile_definitions(sim_support INTERFACE HAVE_WINMM)
     endif()
+endif()
+
+## See if _FILE_OFFSET_BITS needs to be set:
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(_off_t_is_64_bits [=[
+        #include <sys/types.h>
+
+        typedef char check_off_t_is_64_bits =[sizeof(off_t) >= 8 ? 1 : -1];
+
+        int main(void) {
+            return 0;
+        }
+    ]=])
+
+    check_c_source_compiles("${_off_t_is_64_bits}" off_t_is_64_bits)
+    if (off_t_is_64_bits)
+        target_compile_definitions(sim_support INTERFACE _FILE_OFFSET_BITS=64)
+    endif ()
 endif()

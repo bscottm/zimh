@@ -22,6 +22,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "sim_defs.h"
+
 /* SIMH/E11 tape format */
 
 typedef uint32_t        t_mtrlnt;                       /* magtape rec lnt */
@@ -155,6 +157,59 @@ typedef void (*TAPE_PCALLBACK)(UNIT *unit, t_stat status);
 #define MTSE_DBG_DAT   0x20000000                       /* Debug Data */
 #define MTSE_DBG_POS   0x40000000                       /* Debug Positioning activities */
 #define MTSE_DBG_STR   0x80000000                       /* Debug Tape Structure */
+
+typedef enum tape_io_states_e {
+    TOP_DONE,                                           /* exit loop */
+    TOP_RDRF,                                           /* sim_tape_rdrecf_a */
+    TOP_RDRR,                                           /* sim_tape_rdrecr_a */
+    TOP_WREC,                                           /* sim_tape_wrrecf_a */
+    TOP_WTMK,                                           /* sim_tape_wrtmk_a */
+    TOP_WEOM,                                           /* sim_tape_wreom_a */
+    TOP_WEMR,                                           /* sim_tape_wreomrw_a */
+    TOP_WGAP,                                           /* sim_tape_wrgap_a */
+    TOP_SPRF,                                           /* sim_tape_sprecf_a */
+    TOP_SRSF,                                           /* sim_tape_sprecsf_a */
+    TOP_SPRR,                                           /* sim_tape_sprecr_a */
+    TOP_SRSR,                                           /* sim_tape_sprecsr_a */
+    TOP_SPFF,                                           /* sim_tape_spfilef */
+    TOP_SFRF,                                           /* sim_tape_spfilebyrecf */
+    TOP_SPFR,                                           /* sim_tape_spfiler */
+    TOP_SFRR,                                           /* sim_tape_spfilebyrecr */
+    TOP_RWND,                                           /* sim_tape_rewind_a */
+    TOP_POSN,                                           /* sim_tape_position_a */
+    TOP_FLUSH,                                          /* fflush the tape FILE */
+    TOP_IDLE,                                           /* idle state */
+    TOP_NSTATES                                         /* Number of tape I/O states */
+} tape_io_state_t;
+
+struct tape_context {
+    DEVICE *dptr;           /* Device for unit (access to debug flags) */
+    uint32_t dbit;          /* debugging bit for trace */
+    bool auto_format;       /* Format determined dynamically */
+    bool asynch_io;         /* Asynchronous Interrupt scheduling enabled */
+    int asynch_io_latency;  /* instructions to delay pending interrupt */
+    sim_mutex_t lock;
+    sim_thread_t io_thread; /* I/O Thread Id */
+    sim_mutex_t io_lock;
+    sim_cond_t io_cond;
+    sim_cond_t io_done;
+    sim_cond_t startup_cond;
+    bool io_thread_running;
+    tape_io_state_t io_top; /* Tape I/O operation */
+    uint8_t *buf;
+    uint32_t *bc;
+    uint32_t *fc;
+    uint32_t vbc;
+    uint32_t max;
+    uint32_t gaplen;
+    uint32_t bpi;
+    uint32_t *objupdate;
+    TAPE_PCALLBACK callback;
+    t_stat io_status;
+};
+
+/* Field in UNIT structure which points to the tape_context */
+#    define tape_ctx up8
 
 /* Prototypes */
 

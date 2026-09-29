@@ -16,6 +16,7 @@
 #include "sim_tempfile.h"
 #include "scp.h"
 #include "sim_defs.h"
+#include "sim_atomic.h"
 #include "sim_aio.h"
 #include "sim_fio.h"
 #include "sim_tape.h"
@@ -48,8 +49,9 @@ struct sim_tape_attach_capture {
 
 struct sim_tape_callback_state {
     UNIT *unit;
-    t_stat status;
-    unsigned calls;
+    // Atomic t_stat
+    sim_atomic_value_t status;
+    sim_atomic_value_t calls;
 };
 
 static struct sim_tape_callback_state *active_tape_callback_state;
@@ -61,25 +63,16 @@ static int setup_sim_tape_fixture(void **state)
     fixture = calloc(1, sizeof(*fixture));
     assert_non_null(fixture);
 
-    simh_test_init_device_unit(&fixture->device, &fixture->unit, "TAPE",
-                               "TAPE0", DEV_DISABLE, UNIT_ATTABLE, 8, 1);
+    simh_test_init_device_unit(&fixture->device, &fixture->unit, "TAPE", "TAPE0", DEV_DISABLE, UNIT_ATTABLE, 8, 1);
     fixture->unit.dynflags = MTUF_F_STD << UNIT_V_TAPE_FMT;
     fixture->devices[0] = &fixture->device;
     fixture->devices[1] = NULL;
 
-    assert_int_equal(simh_test_make_temp_dir(fixture->temp_dir,
-                                             sizeof(fixture->temp_dir),
-                                             "sim-tape"),
-                     0);
-    assert_non_null(
-        getcwd(fixture->original_cwd, sizeof(fixture->original_cwd)));
-    assert_int_equal(simh_test_join_path(fixture->tape_path,
-                                         sizeof(fixture->tape_path),
-                                         fixture->temp_dir, "sample.tap"),
-                     0);
+    assert_int_equal(simh_test_make_temp_dir(fixture->temp_dir, sizeof(fixture->temp_dir), "sim-tape"), 0);
+    assert_non_null(getcwd(fixture->original_cwd, sizeof(fixture->original_cwd)));
     assert_int_equal(
-        simh_test_install_devices("zimh-unit-sim-tape", fixture->devices),
-        0);
+        simh_test_join_path(fixture->tape_path, sizeof(fixture->tape_path), fixture->temp_dir, "sample.tap"), 0);
+    assert_int_equal(simh_test_install_devices("zimh-unit-sim-tape", fixture->devices), 0);
     assert_int_equal(sim_tape_init(), SCPE_OK);
 
     *state = fixture;
@@ -100,9 +93,8 @@ static int teardown_sim_tape_fixture(void **state)
     return 0;
 }
 
-static void assert_show_output(t_stat (*show_fn)(FILE *, UNIT *, int32_t,
-                                                 const void *),
-                               UNIT *uptr, const char *expected)
+static void assert_show_output(t_stat (*show_fn)(FILE *, UNIT *, int32_t, const void *), UNIT *uptr,
+                               const char *expected)
 {
     FILE *stream;
     char *text;
@@ -146,24 +138,16 @@ static char *capture_tape_debug_output(struct sim_tape_fixture *fixture)
     sim_deb_switches |= SWMASK('F');
     fixture->unit.dctrl |= MTSE_DBG_STR;
 
-    assert_int_equal(sim_tape_wrrecf(&fixture->unit, record, sizeof(record)),
-                     MTSE_OK);
+    assert_int_equal(sim_tape_wrrecf(&fixture->unit, record, sizeof(record)), MTSE_OK);
     assert_int_equal(sim_tape_wrtmk(&fixture->unit), MTSE_OK);
     assert_int_equal(sim_tape_rewind(&fixture->unit), MTSE_OK);
-    assert_int_equal(sim_tape_rdrecf(&fixture->unit, read_buffer,
-                                     &record_length, sizeof(read_buffer)),
-                     MTSE_OK);
-    assert_tape_record_equals(read_buffer, record_length, record,
-                              sizeof(record));
-    assert_int_equal(sim_tape_rdrecr(&fixture->unit, read_buffer,
-                                     &record_length, sizeof(read_buffer)),
-                     MTSE_OK);
-    assert_tape_record_equals(read_buffer, record_length, record,
-                              sizeof(record));
+    assert_int_equal(sim_tape_rdrecf(&fixture->unit, read_buffer, &record_length, sizeof(read_buffer)), MTSE_OK);
+    assert_tape_record_equals(read_buffer, record_length, record, sizeof(record));
+    assert_int_equal(sim_tape_rdrecr(&fixture->unit, read_buffer, &record_length, sizeof(read_buffer)), MTSE_OK);
+    assert_tape_record_equals(read_buffer, record_length, record, sizeof(record));
 
     assert_int_equal(fflush(capture), 0);
-    assert_int_equal(
-        simh_test_read_stream(capture, &output, &output_size), 0);
+    assert_int_equal(simh_test_read_stream(capture, &output, &output_size), 0);
     assert_int_equal(fclose(capture), 0);
 
     sim_deb = saved_deb;
@@ -305,8 +289,8 @@ static void record_tape_callback(UNIT *unit, t_stat status)
 {
     assert_non_null(active_tape_callback_state);
     active_tape_callback_state->unit = unit;
-    active_tape_callback_state->status = status;
-    active_tape_callback_state->calls += 1;
+    sim_atomic_put(&active_tape_callback_state->status, (sim_atomic_type_t) status);
+    sim_atomic_inc(&active_tape_callback_state->calls);
 }
 
 static void reset_tape_callback_state(struct sim_tape_callback_state *state)
@@ -314,23 +298,44 @@ static void reset_tape_callback_state(struct sim_tape_callback_state *state)
     memset(state, 0, sizeof(*state));
 }
 
+static void wait_for_tape_callback(struct sim_tape_callback_state *state)
+{
+    if (aio_enabled_and_active()) {
+        assert_non_null(active_tape_callback_state);
+
+        struct timespec now, timeout;
+
+        sim_clock_gettime(CLOCK_REALTIME, &now);
+        timeout.tv_sec = now.tv_sec + 5;
+        timeout.tv_nsec = now.tv_nsec;
+
+        sim_atomic_type_t last_calls = sim_atomic_get(&state->calls);
+
+        while (last_calls == sim_atomic_get(&state->calls) &&
+               (now.tv_sec < timeout.tv_sec || (now.tv_sec == timeout.tv_sec && now.tv_nsec < timeout.tv_nsec))) {
+            // Drain the simulator event queue, if anything.
+            assert_int_equal(sim_process_event(), SCPE_OK);
+
+            /* Use sched_thread_yield() here to allow the I/O thread to make progress. Technically,
+             * yes, sim_os_sleep() could be used but that makes assumptions about thread activation
+             * latency. Yielding the thread is the better choice because it forces the thread scheduler
+             * to give other runnable threads a chance. */
+            sim_thread_yield();
+
+            sim_clock_gettime(CLOCK_REALTIME, &now);
+        }
+    }
+}
+
 static void assert_tape_callback(struct sim_tape_callback_state *state,
                                  UNIT *unit, t_stat status)
 {
-    assert_int_equal(state->calls, 1);
+    wait_for_tape_callback(state);
+
+    assert_int_equal(sim_atomic_get(&state->calls), 1);
     assert_ptr_equal(state->unit, unit);
-    assert_int_equal(state->status, status);
+    assert_int_equal((t_stat) sim_atomic_get(&state->status), status);
     reset_tape_callback_state(state);
-}
-
-static void wait_for_tape_callback(struct sim_tape_callback_state *state)
-{
-    unsigned retry;
-
-    for (retry = 0; (retry < 1000) && (state->calls == 0); ++retry) {
-        assert_int_equal(sim_process_event(), SCPE_OK);
-        sim_os_ms_sleep(1);
-    }
 }
 
 static void write_sim_tape_self_test_output(void *context)
@@ -556,31 +561,23 @@ static void test_sim_tape_callback_wrappers_report_sync_status(void **state)
     active_tape_callback_state = &callback_state;
     reset_tape_callback_state(&callback_state);
 
-    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path),
-                     SCPE_OK);
+    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path), SCPE_OK);
+    assert_int_equal(sim_tape_set_dens(&fixture->unit, MT_DENS_1600, NULL, NULL), SCPE_OK);
+
+    assert_int_equal(sim_tape_wrgap_a(&fixture->unit, 0, record_tape_callback), MTSE_OK);
+    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
+
+    assert_int_equal(sim_tape_wrrecf_a(&fixture->unit, record, sizeof(record), record_tape_callback), MTSE_OK);
+    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
+
+    assert_int_equal(sim_tape_rewind_a(&fixture->unit, record_tape_callback), MTSE_OK);
+    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
+
     assert_int_equal(
-        sim_tape_set_dens(&fixture->unit, MT_DENS_1600, NULL, NULL), SCPE_OK);
-
-    assert_int_equal(sim_tape_wrgap_a(&fixture->unit, 0, record_tape_callback),
-                     MTSE_OK);
+        sim_tape_rdrecf_a(&fixture->unit, read_buffer, &record_length, sizeof(read_buffer), record_tape_callback),
+        MTSE_OK);
     assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
-
-    assert_int_equal(sim_tape_wrrecf_a(&fixture->unit, record, sizeof(record),
-                                       record_tape_callback),
-                     MTSE_OK);
-    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
-
-    assert_int_equal(sim_tape_rewind_a(&fixture->unit, record_tape_callback),
-                     MTSE_OK);
-    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
-
-    assert_int_equal(sim_tape_rdrecf_a(&fixture->unit, read_buffer,
-                                       &record_length, sizeof(read_buffer),
-                                       record_tape_callback),
-                     MTSE_OK);
-    assert_tape_callback(&callback_state, &fixture->unit, MTSE_OK);
-    assert_tape_record_equals(read_buffer, record_length, record,
-                              sizeof(record));
+    assert_tape_record_equals(read_buffer, record_length, record, sizeof(record));
 
     active_tape_callback_state = NULL;
 }
@@ -593,24 +590,20 @@ static void test_sim_tape_async_spfilebyrecf_normalizes_check_leot(void **state)
     uint32_t files_skipped = 99;
     uint32_t records_skipped = 99;
     t_stat queued_status;
-#if defined(SIM_ASYNCH_IO)
-    bool saved_asynch_enabled = sim_asynch_enabled;
-
-    sim_asynch_enabled = true;
-#endif
 
     active_tape_callback_state = &callback_state;
     reset_tape_callback_state(&callback_state);
 
-    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path),
-                     SCPE_OK);
-#if defined(SIM_ASYNCH_IO)
-    assert_non_null(fixture->unit.a_check_completion);
-    assert_non_null(fixture->unit.a_is_active);
-#endif
-    assert_int_equal(
-        sim_tape_wrrecf(&fixture->unit, first_record, sizeof(first_record)),
-        MTSE_OK);
+    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path), SCPE_OK);
+
+    struct tape_context *ctx = (struct tape_context *) fixture->unit.tape_ctx;
+
+    if (ctx->asynch_io) {
+        assert_non_null(fixture->unit.a_check_completion);
+        assert_non_null(fixture->unit.a_is_active);
+    }
+
+    assert_int_equal(sim_tape_wrrecf(&fixture->unit, first_record, sizeof(first_record)), MTSE_OK);
     assert_int_equal(sim_tape_wrtmk(&fixture->unit), MTSE_OK);
     assert_int_equal(sim_tape_wrtmk(&fixture->unit), MTSE_OK);
     assert_int_equal(sim_tape_rewind(&fixture->unit), MTSE_OK);
@@ -618,20 +611,18 @@ static void test_sim_tape_async_spfilebyrecf_normalizes_check_leot(void **state)
     queued_status = sim_tape_spfilebyrecf_a(&fixture->unit, 2, &files_skipped,
                                             &records_skipped, 2,
                                             record_tape_callback);
-#if defined(SIM_ASYNCH_IO)
-    assert_int_equal(queued_status, MTSE_OK);
-#else
-    assert_int_equal(queued_status, MTSE_LEOT);
-#endif
-    wait_for_tape_callback(&callback_state);
+
+    if (ctx->asynch_io) {
+        assert_int_equal(queued_status, MTSE_OK);
+    } else {
+        assert_int_equal(queued_status, MTSE_LEOT);
+    }
+
     assert_tape_callback(&callback_state, &fixture->unit, MTSE_LEOT);
     assert_int_equal(files_skipped, 1);
     assert_int_equal(records_skipped, 1);
 
     active_tape_callback_state = NULL;
-#if defined(SIM_ASYNCH_IO)
-    sim_asynch_enabled = saved_asynch_enabled;
-#endif
 }
 
 /* Verify the synchronous callback wrappers return the same status as the
@@ -863,8 +854,7 @@ static void test_sim_tape_debug_output_formats_positions(void **state)
     struct sim_tape_fixture *fixture = *state;
     char *output;
 
-    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path),
-                     SCPE_OK);
+    assert_int_equal(sim_tape_attach(&fixture->unit, fixture->tape_path), SCPE_OK);
 
     output = capture_tape_debug_output(fixture);
     assert_non_null(strstr(output, "wr_lnt: lnt: 0, pos: 12"));
@@ -1748,5 +1738,28 @@ int main(void)
             test_sim_tape_error_text_covers_named_and_generic_errors),
     };
 
-    return cmocka_run_group_tests(tests, NULL, NULL);
+    // Ensure AIO is initialized since it's always available. There are a couple of important variables
+    // and thread controls (mutexes, condvars) that need initializing.
+    aio_init();
+    sim_finit();
+    assert_int_equal(sim_tape_init(), SCPE_OK);
+    assert_false(sim_timer_init());
+
+    // First round: With AIO and the tape I/O thread, unless aio_init() has determined that
+    // sim_async_preference should be false.
+
+    int cmocka_retval = 0;
+    bool saved_async_preference = sim_async_preference;
+
+    sim_async_preference = false;
+    print_message("Direct tape I/O tests\n");
+    cmocka_retval = cmocka_run_group_tests(tests, NULL, NULL);
+    sim_async_preference = saved_async_preference;
+
+    if (sim_async_preference) {
+        print_message("AIO and tape I/O thread tests\n");
+        cmocka_retval = cmocka_run_group_tests(tests, NULL, NULL);
+    }
+
+    return cmocka_retval;
 }

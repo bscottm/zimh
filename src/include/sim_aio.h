@@ -91,6 +91,7 @@ static inline void is_simulator_thread_assert(UNIT * const unit)
 {
     if (!is_simulator_thread()) {
         sim_printf("Improper thread context for operation on %s in %s line %d\n", sim_uname(unit), __FILE__, __LINE__);
+        fflush(stdout);
         abort();
     }
 }

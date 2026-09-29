@@ -368,7 +368,7 @@ DEVICE nvr_dev = {
 
 DIB csi_dib = { 0, 0, NULL, NULL, 1, IVCL (CSI), SCB_CSI, { NULL } };
 
-UNIT csi_unit = { UDATA (NULL, 0, 0), KBD_POLL_WAIT };
+UNIT csi_unit = { UDATA_WAIT (NULL, 0, 0, KBD_POLL_WAIT) };
 
 REG csi_reg[] = {
     { ORDATAD (BUF,  csi_unit.buf,             8, "last data item processed") },
@@ -405,7 +405,7 @@ DEVICE csi_dev = {
 
 DIB cso_dib = { 0, 0, NULL, NULL, 1, IVCL (CSO), SCB_CSO, { NULL } };
 
-UNIT cso_unit = { UDATA (&cso_svc, UNIT_SEQ+UNIT_ATTABLE, 0), SERIAL_OUT_WAIT };
+UNIT cso_unit = { UDATA_WAIT (&cso_svc, UNIT_SEQ+UNIT_ATTABLE, 0, SERIAL_OUT_WAIT) };
 
 REG cso_reg[] = {
     { ORDATAD (BUF,     cso_unit.buf,          8, "last data item processed") },

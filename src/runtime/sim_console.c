@@ -605,7 +605,7 @@ static char sim_rem_con_temp_name[PATH_MAX+1];
 static bool sim_rem_master_mode = false;    /* Master Mode Enabled Flag */
 static bool sim_rem_master_was_enabled = false;   /* Master was Enabled */
 static bool sim_rem_master_was_connected = false;   /* Master Mode has been connected */
-static t_offset sim_rem_cmd_log_start = 0;  /* Log File saved position */
+static sim_off_t sim_rem_cmd_log_start = 0;  /* Log File saved position */
 
 static t_stat sim_rem_sample_output (FILE *st, int32_t line)
 {

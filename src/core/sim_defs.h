@@ -387,6 +387,10 @@ struct DEVICE {
    are for a typical sequential device.
 */
 
+/* scooter: capac changed to uint64_t, pos and tape_eom changed to sim_off_t to
+ * avoid simulator-address-size-specific library compiles. Otherwise, the size
+ * of the UNIT structure changes depending on the simulator's address size. */
+
 struct UNIT {
     UNIT *next;                 /* next active */
     t_stat (*action)(UNIT *up); /* action routine */
@@ -398,8 +402,8 @@ struct UNIT {
     int32_t time;               /* time out */
     uint32_t flags;             /* flags */
     uint32_t dynflags;          /* dynamic flags */
-    t_addr capac;               /* capacity */
-    t_addr pos;                 /* file position */
+    uint64_t capac;             /* capacity */
+    sim_off_t pos;              /* file position */
     void (*io_flush)(UNIT *up); /* io flush routine */
     uint32_t iostarttime;       /* I/O start time */
     int32_t buf;                /* buffer */
@@ -415,7 +419,7 @@ struct UNIT {
     uint32_t disk_type;         /* Disk specific info */
     void *tmxr;                 /* TMXR linkage */
     size_t recsize;             /* Tape specific info */
-    t_addr tape_eom;            /* Tape specific info */
+    sim_off_t tape_eom;         /* Tape specific info (EOM file position)*/
     bool (*cancel)(UNIT *);
     double usecs_remaining;     /* time balance for long delays */
     char *uname;                /* Unit name */
@@ -728,7 +732,89 @@ struct MEMFILE {
 
  */
 
-#    define UDATA(act, fl, cap) NULL, act, NULL, NULL, NULL, NULL, 0, 0, (fl), 0, (cap), 0, NULL, 0, 0
+#    define UDATA(unit_actionfn, unit_flags, unit_capacity) \
+        .next = NULL, \
+        .action = unit_actionfn, \
+        .filename = NULL, \
+        .fileref = NULL, \
+        .filebuf = NULL, \
+        .filebuf2 = NULL, \
+        .hwmark = 0, \
+        .time = 0, \
+        .flags = (unit_flags), \
+        .dynflags = 0, \
+        .capac = (unit_capacity), \
+        .pos = 0, \
+        .io_flush = NULL, \
+        .iostarttime = 0, \
+        .buf = 0, \
+        .wait = 0, \
+        .u3 = 0, \
+        .u4 = 0, \
+        .u5 = 0, \
+        .u6 = 0, \
+        .up7 = NULL, \
+        .up8 = NULL, \
+        .us9 = 0, \
+        .us10 = 0, \
+        .disk_type = 0, \
+        .tmxr = NULL, \
+        .recsize = 0, \
+        .tape_eom = 0, \
+        .cancel = NULL, \
+        .usecs_remaining = 0.0, \
+        .uname = NULL, \
+        .dptr = NULL, \
+        .dctrl = 0, \
+        .a_check_completion = NULL, \
+        .a_is_active = NULL, \
+        .a_polling_now = false, \
+        .a_poll_waiter_count = 0, \
+        .a_due_time = 0.0, \
+        .a_due_gtime = 0.0, \
+        .a_usec_delay = 0.0
+
+#    define UDATA_WAIT(unit_actionfn, unit_flags, unit_capacity, unit_wait) \
+        .next = NULL, \
+        .action = unit_actionfn, \
+        .filename = NULL, \
+        .fileref = NULL, \
+        .filebuf = NULL, \
+        .filebuf2 = NULL, \
+        .hwmark = 0, \
+        .time = 0, \
+        .flags = (unit_flags), \
+        .dynflags = 0, \
+        .capac = (unit_capacity), \
+        .pos = 0, \
+        .io_flush = NULL, \
+        .iostarttime = 0, \
+        .buf = 0, \
+        .wait = (unit_wait), \
+        .u3 = 0, \
+        .u4 = 0, \
+        .u5 = 0, \
+        .u6 = 0, \
+        .up7 = NULL, \
+        .up8 = NULL, \
+        .us9 = 0, \
+        .us10 = 0, \
+        .disk_type = 0, \
+        .tmxr = NULL, \
+        .recsize = 0, \
+        .tape_eom = 0, \
+        .cancel = NULL, \
+        .usecs_remaining = 0.0, \
+        .uname = NULL, \
+        .dptr = NULL, \
+        .dctrl = 0, \
+        .a_check_completion = NULL, \
+        .a_is_active = NULL, \
+        .a_polling_now = false, \
+        .a_poll_waiter_count = 0, \
+        .a_due_time = 0.0, \
+        .a_due_gtime = 0.0, \
+        .a_usec_delay = 0.0
 
 /* Register initialization macros.
 

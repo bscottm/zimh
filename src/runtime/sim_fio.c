@@ -27,8 +27,8 @@
    sim_can_seek      -       test for seekable (regular file)
    sim_fsize         -       get file size
    sim_fsize_name    -       get file size of named file
-   sim_fsize_ex      -       get file size as a t_offset
-   sim_fsize_name_ex -       get file size as a t_offset of named file
+   sim_fsize_ex      -       get file size as a sim_off_t
+   sim_fsize_name_ex -       get file size as a sim_off_t of named file
    sim_buf_copy_swapped -    copy data swapping elements along the way
    sim_buf_swap_data -       swap data elements inplace in buffer if needed
    sim_byte_swap_data -      swap data elements inplace in buffer
@@ -87,13 +87,17 @@ bool sim_toffset_64;                /* Large File (>2GB) file I/O Support availa
    Sim_fread swaps in place, sim_fwrite uses an intermediate buffer.
 */
 
-int32_t sim_finit (void)
+/* Initialize the file I/O subsystem: determine endianness and file size support.
+ *
+ * Returns true if the system is little endian, false otherwise.
+ */
+bool sim_finit (void)
 {
 union {int32_t i; char c[sizeof (int32_t)]; } end_test;
 
 end_test.i = 1;                                         /* test endian-ness */
 sim_end = (end_test.c[0] != 0);
-sim_toffset_64 = (sizeof(t_offset) > sizeof(int32_t));  /* Large File (>2GB) support */
+sim_toffset_64 = (sizeof(sim_off_t) > sizeof(int32_t));  /* Large File (>2GB) support */
 sim_taddr_64 = sim_toffset_64 && (sizeof(t_addr) > sizeof(int32_t));
 return sim_end;
 }
@@ -264,13 +268,13 @@ return total;
 
 /* Forward Declaration */
 
-t_offset sim_ftell (FILE *st);
+sim_off_t sim_ftell (FILE *st);
 
 /* Get file size */
 
-t_offset sim_fsize_ex (FILE *fp)
+sim_off_t sim_fsize_ex (FILE *fp)
 {
-t_offset pos, sz;
+sim_off_t pos, sz;
 
 if (fp == NULL)
     return 0;
@@ -283,10 +287,10 @@ if (sim_fseeko (fp, pos, SEEK_SET))
 return sz;
 }
 
-t_offset sim_fsize_name_ex (const char *fname)
+sim_off_t sim_fsize_name_ex (const char *fname)
 {
 FILE *fp;
-t_offset sz;
+sim_off_t sz;
 
 if ((fp = sim_fopen (fname, "rb")) == NULL)
     return 0;
@@ -365,7 +369,7 @@ return rmdir (pathbuf);
 
 static void _sim_filelist_entry (const char *directory,
                                  const char *filename,
-                                 t_offset FileSize,
+                                 sim_off_t FileSize,
                                  const struct stat *filestat,
                                  void *context)
 {
@@ -446,14 +450,14 @@ return f;
 #define S_SIM_IO_FSEEK_EXT_ 1
 #include <sys/stat.h>
 
-int sim_fseeko (FILE *st, t_offset offset, int whence)
+int sim_fseeko (FILE *st, sim_off_t offset, int whence)
 {
 return _fseeki64 (st, (__int64)offset, whence);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)_ftelli64 (st);
+return (sim_off_t)_ftelli64 (st);
 }
 
 #endif                                                  /* end Windows */
@@ -462,14 +466,14 @@ return (t_offset)_ftelli64 (st);
 
 #if defined (__linux) || defined (__linux__)
 #define S_SIM_IO_FSEEK_EXT_ 1
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseeko64 (st, (off64_t)xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftello64 (st));
+return (sim_off_t)(ftello64 (st));
 }
 
 #endif                                                  /* end Linux with LFS */
@@ -478,14 +482,14 @@ return (t_offset)(ftello64 (st));
 
 #if defined (__APPLE__) || defined (__FreeBSD__) || defined(__NetBSD__) || defined (__OpenBSD__)
 #define S_SIM_IO_FSEEK_EXT_ 1
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseeko (st, (off_t)xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftello (st));
+return (sim_off_t)(ftello (st));
 }
 
 #endif  /* end Apple OS/X */
@@ -494,20 +498,20 @@ return (t_offset)(ftello (st));
 /* Default: no OS-specific routine has been defined */
 
 #if !defined (S_SIM_IO_FSEEK_EXT_)
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseek (st, (long) xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftell (st));
+return (sim_off_t)(ftell (st));
 }
 #endif
 
 int sim_fseek (FILE *st, t_addr offset, int whence)
 {
-return sim_fseeko (st, (t_offset)offset, whence);
+return sim_fseeko (st, (sim_off_t)offset, whence);
 }
 
 #if defined(_WIN32)
@@ -1354,7 +1358,7 @@ dir = opendir(DirName[0] ? DirName : "/.");
 if (dir) {
     struct dirent *ent;
 #endif
-    t_offset FileSize;
+    sim_off_t FileSize;
     char *FileName;
      char *p_name;
 #if defined (HAVE_GLOB)
@@ -1385,7 +1389,7 @@ if (dir) {
         p_name = FileName + strlen (DirName);
         memset (&filestat, 0, sizeof (filestat));
         (void)stat (FileName, &filestat);
-        FileSize = (t_offset)((filestat.st_mode & S_IFDIR) ? 0 : sim_fsize_name_ex (FileName));
+        FileSize = (sim_off_t)((filestat.st_mode & S_IFDIR) ? 0 : sim_fsize_name_ex (FileName));
         entry (DirName, p_name, FileSize, &filestat, context);
         free (FileName);
         ++found_count;

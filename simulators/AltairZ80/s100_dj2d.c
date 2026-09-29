@@ -866,7 +866,7 @@ static t_stat dj2d_config_line(void);
 static uint16_t sector_len(uint8_t drive, uint8_t track);
 static uint32_t secs_per_track(uint8_t track);
 static uint32_t bytes_per_track(uint8_t track);
-static t_offset calculate_dj2d_sec_offset(uint8_t track, uint8_t sector);
+static sim_off_t calculate_dj2d_sec_offset(uint8_t track, uint8_t sector);
 static void DJ2D_HeadLoad(UNIT *uptr, WD1791_REG *pWD1791, uint8_t load);
 static void DJ2D_LED(DJ2D_REG *pDJ2D, int status);
 static uint8_t DJ2D_Read(uint32_t Addr);
@@ -1672,9 +1672,9 @@ static uint32_t bytes_per_track(uint8_t track)
     return dj2d_info->bytesPerTrack;
 }
 
-static t_offset calculate_dj2d_sec_offset(uint8_t track, uint8_t sector)
+static sim_off_t calculate_dj2d_sec_offset(uint8_t track, uint8_t sector)
 {
-    t_offset offset;
+    sim_off_t offset;
     uint8_t ds;
     uint8_t format;
 
@@ -1696,14 +1696,14 @@ static t_offset calculate_dj2d_sec_offset(uint8_t track, uint8_t sector)
         offset = 0;
         format = FMT_SD;
     } else {
-        offset = (t_offset)(dj2d_spt[FMT_SD]) * (t_offset)(dj2d_sector_len[FMT_SD]); /* Track 0 / Side 0 always SD */
-        offset += (t_offset)(track-1) * (t_offset)(dj2d_spt[format]) * (t_offset)(dj2d_sector_len[format]); /* Track 1-153 */
+        offset = (sim_off_t)(dj2d_spt[FMT_SD]) * (sim_off_t)(dj2d_sector_len[FMT_SD]); /* Track 0 / Side 0 always SD */
+        offset += (sim_off_t)(track-1) * (sim_off_t)(dj2d_spt[format]) * (sim_off_t)(dj2d_sector_len[format]); /* Track 1-153 */
     }
 
     /*
     ** Add sector offset to track offset
     */
-    offset += (t_offset)(sector-1) * (t_offset)(dj2d_sector_len[format]);
+    offset += (sim_off_t)(sector-1) * (sim_off_t)(dj2d_sector_len[format]);
 
     sim_debug(DEBUG_MSG, &dj2d_dev, DJ2D_SNAME ": OFFSET=%08" PRIxMAX " drive=%d side=%d format=%d track=%03d sector=%03d\r\n", (uintmax_t)offset, dj2d_info->currentDrive, ds, dj2d_info->format[dj2d_info->currentDrive], track, sector);
 
@@ -2122,7 +2122,7 @@ static uint32_t DJ2D_ReadSector(UNIT *uptr, uint8_t track, uint8_t sector, uint8
 
 static uint32_t DJ2D_WriteSector(UNIT *uptr, uint8_t track, uint8_t sector, uint8_t *buffer)
 {
-    t_offset sec_offset;
+    sim_off_t sec_offset;
     uint32_t len;
     uint32_t rtn = 0;
 

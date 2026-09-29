@@ -17,6 +17,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "sim_disk_ramdisk.h"
+
 /* SIMH/Disk format */
 
 typedef uint32_t        t_seccnt;                       /* disk sector count */
@@ -49,6 +51,59 @@ typedef uint32_t        t_lba;                          /* disk logical block ad
 #define DKSE_OK         0                               /* no error */
 
 typedef void (*DISK_PCALLBACK)(UNIT *unit, t_stat status);
+
+/* Disk I/O context: */
+
+typedef enum sim_disk_op_e {
+    DOP_DONE,             /* close */
+    DOP_RSEC,             /* sim_disk_rdsect_a */
+    DOP_WSEC,             /* sim_disk_wrsect_a */
+    DOP_IAVL,             /* sim_disk_isavailable_a */
+    DOP_FLUSH,            /* Flush pending writes to the disk */
+    DOP_IDLE,             /* Idle state, no operation pending */
+} sim_disk_op_t;
+
+struct disk_context {
+    sim_off_t            container_size;     /* Size of the data portion (of the pseudo disk) */
+    sim_off_t            highwater;          /* Furthest written sector in the disk */
+    DEVICE              *dptr;              /* Device for unit (access to debug flags) */
+    uint32_t            dbit;               /* debugging bit */
+    uint32_t            sector_size;        /* Disk Sector Size (of the pseudo disk) */
+    uint32_t            capac_factor;       /* Units of Capacity (8 = quadword, 2 = word, 1 = byte) */
+    uint32_t            xfer_element_size;  /* Disk Bus Transfer size (1 - byte, 2 - word, 4 - longword) */
+    uint32_t            storage_sector_size;/* Sector size of the containing storage */
+
+    uint32_t            removable;          /* Removable device flag */
+    uint32_t            is_cdrom;           /* Host system CDROM Device */
+    uint32_t            media_removed;      /* Media not available flag */
+    bool                auto_format;        /* Format determined dynamically */
+    sim_disk_ramdisk    *ramdisk;           /* Volatile memory-backed disk */
+    uint32_t            read_count;         /* Number of read operations performed */
+    uint32_t            write_count;        /* Number of write operations performed */
+    struct simh_disk_footer
+                        *footer;
+#if defined _WIN32
+    HANDLE              disk_handle;        /* OS specific Raw device handle */
+#endif
+    bool                asynch_io;          /* Asynchronous Interrupt scheduling enabled */
+    int                 asynch_io_latency;  /* instructions to delay pending interrupt */
+    sim_mutex_t         lock;
+    sim_thread_t        io_thread;          /* I/O Thread Id */
+    sim_mutex_t         io_lock;
+    sim_cond_t          io_cond;
+    sim_cond_t          io_done;
+    sim_cond_t          startup_cond;
+    bool                io_thread_running;
+    sim_disk_op_t       io_dop;
+    uint8_t             *buf;
+    t_seccnt            *rsects;
+    t_seccnt            sects;
+    t_lba               lba;
+    DISK_PCALLBACK      callback;
+    t_stat              io_status;
+    };
+
+#define disk_ctx up8                        /* Field in Unit structure which points to the disk_context */
 
 /*
  * In-process test backend replacement hook.
@@ -131,7 +186,7 @@ bool sim_disk_isavailable (UNIT *uptr);
 bool sim_disk_isavailable_a (UNIT *uptr, DISK_PCALLBACK callback);
 bool sim_disk_wrp (UNIT *uptr);
 t_stat sim_disk_pdp11_bad_block (UNIT *uptr, int32_t sec, int32_t wds);
-t_offset sim_disk_size (UNIT *uptr);
+sim_off_t sim_disk_size (UNIT *uptr);
 bool sim_disk_vhd_support (void);
 bool sim_disk_raw_support (void);
 void sim_disk_data_trace (UNIT *uptr, const uint8_t *data, size_t lba, size_t len, const char* txt, int detail, uint32_t reason);

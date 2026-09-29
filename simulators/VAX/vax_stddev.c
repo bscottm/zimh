@@ -135,7 +135,7 @@ static t_stat clk_help (FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const 
 
 DIB tti_dib = { 0, 0, NULL, NULL, 1, IVCL (TTI), SCB_TTI, { NULL } };
 
-UNIT tti_unit = { UDATA (&tti_svc, UNIT_IDLE|TT_MODE_8B, 0), TMLN_SPD_9600_BPS };
+UNIT tti_unit = { UDATA_WAIT (&tti_svc, UNIT_IDLE|TT_MODE_8B, 0, TMLN_SPD_9600_BPS) };
 
 REG tti_reg[] = {
     { HRDATAD (BUF,     tti_unit.buf,         16, "last data item processed") },
@@ -174,7 +174,7 @@ DEVICE tti_dev = {
 
 DIB tto_dib = { 0, 0, NULL, NULL, 1, IVCL (TTO), SCB_TTO, { NULL } };
 
-UNIT tto_unit = { UDATA (&tto_svc, TT_MODE_8B, 0), SERIAL_OUT_WAIT };
+UNIT tto_unit = { UDATA_WAIT (&tto_svc, TT_MODE_8B, 0, SERIAL_OUT_WAIT) };
 
 REG tto_reg[] = {
     { HRDATAD (BUF,     tto_unit.buf,          8, "last data item processed") },
@@ -214,7 +214,7 @@ DEVICE tto_dev = {
 
 DIB clk_dib = { 0, 0, NULL, NULL, 1, IVCL (CLK), SCB_INTTIM, { NULL } };
 
-UNIT clk_unit = { UDATA (&clk_svc, UNIT_IDLE+UNIT_FIX, sizeof(TOY)), CLK_DELAY };/* 100Hz */
+UNIT clk_unit = { UDATA_WAIT (&clk_svc, UNIT_IDLE+UNIT_FIX, sizeof(TOY), CLK_DELAY) }; /* 100Hz */
 
 REG clk_reg[] = {
     { HRDATAD (CSR,                          clk_csr,        16, "control/status register") },

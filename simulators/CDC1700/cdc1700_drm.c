@@ -722,7 +722,7 @@ t_stat drm_attach (UNIT *uptr, const char *cptr)
 {
   t_addr capac = uptr->capac;
   t_stat r;
-  t_offset tracks;
+  sim_off_t tracks;
 
   r = attach_unit(uptr, cptr);
   if (r != SCPE_OK)
@@ -959,7 +959,7 @@ t_stat DRMautoload(void)
     uint32_t i;
 
     for (i = 0; i < DRM_AUTOLOAD; i++) {
-      t_offset offset = i * DRM_NUMBY;
+      sim_off_t offset = i * DRM_NUMBY;
       void *buf = &M[i * DRM_NUMBY];
 
       if (sim_fseeko(uptr->fileref, offset, SEEK_SET) ||
