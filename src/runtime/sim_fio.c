@@ -50,12 +50,6 @@
    access devices like fixed head disks and DECtapes).
 */
 
-#define IN_SIM_FIO_C 1              /* Include from sim_fio.c */
-
-#include <inttypes.h>
-#include <stdbool.h>
-#include <stdint.h>
-
 #include "sim_defs.h"
 #include "sim_host_path.h"
 #include "sim_types.h"
@@ -1421,102 +1415,6 @@ tptr = cptr + strlen (cptr);
 while ((--tptr >= cptr) && sim_isspace (*tptr))
     *tptr = 0;
 return cptr;
-}
-
-int sim_isspace (int c)
-{
-return ((c < 0) || (c >= 128)) ? 0 : isspace (c);
-}
-
-int sim_islower (int c)
-{
-return (c >= 'a') && (c <= 'z');
-}
-
-int sim_isupper (int c)
-{
-return (c >= 'A') && (c <= 'Z');
-}
-
-int sim_toupper (int c)
-{
-return ((c >= 'a') && (c <= 'z')) ? ((c - 'a') + 'A') : c;
-}
-
-int sim_tolower (int c)
-{
-return ((c >= 'A') && (c <= 'Z')) ? ((c - 'A') + 'a') : c;
-}
-
-int sim_isalpha (int c)
-{
-return ((c < 0) || (c >= 128)) ? 0 : isalpha (c);
-}
-
-int sim_isprint (int c)
-{
-return ((c < 0) || (c >= 128)) ? 0 : isprint (c);
-}
-
-int sim_isdigit (int c)
-{
-return ((c >= '0') && (c <= '9'));
-}
-
-int sim_isgraph (int c)
-{
-return ((c < 0) || (c >= 128)) ? 0 : isgraph (c);
-}
-
-int sim_isalnum (int c)
-{
-return ((c < 0) || (c >= 128)) ? 0 : isalnum (c);
-}
-
-/* strncasecmp() is not available on all platforms */
-int sim_strncasecmp (const char* string1, const char* string2, size_t len)
-{
-size_t i;
-uchar_t s1, s2;
-
-for (i=0; i<len; i++) {
-    s1 = (uchar_t)string1[i];
-    s2 = (uchar_t)string2[i];
-    s1 = (uchar_t)sim_toupper (s1);
-    s2 = (uchar_t)sim_toupper (s2);
-    if (s1 < s2)
-        return -1;
-    if (s1 > s2)
-        return 1;
-    if (s1 == 0)
-        return 0;
-    }
-return 0;
-}
-
-/* strcasecmp() is not available on all platforms */
-int sim_strcasecmp (const char *string1, const char *string2)
-{
-size_t i = 0;
-uchar_t s1, s2;
-
-while (1) {
-    s1 = (uchar_t)string1[i];
-    s2 = (uchar_t)string2[i];
-    s1 = (uchar_t)sim_toupper (s1);
-    s2 = (uchar_t)sim_toupper (s2);
-    if (s1 == s2) {
-        if (s1 == 0)
-            return 0;
-        i++;
-        continue;
-        }
-    if (s1 < s2)
-        return -1;
-    if (s1 > s2)
-        return 1;
-    }
-return 0;
 }
 
 int sim_strwhitecasecmp (const char *string1, const char *string2, bool casecmp)

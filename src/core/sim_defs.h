@@ -100,100 +100,8 @@
 #ifndef SIM_DEFS_H_
 #    define SIM_DEFS_H_ 1
 
-#    include <ctype.h>
-#    include <errno.h>
-#    include <limits.h>
-#    include <math.h>
-#    include <setjmp.h>
-#    include <stdbool.h>
-#    include <stdarg.h>
-#    include <stddef.h>
-#    include <stdint.h>
-#    include <stdio.h>
-#    include <stdlib.h>
-#    include <string.h>
-
-#    ifndef EXIT_FAILURE
-#        define EXIT_FAILURE 1
-#    endif
-#    ifndef EXIT_SUCCESS
-#        define EXIT_SUCCESS 0
-#    endif
-
-#    ifdef _WIN32
-#        include <winsdkver.h>
-#        include <sdkddkver.h>
-
-#        if WINVER < 0x0A00 || _WIN32_WINNT < 0x0A00
-#            error ZIMH requires a Windows 10 or newer API target.
-#        endif
-
-#        define WINDOWS_LEAN_AND_MEAN
-
-#        include <winsock2.h>
-#        include <ws2tcpip.h>
-#        include <windows.h>
-#        include <winerror.h>
-#        undef PACKED     /* avoid macro name collision */
-#        undef ERROR      /* avoid macro name collision */
-#        undef MEM_MAPPED /* avoid macro name collision */
-#        include <process.h>
-#    endif
-
-#    include "c_attrs.h"
-#    include "string_compat.h"
-
-#    if defined(_WIN32)
-#        include "sim_win32_compat.h"
-#    endif
-
-/* avoid macro names collisions */
-#    ifdef PMASK
-#        undef PMASK
-#    endif
-#    ifdef RS
-#        undef RS
-#    endif
-#    ifdef PAGESIZE
-#        undef PAGESIZE
-#    endif
-
-/*
- * Prevent inlining where call frame boundaries are useful for debugging,
- * instrumentation, or host-specific behavior.
- */
-#    if !defined(SIM_NOINLINE)
-#        if defined(_MSC_VER)
-#            define SIM_NOINLINE _declspec(noinline)
-#        elif defined(__GNUC__) || defined(__clang__)
-#            define SIM_NOINLINE __attribute__((noinline))
-#        else
-#            define SIM_NOINLINE
-#        endif
-#    endif
-
-/* Unused argument macro: easier to comprehend than a "(void) var;" statement. */
-#    define SIM_UNUSED_ARG(x) (void)x
-
-/* Unused function attribute: easier to comprehend than a complicated compiler
-   attribute */
-#    if defined(__GNUC__) || defined(__clang__)
-#        define SIM_UNUSED_FUNC __attribute__((unused))
-#    elif defined(_MSC_VER)
-#        if __STDC_VERSION >= 201710L
-#            define SIM_UNUSED_FUNC [[maybe_unused]]
-#        else
-#            define SIM_UNUSED_FUNC
-#            pragma warning(suppress : 4505)
-#        endif
-#    endif
-
-#    ifndef MAX
-#        define MAX(a, b) (((a) >= (b)) ? (a) : (b))
-#    endif
-#    ifndef MIN
-#        define MIN(a, b) (((a) <= (b)) ? (a) : (b))
-#    endif
+/* Platform headers, meta types and compiler attribute macros*/
+#    include "sim_platform.h"
 
 typedef int t_stat;                               /* status */
 
@@ -413,7 +321,7 @@ struct DEVICE {
     DEBTAB *debflags;           /* debug flags */
     t_stat (*msize)(UNIT *up, int32_t v, const char *cp, void *dp);
     /* mem size routine */
-    char *lname; /* logical name */
+    char *lname;                /* logical name */
     t_stat (*help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
     /* help */
     t_stat (*attach_help)(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr);
@@ -638,7 +546,7 @@ struct REG {
 /* Command tables, base and alternate formats */
 
 struct CTAB {
-    const char *name; /* name */
+    const char *name;      /* name */
     t_stat (*action)(int32_t flag, const char *cptr);
     /* action routine */
     int32_t arg;           /* argument */

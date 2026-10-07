@@ -3,13 +3,9 @@
 // SPDX-License-Identifier: MIT
 
 #ifndef DYNSTR_H_
-#define DYNSTR_H_ 1
+#    define DYNSTR_H_ 1
 
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
-
-#include "c_attrs.h"
+#    include "sim_platform.h"
 
 typedef struct dynstr {
     char *buf;
@@ -37,8 +33,7 @@ bool dynstr_appendf(dynstr_t *ds, const char *fmt, ...) PRINTF_FMT(2, 3);
  * allocation failure. Returns false only if the formatter reports an
  * encoding error.
  */
-bool dynstr_vappendf(dynstr_t *ds, const char *fmt,
-                     va_list args) PRINTF_FMT(2, 0);
+bool dynstr_vappendf(dynstr_t *ds, const char *fmt, va_list args) PRINTF_FMT(2, 0);
 
 /* Append one single character, aborting on allocation failure. */
 void dynstr_append_ch(dynstr_t *ds, char ch);

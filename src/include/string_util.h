@@ -3,18 +3,17 @@
 // SPDX-License-Identifier: MIT
 
 #ifndef STRING_UTIL_H_
-#define STRING_UTIL_H_ 1
+#    define STRING_UTIL_H_ 1
 
-#include "c_attrs.h"
+#    include "sim_platform.h"
 
-#include <stddef.h>
+#    include <stddef.h>
 
 /*
  * Append formatted text to an existing NUL-terminated buffer.  The return
  * value is the total string length that would have been produced, or a
  * negative value if formatting fails.
  */
-int strlappendf(char *buf, size_t buf_size, const char *fmt, ...)
-    PRINTF_FMT(3, 4);
+int strlappendf(char *buf, size_t buf_size, const char *fmt, ...) PRINTF_FMT(3, 4);
 
 #endif

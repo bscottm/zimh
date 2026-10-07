@@ -2652,7 +2652,7 @@ lookswitch = true;
 stdnul = fopen(NULL_DEVICE,"wb");
 sim_prog_name = argv [0];                               /* save a pointer to the program name */
 if (argc > 1) {                                         /* Check for special argument to invoke register test */
-    if (sim_strcasecmp (argv[1], "RegisterSanityCheck") == 0) {
+    if (strcasecmp (argv[1], "RegisterSanityCheck") == 0) {
         register_check = true;
         --argc;                                         /* Remove special argument to avoid confusion later */
         for (i = 1; i < argc; i++)
@@ -7719,7 +7719,7 @@ if ((flag == RU_RUN) || (flag == RU_GO)) {              /* run or go */
         sim_switches = 0;
         GET_SWITCHES (cptr);
         if (((*cptr == '\'') || (*cptr == '"')) ||      /* Expect UNTIL condition */
-            (!sim_strncasecmp(cptr, "HALTAFTER=", 10))) {
+            (!strncasecmp(cptr, "HALTAFTER=", 10))) {
             r = expect_cmd (1, cptr);
             if (r != SCPE_OK)
                 return r;

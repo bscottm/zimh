@@ -803,10 +803,10 @@ static t_stat adcs6_dev_set_rom(UNIT* uptr, int32_t value, const char* cptr, voi
     if (cptr == NULL)
         return SCPE_ARG;
 
-    if (!sim_strncasecmp(cptr, "ADC", 3)) {
+    if (!strncasecmp(cptr, "ADC", 3)) {
         sim_printf("ADC ROM selected.\n");
         adcs6_info->rom_type = ADCS6_ROM_ADC;
-    } else if (!sim_strncasecmp(cptr, "DIGITEX", 7)) {
+    } else if (!strncasecmp(cptr, "DIGITEX", 7)) {
         sim_printf("DIGITEX ROM selected.\n");
         adcs6_info->rom_type = ADCS6_ROM_DIGITEX;
     } else {

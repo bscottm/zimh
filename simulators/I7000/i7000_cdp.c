@@ -439,14 +439,14 @@ cdp_set_input(UNIT *uptr, int32_t val, const char *cptr, void *desc)
     }
 
     /* Check for given format */
-    if (sim_strcasecmp(gbuf, "EMPTY") == 0) {
+    if (strcasecmp(gbuf, "EMPTY") == 0) {
        iuptr->u3 = 0;
        iuptr->flags &= ~INPUT_MASK;
        iuptr->flags |= INPUT_EMPTY;
        return SCPE_OK;
     }
 
-    if (sim_strcasecmp(gbuf, "FULL") == 0) {
+    if (strcasecmp(gbuf, "FULL") == 0) {
        iuptr->u3 = 0;
        iuptr->flags &= ~INPUT_MASK;
        iuptr->flags |= INPUT_FULL;
@@ -454,7 +454,7 @@ cdp_set_input(UNIT *uptr, int32_t val, const char *cptr, void *desc)
     }
 
     /* If deck attach it to input */
-    if (sim_strcasecmp(gbuf, "DECK") == 0) {
+    if (strcasecmp(gbuf, "DECK") == 0) {
        int32_t   saved_switches = sim_switches;
 
        sim_switches = SWMASK('E') | SWMASK('R');

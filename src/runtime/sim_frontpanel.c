@@ -22,9 +22,9 @@
 
 */
 
+#include "sim_platform.h"
 #include "sim_sock.h"
 
-#include "c_attrs.h"
 #include "dynstr.h"
 #include "sim_frontpanel.h"
 #include "sim_time.h"

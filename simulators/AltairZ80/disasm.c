@@ -8,15 +8,9 @@
  * initial version 27/iii/95 by Simon Tatham
  */
 
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
-
+#include "sim_platform.h"
 #include "nasm.h"
 #include "insns.h"
-#include "c_attrs.h"
 #include "sim_types.h"
 
 /* names.c   included source file defining instruction and register

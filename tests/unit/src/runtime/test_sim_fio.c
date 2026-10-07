@@ -254,13 +254,7 @@ test_sim_string_compare_helpers_handle_case_and_whitespace(void **state)
 {
     (void)state;
 
-    assert_int_equal(sim_strncasecmp("Alpha", "aLpHaZ", 5), 0);
-    assert_true(sim_strncasecmp("Alpha", "AlpHz", 5) < 0);
-    assert_true(sim_strcasecmp("beta", "ALPHA") > 0);
-    assert_int_equal(sim_strcasecmp("Gamma", "gAmMa"), 0);
-
-    assert_int_equal(sim_strwhitecasecmp("Alpha\t beta", "alpha beta", true),
-                     0);
+    assert_int_equal(sim_strwhitecasecmp("Alpha\t beta", "alpha beta", true), 0);
     assert_true(sim_strwhitecasecmp("Alpha Beta", "alpha beta", false) < 0);
 }
 
