@@ -411,7 +411,7 @@ t_stat dsk_attach (UNIT *uptr, const char *cptr)
         return r;
     }
     uptr->u3 &= ~NOTRDY;  //reset FDD to ready
-    uptr->capac = sim_fsize(uptr->fileref); //file size
+    uptr->capac = sim_fsize_ex(uptr->fileref); //file size
     return SCPE_OK;
 }
 
@@ -446,7 +446,7 @@ int32_t fdcdrv(int32_t io, int32_t data)
         dsk_unit[cur_dsk].pos = 0;      /* clear counter */
         SIR = (uint8_t * )(dsk_unit[cur_dsk].filebuf);
         // detect disk type based on image geometry or SIR record
-        disk_image_size = sim_fsize(dsk_unit[cur_dsk].fileref); //get actual file size
+        disk_image_size = sim_fsize_ex(dsk_unit[cur_dsk].fileref); //get actual file size
         if (disk_image_size == 35 * 10 * 256) { // 89600 bytes -> FDOS image
             // FDOS disc has no SIR record.
             spt = 10;                   // 10 sectors

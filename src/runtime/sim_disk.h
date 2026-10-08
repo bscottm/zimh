@@ -131,7 +131,7 @@ bool sim_disk_isavailable (UNIT *uptr);
 bool sim_disk_isavailable_a (UNIT *uptr, DISK_PCALLBACK callback);
 bool sim_disk_wrp (UNIT *uptr);
 t_stat sim_disk_pdp11_bad_block (UNIT *uptr, int32_t sec, int32_t wds);
-t_offset sim_disk_size (UNIT *uptr);
+sim_off_t sim_disk_size (UNIT *uptr);
 bool sim_disk_vhd_support (void);
 bool sim_disk_raw_support (void);
 void sim_disk_data_trace (UNIT *uptr, const uint8_t *data, size_t lba, size_t len, const char* txt, int detail, uint32_t reason);

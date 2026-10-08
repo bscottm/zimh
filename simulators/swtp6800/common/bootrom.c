@@ -129,7 +129,7 @@ DEVICE BOOTROM_dev = {
 t_stat BOOTROM_attach (UNIT *uptr, const char *cptr)
 {
     t_stat r;
-    t_offset image_size;
+    sim_off_t image_size;
     t_addr capac;
     int i;
 

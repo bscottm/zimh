@@ -118,7 +118,8 @@ static t_stat dsk_operation(int cmd, int unit, int arm, int disk, int track)
 {
 
     FILE *f;
-    int flen, i, ic, ZeroNeg;
+    int i, ic, ZeroNeg;
+    sim_off_t flen;
     char buf[DISK_SIZE+1];
     int64_t d;
     char s[6];
@@ -131,7 +132,7 @@ static t_stat dsk_operation(int cmd, int unit, int arm, int disk, int track)
 
     f = dsk_unit[unit].fileref; // get disk file from unit;
 
-    flen = sim_fsize(f);
+    flen = sim_fsize_ex(f);
     if (flen == 0) {
         // new file, fill it with blanks
         memset(buf, 32, sizeof(buf)); // fill with space
@@ -465,10 +466,10 @@ t_stat dsk_reset(DEVICE * dptr)
 t_stat dsk_attach(UNIT * uptr, const char *file)
 {
     t_stat              r;
-    int                    flen;
+    sim_off_t           flen;
 
     if ((r = attach_unit(uptr, file)) != SCPE_OK) return r;
-    flen=sim_fsize(uptr->fileref);
+    flen=sim_fsize_ex(uptr->fileref);
     if ((flen > 0) && (flen != DISK_SIZE * 100)) {
         sim_messagef (SCPE_IERR, "Invalid RAMAC Unit file size\n");
         detach_unit (uptr);

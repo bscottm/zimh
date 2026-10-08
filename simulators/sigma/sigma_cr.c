@@ -403,7 +403,8 @@ t_stat cr_reset (DEVICE *dptr)
 t_stat cr_attach (UNIT *uptr, const char *cptr)
 {
     char *saved_filename;
-    int r;
+    t_stat r;
+    sim_off_t sz;
 
     saved_filename = uptr->filename;
     uptr->filename = NULL;
@@ -411,13 +412,13 @@ t_stat cr_attach (UNIT *uptr, const char *cptr)
         uptr->filename = saved_filename;
         return r;
         }
-    r = sim_fsize(uptr->fileref);
-    if ((r % 120) != 0) {                           /* multiple of 120 byte cards? */
+    sz = sim_fsize_ex(uptr->fileref);
+    if ((sz % 120) != 0) {                          /* multiple of 120 byte cards? */
         detach_unit(uptr);
         fprintf(stderr,"CR file size error\n");
         return SCPE_IOERR;
     }
-    cr_hopper = r / 120;
+    cr_hopper = (uint32_t)(sz / 120);
     return SCPE_OK;
 }
 

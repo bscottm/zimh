@@ -234,7 +234,7 @@ static t_stat n8vem_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
 
     sim_debug(VERBOSE_MSG, &n8vem_dev, "N8VEM: Attach %s.\n", i == 0 ? "ROM" : "RAM");
 

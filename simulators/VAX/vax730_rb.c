@@ -672,7 +672,7 @@ return "RB730 disk controller";
 
 static t_stat rb_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t p;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = (uptr->flags & UNIT_RB80)? RB80_SIZE: RB02_SIZE;
@@ -682,7 +682,7 @@ if (r != SCPE_OK)                                       /* error? */
 uptr->TRK = 0;                                          /* cylinder 0 */
 if ((uptr->flags & UNIT_RB80) == 0)
     uptr->STAT = RB02DS_VCK;                            /* new volume */
-if ((p = sim_fsize (uptr->fileref)) == 0) {             /* new disk image? */
+if ((p = sim_fsize_ex (uptr->fileref)) == 0) {          /* new disk image? */
     if (uptr->flags & UNIT_RO)                          /* if ro, done */
         return SCPE_OK;
     return pdp11_bad_block (uptr, RB_NUMSC(uptr), RB_NUMWD(uptr));

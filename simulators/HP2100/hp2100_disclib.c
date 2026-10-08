@@ -1673,7 +1673,8 @@ else                                                    /* the phase is illegal,
 
 t_stat dl_attach (CVPTR cvptr, UNIT *uptr, const char *cptr)
 {
-uint32_t id, size;
+uint32_t id;
+sim_off_t size;
 t_stat result;
 
 result = attach_unit (uptr, cptr);                          /* attach the unit */
@@ -1684,7 +1685,7 @@ if (result != SCPE_OK)                                      /* did the attach fa
 dl_load_unload (cvptr, uptr, true);                         /* if the attach succeeded, load the heads */
 
 if (uptr->flags & UNIT_AUTO) {                              /* is autosizing enabled? */
-    size = sim_fsize (uptr->fileref) / sizeof (uint16_t);   /* get the file size in words */
+    size = sim_fsize_ex (uptr->fileref) / sizeof (uint16_t);   /* get the file size in words */
 
     if (size > 0)                                           /* a new file retains the current drive model */
         for (id = 0; id < PROPS_COUNT; id++)                /* find the best fit to the drive models */

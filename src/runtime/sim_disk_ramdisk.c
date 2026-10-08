@@ -18,7 +18,7 @@
 #define RAMDISK_PREFIX_LEN (sizeof(RAMDISK_PREFIX) - 1)
 
 struct sim_disk_ramdisk {
-    t_offset size;
+    sim_off_t size;
     uint8_t *buffer;
     char *save_path;
     bool save_null;
@@ -27,7 +27,7 @@ struct sim_disk_ramdisk {
 #if defined(HAVE_FMEMOPEN)
 struct sim_disk_ramdisk_spec {
     bool has_size;
-    t_offset size;
+    sim_off_t size;
     bool has_type;
     char type[CBUFSIZE];
     bool has_from;
@@ -84,7 +84,7 @@ static char *trim_token(char *text)
 }
 
 /* Parse RAMDISK:SIZE values as byte counts with binary disk suffixes. */
-static t_stat parse_size(const char *text, t_offset *size)
+static t_stat parse_size(const char *text, sim_off_t *size)
 {
     char *end;
     uint64_t value;
@@ -121,20 +121,20 @@ static t_stat parse_size(const char *text, t_offset *size)
             return SCPE_ARG;
     }
 
-    if (sizeof(t_offset) < sizeof(uint64_t))
-        max_offset = (UINT64_C(1) << ((sizeof(t_offset) * CHAR_BIT) - 1)) - 1;
+    if (sizeof(sim_off_t) < sizeof(uint64_t))
+        max_offset = (UINT64_C(1) << ((sizeof(sim_off_t) * CHAR_BIT) - 1)) - 1;
     else
         max_offset = UINT64_MAX >> 1;
     if ((value == 0) || (value > (max_offset / multiplier)))
         return SCPE_ARG;
-    *size = (t_offset)(value * multiplier);
+    *size = (sim_off_t)(value * multiplier);
     return SCPE_OK;
 }
 
 /* Set the parsed ramdisk size, rejecting duplicate or malformed sizes. */
 static t_stat set_size(sim_disk_ramdisk_spec *spec, const char *text)
 {
-    t_offset size;
+    sim_off_t size;
 
     if (spec->has_size)
         return SCPE_ARG;
@@ -250,7 +250,7 @@ static t_stat seed_from_file(UNIT *uptr, sim_disk_ramdisk *ramdisk,
                              const char *path, bool exact_size)
 {
     FILE *source;
-    t_offset source_size;
+    sim_off_t source_size;
     size_t remaining;
     uint8_t *cursor;
 
@@ -302,7 +302,7 @@ static t_stat seed_from_file(UNIT *uptr, sim_disk_ramdisk *ramdisk,
 
 /* Create the memory buffer and FILE stream for a RAMDISK: attachment. */
 t_stat sim_disk_ramdisk_create(UNIT *uptr, const sim_disk_ramdisk_spec *spec,
-                               t_offset default_size, uint32_t sector_size,
+                               sim_off_t default_size, uint32_t sector_size,
                                bool restoring, const char *mode, FILE **fileref,
                                sim_disk_ramdisk **ramdisk)
 {
@@ -314,14 +314,14 @@ t_stat sim_disk_ramdisk_create(UNIT *uptr, const sim_disk_ramdisk_spec *spec,
         return SCPE_MEM;
     created->size = spec->has_size ? spec->size : default_size;
     if ((created->size == 0) ||
-        ((created->size % (t_offset)sector_size) != 0)) {
+        ((created->size % (sim_off_t)sector_size) != 0)) {
         sim_disk_ramdisk_free(created);
         return sim_messagef(SCPE_ARG,
                             "%s: RAMDISK: size must be a nonzero multiple "
                             "of the sector size (%u bytes)\n",
                             sim_uname(uptr), sector_size);
     }
-    if ((t_offset)(size_t)created->size != created->size) {
+    if ((sim_off_t)(size_t)created->size != created->size) {
         sim_disk_ramdisk_free(created);
         return sim_messagef(SCPE_MEM,
                             "%s: RAMDISK: size is too large for this host\n",
@@ -375,7 +375,7 @@ t_stat sim_disk_ramdisk_create(UNIT *uptr, const sim_disk_ramdisk_spec *spec,
 #endif
 
 /* Return the byte size of a live ramdisk attachment. */
-t_offset sim_disk_ramdisk_size(const sim_disk_ramdisk *ramdisk)
+sim_off_t sim_disk_ramdisk_size(const sim_disk_ramdisk *ramdisk)
 {
     return ramdisk->size;
 }

@@ -1159,7 +1159,7 @@ t_stat DPautoload(void)
     uint32_t i;
 
     for (i = 0; i < DP_NUMSC; i++) {
-      t_offset offset = i * DP_NUMBY;
+      sim_off_t offset = i * DP_NUMBY;
       void *buf = &M[i * DP_NUMWD];
 
       if (sim_fseeko(uptr->fileref, offset, SEEK_SET) ||

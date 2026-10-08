@@ -526,7 +526,7 @@ t_stat fd400_attach (UNIT * uptr, const char * file)
 
     if ((r = attach_unit(uptr, file)) != SCPE_OK) return r;
     uptr->u4 = uptr->u5 = 0;
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
     uptr->pos = 0;
     return SCPE_OK;
 }

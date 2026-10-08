@@ -800,14 +800,14 @@ void isbc208_reset1 (void)
 t_stat isbc208_attach (UNIT *uptr, const char *cptr)
 {
     t_stat r;
-    long len;
+    sim_off_t len;
     uint8_t fddnum;
 
     if ((r = attach_unit (uptr, cptr)) != SCPE_OK) {
         sim_printf("   isbc208_attach: Attach error %d\n", r);
         return r;
     }
-    len = sim_fsize (uptr->fileref);
+    len = sim_fsize_ex (uptr->fileref);
     fddnum = uptr->u6;
     fddst[fddnum] |= RDY;               /* set unit ready */
     if (len == 368640) {                /* 5" 360K DSDD */
@@ -832,7 +832,7 @@ t_stat isbc208_attach (UNIT *uptr, const char *cptr)
     uptr->capac = len;
     detach_unit (uptr);
     attach_unit (uptr, cptr);
-    sim_printf("   SBC208: FDD %d - %ld bytes of disk image %s loaded, fddst=%02X\n",
+    sim_printf("   SBC208: FDD %d - %" PRIsim_off_t " bytes of disk image %s loaded, fddst=%02X\n",
         fddnum, len, uptr->filename, fddst[fddnum]);
     sim_activate (&isbc208_unit[fddnum], isbc208_unit[fddnum].wait);
 //    sim_printf( "   iSBC208_attach: Done\n");

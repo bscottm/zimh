@@ -599,7 +599,7 @@ return SCPE_OK;
 
 t_stat rx_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t sz;
+sim_off_t sz;
 
 if ((uptr->flags & UNIT_AUTO) && (sz = sim_fsize_name (cptr))) {
     if (sz > RX_SIZE)

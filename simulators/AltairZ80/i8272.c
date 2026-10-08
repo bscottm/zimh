@@ -263,7 +263,7 @@ t_stat i8272_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
 
     i = find_unit_index(uptr);
 
@@ -291,7 +291,7 @@ t_stat i8272_attach(UNIT *uptr, const char *cptr)
             i8272_info->drive[i].uptr = NULL;
             return SCPE_OPENERR;
         }
-        uptr->capac = sim_fsize(uptr->fileref);
+        uptr->capac = sim_fsize_ex(uptr->fileref);
     }
 
     uptr->u3 = IMAGE_TYPE_IMD;
@@ -845,7 +845,7 @@ uint8_t I8272_Write(const uint32_t Addr, uint8_t cData)
                                         &flags);
 
                                     /* Recalculate disk size */
-                                    pDrive->uptr->capac = sim_fsize(pDrive->uptr->fileref);
+                                    pDrive->uptr->capac = sim_fsize_ex(pDrive->uptr->fileref);
 
                                 }
                             }

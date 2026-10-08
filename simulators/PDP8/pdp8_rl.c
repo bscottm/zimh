@@ -584,7 +584,7 @@ return SCPE_OK;
 
 t_stat rl_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t p;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = (uptr->flags & UNIT_RL02)? RL02_SIZE: RL01_SIZE;
@@ -593,7 +593,7 @@ if (r != SCPE_OK)                                       /* error? */
     return r;
 uptr->TRK = 0;                                          /* cyl 0 */
 uptr->STAT = RLDS_VCK;                                  /* new volume */
-if ((p = sim_fsize (uptr->fileref)) == 0) {             /* new disk image? */
+if ((p = sim_fsize_ex (uptr->fileref)) == 0) {          /* new disk image? */
     if (uptr->flags & UNIT_RO)
         return SCPE_OK;
     return rl_set_bad (uptr, 0, NULL, NULL);

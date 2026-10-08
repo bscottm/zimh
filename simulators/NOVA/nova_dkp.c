@@ -997,14 +997,15 @@ return SCPE_OK;
 
 t_stat dkp_attach (UNIT *uptr, const char *cptr)
 {
-int32_t i, p;
+int32_t i;
+sim_off_t p;
 t_stat   r;
 
 uptr->capac = drv_tab[GET_DTYPE (uptr->flags)].size;    /* restore capac */
 r = attach_unit (uptr, cptr);                           /* attach */
 if ((r != SCPE_OK) || !(uptr->flags & UNIT_AUTO))
     return r;
-if ((p = sim_fsize (uptr->fileref)) == 0)               /* get file size */
+if ((p = sim_fsize_ex (uptr->fileref)) == 0)            /* get file size */
     return SCPE_OK;
 for (i = 0; drv_tab[i].sect != 0; i++) {
     if (p <= (drv_tab[i].size * (int32_t) sizeof (uint16_t))) {

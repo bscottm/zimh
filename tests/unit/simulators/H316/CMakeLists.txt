@@ -19,3 +19,11 @@ add_unit_test(unit-h316-hi
         ${PROJECT_SOURCE_DIR}/simulators/H316
         ${PROJECT_SOURCE_DIR}/tests/unit/support
 )
+
+add_unit_test(unit-h316-fhd-attach
+    LABEL H316
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_h316_fhd_attach.c
+    INCLUDES
+        ${PROJECT_SOURCE_DIR}/simulators/H316
+)

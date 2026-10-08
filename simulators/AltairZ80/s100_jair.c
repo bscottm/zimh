@@ -1291,7 +1291,7 @@ static t_stat jair_attach(UNIT *uptr, const char *cptr)
     }
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
 
     for (i = 0; i < JAIR_UNITS; i++) {
         if (jair_dev.units[i].fileref == uptr->fileref) {

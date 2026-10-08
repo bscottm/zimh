@@ -1396,7 +1396,7 @@ return "Console RL02 disk";
 
 static t_stat rlcs_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t p;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = RL02_SIZE;
@@ -1405,7 +1405,7 @@ if (r != SCPE_OK)                                       /* error? */
     return r;
 uptr->TRK = 0;                                          /* cylinder 0 */
 uptr->STAT = RLDS_VCK;                                  /* new volume */
-if ((p = sim_fsize (uptr->fileref)) == 0) {             /* new disk image? */
+if ((p = sim_fsize_ex (uptr->fileref)) == 0) {          /* new disk image? */
     if (uptr->flags & UNIT_RO)                          /* if ro, done */
         return SCPE_OK;
     return pdp11_bad_block (uptr, RL_NUMSC, RL_NUMWD);

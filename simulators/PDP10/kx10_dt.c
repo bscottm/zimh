@@ -1171,7 +1171,8 @@ t_stat dt_attach (UNIT *uptr, const char *cptr)
 {
     uint16_t pdp8b[D8_NBSIZE];
     uint16_t pdp11b[D18_BSIZE];
-    uint32_t ba, sz, k, *fbuf;
+    uint32_t ba, k, *fbuf;
+    sim_off_t sz;
     int32_t u = uptr - dt_dev.units;
     t_stat r;
 
@@ -1185,7 +1186,7 @@ t_stat dt_attach (UNIT *uptr, const char *cptr)
         else if (sim_switches & SWMASK ('S'))               /* att 16b? */
             uptr->flags = uptr->flags | UNIT_11FMT;
         else if (!(sim_switches & SWMASK ('A')) &&          /* autosize? */
-            (sz = sim_fsize (uptr->fileref))) {
+            (sz = sim_fsize_ex (uptr->fileref))) {
             if (sz == D8_FILSIZ)
                 uptr->flags = uptr->flags | UNIT_8FMT;
             else if (sz == D11_FILSIZ)

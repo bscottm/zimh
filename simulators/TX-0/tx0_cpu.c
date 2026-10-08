@@ -1268,7 +1268,8 @@ t_stat sim_load(FILE *fileref, const char *cptr, const char *fnam, int flag) {
     (void) fnam;
 
     uint32_t word;
-    t_addr j, lo, hi, sz, sz_words;
+    t_addr j, lo, hi, sz_words;
+    sim_off_t sz;
     const char *result;
 
     if (flag) { /* Dump to file. */
@@ -1281,8 +1282,8 @@ t_stat sim_load(FILE *fileref, const char *cptr, const char *fnam, int flag) {
         }
     } else {
         lo = strtotv(cptr, &result, 8) & 0xFFFF;
-        sz = sim_fsize(fileref);
-        sz_words = MIN (sz, sizeof (M)) / sizeof (word);
+        sz = sim_fsize_ex(fileref);
+        sz_words = (t_addr)(MIN (sz, (sim_off_t)sizeof (M)) / sizeof (word));
         for (j = lo; j < sz_words; j++) {
             if (1 != sim_fread(&word, 4, 1, fileref))
                 break;

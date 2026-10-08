@@ -340,7 +340,7 @@ t_stat diskCreate(FILE *fileref, const char *ctlr_comment)
         return (SCPE_OPENERR);
     }
 
-    if(sim_fsize(fileref) != 0) {
+    if(sim_fsize_ex(fileref) != 0) {
         sim_printf("SIM_IMD: Disk image already has data, do you want to overwrite it? ");
         answer = (uint8_t)getchar();
 
@@ -776,7 +776,7 @@ t_stat trackWrite(DISK_INFO *myDisk,
 t_stat assignDiskType(UNIT *uptr) {
     t_stat result = SCPE_OK;
     char header[4];
-    t_offset pos = sim_ftell(uptr->fileref);
+    sim_off_t pos = sim_ftell(uptr->fileref);
 
     rewind(uptr->fileref);
     if (fgets(header, 4, uptr->fileref) == NULL)

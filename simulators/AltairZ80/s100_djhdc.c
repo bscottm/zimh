@@ -341,8 +341,8 @@ static t_stat djhdc_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    if(sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
+    if(sim_fsize_ex(uptr->fileref) != 0) {
+        uptr->capac = sim_fsize_ex(uptr->fileref);
     } else {
         uptr->capac = (pDrive->ntracks * pDrive->nsectors * pDrive->nheads * pDrive->sectsize);
     }

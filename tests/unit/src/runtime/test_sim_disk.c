@@ -27,7 +27,7 @@ struct sim_disk_fixture {
     char image_path[CBUFSIZE];
 };
 
-extern t_offset pseudo_filesystem_size;
+extern sim_off_t pseudo_filesystem_size;
 extern t_stat sim_save(FILE *sfile);
 extern t_stat sim_rest(FILE *rfile);
 extern t_stat show_unit(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag);

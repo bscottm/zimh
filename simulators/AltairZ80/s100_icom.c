@@ -773,8 +773,8 @@ static t_stat icom_attach(UNIT *uptr, const char *cptr)
     }
 
     /* Determine length of this disk */
-    if (sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
+    if (sim_fsize_ex(uptr->fileref) != 0) {
+        uptr->capac = sim_fsize_ex(uptr->fileref);
     } else {
         uptr->capac = ICOM_SD_CAPACITY;
     }

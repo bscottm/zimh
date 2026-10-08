@@ -433,7 +433,7 @@ static t_stat tape_boot(int32_t unit_num, DEVICE *dptr)
 
 t_stat tape_metadata(FILE *fileref, uint16_t *block_size, int16_t *forward_offset, int16_t *reverse_offset)
 {
-  t_offset size = sim_fsize(fileref);
+  sim_off_t size = sim_fsize_ex(fileref);
   t_stat stat;
   uint16_t word;
 

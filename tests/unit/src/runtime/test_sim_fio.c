@@ -145,7 +145,7 @@ static int teardown_sim_fio_fixture(void **state)
 }
 
 static void filelist_callback(const char *directory, const char *filename,
-                              t_offset file_size, const struct stat *filestat,
+                              sim_off_t file_size, const struct stat *filestat,
                               void *context)
 {
     struct filelist_context *result = context;
@@ -496,8 +496,8 @@ test_sim_fread_and_fwrite_round_trip_in_big_endian_mode(void **state)
     assert_non_null(file);
 
     assert_int_equal(sim_fwrite(words_out, sizeof(words_out[0]), 3, file), 3);
-    assert_int_equal(sim_fsize_ex(file), (t_offset)sizeof(words_out));
-    assert_int_equal(sim_ftell(file), (t_offset)sizeof(words_out));
+    assert_int_equal(sim_fsize_ex(file), (sim_off_t)sizeof(words_out));
+    assert_int_equal(sim_ftell(file), (sim_off_t)sizeof(words_out));
 
     assert_int_equal(sim_fseeko(file, 0, SEEK_SET), 0);
     assert_int_equal(fread(raw_bytes, 1, sizeof(raw_bytes), file),
@@ -507,8 +507,8 @@ test_sim_fread_and_fwrite_round_trip_in_big_endian_mode(void **state)
                         sizeof(raw_bytes));
 
     assert_int_equal(sim_fseeko(file, sizeof(words_out[0]), SEEK_SET), 0);
-    assert_int_equal(sim_fsize_ex(file), (t_offset)sizeof(words_out));
-    assert_int_equal(sim_ftell(file), (t_offset)sizeof(words_out[0]));
+    assert_int_equal(sim_fsize_ex(file), (sim_off_t)sizeof(words_out));
+    assert_int_equal(sim_ftell(file), (sim_off_t)sizeof(words_out[0]));
 
     assert_int_equal(sim_fseeko(file, 0, SEEK_SET), 0);
     assert_int_equal(sim_fread(words_in, sizeof(words_in[0]), 3, file), 3);
@@ -567,18 +567,16 @@ static void test_sim_fwrite_handles_multiple_flip_buffers(void **state)
    named-path queries. */
 static void test_sim_file_size_helpers_report_sizes_consistently(void **state)
 {
-    struct sim_fio_fixture *fixture = *state;
+    struct sim_fio_fixture * const fixture = *state;
     FILE *file;
 
     file = sim_fopen(fixture->file_path, "rb");
     assert_non_null(file);
 
     assert_true(sim_can_seek(file));
-    assert_int_equal(sim_fsize(file), 5);
     assert_int_equal(sim_fsize_ex(file), 5);
     assert_int_equal(sim_fsize_name(fixture->file_path), 5);
-    assert_int_equal(sim_fsize_name_ex(fixture->file_path), 5);
-    assert_int_equal(sim_fsize_name_ex(fixture->copy_path), 0);
+    assert_int_equal(sim_fsize_name(fixture->copy_path), 0);
 
     fclose(file);
 }
@@ -593,7 +591,7 @@ static void test_sim_finit_sets_endian_and_large_file_flags(void **state)
 
     result = sim_finit();
     assert_int_equal(result, sim_end);
-    assert_int_equal(sim_toffset_64, sizeof(t_offset) > sizeof(int32_t));
+    assert_int_equal(sim_toffset_64, sizeof(sim_off_t) > sizeof(int32_t));
     assert_int_equal(sim_taddr_64,
                      sim_toffset_64 && (sizeof(t_addr) > sizeof(int32_t)));
 }
@@ -673,7 +671,7 @@ static void test_sim_fopen_normalizes_quoted_paths(void **state)
 
     file = sim_fopen(quoted_path, "rb");
     assert_non_null(file);
-    assert_int_equal(sim_fsize(file), sizeof(data));
+    assert_int_equal(sim_fsize_ex(file), sizeof(data));
     fclose(file);
 }
 

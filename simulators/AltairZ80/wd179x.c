@@ -424,7 +424,7 @@ t_stat wd179x_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
 
     i = find_unit_index(uptr);
 
@@ -445,7 +445,7 @@ t_stat wd179x_attach(UNIT *uptr, const char *cptr)
         if ((rtn != NULL) && strncmp(header, "IMD", 3)) {
             /* Not an IMD, so assume DSK image type. */
             uptr->u3 = IMAGE_TYPE_DSK;
-            uptr->capac = sim_fsize(uptr->fileref);
+            uptr->capac = sim_fsize_ex(uptr->fileref);
 
             switch (uptr->capac) {
                 case WD179X_CAPACITY_SSSD:
@@ -468,7 +468,7 @@ t_stat wd179x_attach(UNIT *uptr, const char *cptr)
                 wd179x_info->drive[i].uptr = NULL;
                 return SCPE_OPENERR;
             }
-            uptr->capac = sim_fsize(uptr->fileref);
+            uptr->capac = sim_fsize_ex(uptr->fileref);
         } else {
             sim_printf("WD179X: Creating DSK image.\n");
             uptr->u3 = IMAGE_TYPE_DSK;
@@ -900,7 +900,7 @@ uint8_t WD179X_Write(const uint32_t Addr, uint8_t cData)
                         }
 
                         /* Recalculate disk size */
-                        pDrive->uptr->capac = sim_fsize(pDrive->uptr->fileref);
+                        pDrive->uptr->capac = sim_fsize_ex(pDrive->uptr->fileref);
                     }
                 }
             }

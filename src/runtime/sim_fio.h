@@ -13,11 +13,9 @@
 #ifndef SIM_FIO_H_
 #    define SIM_FIO_H_ 1
 
-#    include "sim_defs.h"
+/* t_stat's declaration is in scp.h */
+#    include "scp.h"
 
-#    include <stdbool.h>
-#    include <stdint.h>
-#    include <stdio.h>
 #    include <sys/stat.h>
 #    include <time.h>
 
@@ -25,31 +23,21 @@
 #    define fxread(a, b, c, d) sim_fread(a, b, c, d)
 #    define fxwrite(a, b, c, d) sim_fwrite(a, b, c, d)
 
+/* t_offset -> sim_off_t (sim_platform.h) */
+
 int32_t sim_finit(void);
-#    if (defined(__linux) || defined(__linux__) || defined(_WIN32) || defined(__APPLE__) || defined(__FreeBSD__) ||    \
-         defined(__NetBSD__) || defined(__OpenBSD__)) &&                                                               \
-        !defined(DONT_DO_LARGEFILE)
-typedef int64_t t_offset;
-#    else
-typedef int32_t t_offset;
-#        if !defined(DONT_DO_LARGEFILE)
-#            define DONT_DO_LARGEFILE 1
-#        endif
-#    endif
 FILE *sim_fopen(const char *file, const char *mode);
-int sim_fseek(FILE *st, t_addr offset, int whence);
-int sim_fseeko(FILE *st, t_offset offset, int whence);
+int sim_fseek(FILE *st, sim_off_t offset, int whence);
+int sim_fseeko(FILE *st, sim_off_t offset, int whence);
 bool sim_can_seek(FILE *st);
-int sim_set_fsize(FILE *fptr, t_addr size);
+int sim_set_fsize(FILE *fptr, sim_off_t size);
 t_stat sim_set_file_times(const char *file_name, time_t access_time, time_t write_time);
 int sim_set_fifo_nonblock(FILE *fptr);
 size_t sim_fread(void *bptr, size_t size, size_t count, FILE *fptr);
 size_t sim_fwrite(const void *bptr, size_t size, size_t count, FILE *fptr);
-uint32_t sim_fsize(FILE *fptr);
-uint32_t sim_fsize_name(const char *fname);
-t_offset sim_ftell(FILE *st);
-t_offset sim_fsize_ex(FILE *fptr);
-t_offset sim_fsize_name_ex(const char *fname);
+sim_off_t sim_ftell(FILE *st);
+sim_off_t sim_fsize_ex(FILE *fptr);
+sim_off_t sim_fsize_name(const char *fname);
 int sim_stat(const char *fname, struct stat *stat_str);
 int sim_chdir(const char *path);
 int sim_mkdir(const char *path);
@@ -57,7 +45,7 @@ int sim_rmdir(const char *path);
 t_stat sim_copyfile(const char *source_file, const char *dest_file, bool overwrite_existing);
 char *sim_filepath_parts(const char *pathname, const char *parts);
 char *sim_getcwd(char *buf, size_t buf_size);
-typedef void (*DIR_ENTRY_CALLBACK)(const char *directory, const char *filename, t_offset FileSize,
+typedef void (*DIR_ENTRY_CALLBACK)(const char *directory, const char *filename, sim_off_t FileSize,
                                    const struct stat *filestat, void *context);
 t_stat sim_dir_scan(const char *cptr, DIR_ENTRY_CALLBACK entry, void *context);
 char **sim_get_filelist(const char *filename);
@@ -75,7 +63,7 @@ int32_t sim_shmem_atomic_add(int32_t *ptr, int32_t val);
 bool sim_shmem_atomic_cas(int32_t *ptr, int32_t oldv, int32_t newv);
 
 extern bool sim_taddr_64;   /* t_addr is > 32b and Large File Support available */
-extern bool sim_toffset_64; /* Large File (>2GB) file I/O support */
+extern const bool sim_toffset_64; /* Large File (>2GB) file I/O support */
 extern bool sim_end;        /* true = little endian, false = big endian */
 
 char *sim_trim_endspc(char *cptr);

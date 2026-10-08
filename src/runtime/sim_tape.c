@@ -445,7 +445,7 @@ static MEMORY_TAPE *memory_create_tape (void);
 static void memory_free_tape (void *vtape);
 static void sim_tape_add_ansi_entry (const char *directory,
                                      const char *filename,
-                                     t_offset FileSize,
+                                     sim_off_t FileSize,
                                      const struct stat *filestat,
                                      void *context);
 static bool memory_tape_add_block (MEMORY_TAPE *tape, uint8_t *block, size_t size);
@@ -463,7 +463,7 @@ typedef struct DOS11_HDR {
 
 static void sim_tape_add_dos11_entry (const char *directory,
                                       const char *filename,
-                                      t_offset FileSize,
+                                      sim_off_t FileSize,
                                       const struct stat *filestat,
                                       void *context);
 
@@ -916,7 +916,7 @@ switch (MT_GET_FMT (uptr)) {                            /* case on format */
         break;
 
     case MTUF_F_TAR:                                    /* TAR */
-        uptr->hwmark = (t_addr)sim_fsize (uptr->fileref);
+        uptr->hwmark = (t_addr)sim_fsize_ex (uptr->fileref);
         break;
 
     default:
@@ -1105,7 +1105,7 @@ if (MT_GET_FMT (uptr) < MTUF_F_ANSI)
 return 0;
 }
 
-static t_offset sim_tape_size (UNIT *uptr)
+static sim_off_t sim_tape_size (UNIT *uptr)
 {
 if (MT_GET_FMT (uptr) < MTUF_F_ANSI)
     return sim_fsize_ex (uptr->fileref); /* True on-disk tape images: file size  */
@@ -1388,7 +1388,7 @@ switch (f) {                                       /* otherwise the read method 
         else {
             if ((feof (uptr->fileref)) ||               /* eof? */
                 ((tpcbc == TPC_EOM) &&
-                 (sim_fsize (uptr->fileref) == (uint32_t)sim_ftell (uptr->fileref)))) {
+                 (sim_fsize_ex (uptr->fileref) == sim_ftell (uptr->fileref)))) {
                 MT_SET_PNU (uptr);                      /* pos not upd */
                 status = MTSE_EOM;
                 }
@@ -1775,7 +1775,7 @@ switch (f) {                                            /* otherwise the read me
                 }
             if (feof (uptr->fileref)) {                 /* eof? */
                 if ((uptr->pos > sizeof (t_awshdr)) &&
-                    (uptr->pos >= sim_fsize (uptr->fileref))) {
+                    (uptr->pos >= sim_fsize_ex (uptr->fileref))) {
                     uptr->tape_eom = uptr->pos;
                     (void)sim_tape_seek (uptr, uptr->pos - sizeof (t_awshdr));/* position */
                     continue;
@@ -2486,7 +2486,8 @@ static t_stat tape_erase_fwd (UNIT *uptr, t_mtrlnt gap_size)
 size_t   xfer;
 t_stat   st;
 t_mtrlnt meta, sbc, new_len, rec_size;
-uint32_t file_size, marker_count;
+uint32_t marker_count;
+sim_off_t file_size;
 int32_t  gap_needed = (int32_t) gap_size;               /* the gap remaining to be allocated from the tape */
 uint32_t gap_alloc = 0;                                 /* the gap currently allocated from the tape */
 const t_addr gap_pos = uptr->pos;                       /* the file position where the gap will start */
@@ -2505,7 +2506,7 @@ else if (sim_tape_wrp (uptr))                           /* otherwise if the unit
 else if (gap_size == 0 || format != MTUF_F_STD)         /* otherwise if zero length or gaps aren't supported */
     return MTSE_OK;                                     /*   then take no action */
 
-file_size = sim_fsize (uptr->fileref);                  /* get the file size */
+file_size = sim_fsize_ex (uptr->fileref);                /* get the file size */
 
 if (sim_tape_seek (uptr, uptr->pos)) {                  /* position the tape; if it fails */
     MT_SET_PNU (uptr);                                  /*   then set position not updated */
@@ -3492,7 +3493,7 @@ if ((uptr == NULL) || (uptr->fileref == NULL))
     return 0;
 countmap = (uint32_t *)calloc (65536, sizeof(*countmap));
 recbuf = (uint8_t *)malloc (65536);
-tape_size = (t_addr)sim_fsize (uptr->fileref);
+tape_size = (t_addr)sim_fsize_ex (uptr->fileref);
 sim_debug_unit (MTSE_DBG_STR, uptr, "tpc_map: tape_size: %" PRIuADDR "\n", tape_size);
 for (objc = 0, sizec = 0, tpos = 0;; ) {
     (void)sim_tape_seek (uptr, tpos);
@@ -3718,7 +3719,7 @@ if (!stop_cpu) {            /* if SIGINT didn't interrupt the scan */
     sim_messagef (SCPE_OK, "%s: Tape Image %s'%s' scanned as %s format\n", sim_uname (uptr),
                            ((MT_GET_FMT (uptr) >= MTUF_F_ANSI) ? "made from " : ""), uptr->filename,
                            _sim_tape_format_name (uptr));
-    remaining_data = (uint32_t)(sim_tape_size (uptr) - (t_offset)uptr->tape_eom);
+    remaining_data = (uint32_t)(sim_tape_size (uptr) - (sim_off_t)uptr->tape_eom);
     if ((r != MTSE_EOM) || (sim_switches & SWMASK ('V')) || (sim_switches & SWMASK ('L')) ||
         (remaining_data > 0) ||
         (unique_record_sizes > 2 * tapemark_total)) {
@@ -4328,7 +4329,7 @@ return error;
 
 static void sim_tape_add_dos11_entry (const char *directory,
                                       const char *filename,
-                                      t_offset FileSize,
+                                      sim_off_t FileSize,
                                       const struct stat *filestat,
                                       void *context)
 {
@@ -4749,7 +4750,7 @@ return error;
 
 static void sim_tape_add_ansi_entry (const char *directory,
                                      const char *filename,
-                                     t_offset FileSize,
+                                     sim_off_t FileSize,
                                      const struct stat *filestat,
                                      void *context)
 {

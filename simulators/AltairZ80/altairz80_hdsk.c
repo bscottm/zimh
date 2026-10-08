@@ -549,7 +549,7 @@ static t_stat hdsk_attach(UNIT *uptr, const char *cptr) {
     ASSURE((0 <= thisUnitIndex) && (thisUnitIndex < HDSK_NUMBER));
 
     if (is_imd(uptr)) {
-        if ((sim_fsize(uptr -> fileref) == 0) &&
+        if ((sim_fsize_ex(uptr -> fileref) == 0) &&
             (diskCreate(uptr -> fileref, "$Id: SIMH hdsk.c $") != SCPE_OK)) {
             sim_printf("HDSK%c (IMD): Failed to create IMD disk.\n", unitChar);
             detach_unit(uptr);
@@ -581,7 +581,7 @@ static t_stat hdsk_attach(UNIT *uptr, const char *cptr) {
     }
 
     /* Step 1: Determine capacity of this disk                                                      */
-    uptr -> capac = sim_fsize(uptr -> fileref);             /* the file length is a good indication */
+    uptr -> capac = sim_fsize_ex(uptr -> fileref);          /* the file length is a good indication */
     if (uptr -> capac == 0) {                               /* file does not exist or has length 0  */
         uptr -> capac = (uptr -> HDSK_NUMBER_OF_TRACKS *
                          uptr -> HDSK_SECTORS_PER_TRACK * uptr -> HDSK_SECTOR_SIZE);

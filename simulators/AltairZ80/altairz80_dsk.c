@@ -443,7 +443,7 @@ static t_stat dsk_attach(UNIT *uptr, const char *cptr) {
     /*  If the file size is close to the mini-disk image size, set the number of
      tracks to 16, otherwise, 32 sectors per track. */
 
-    imageSize = sim_fsize(uptr -> fileref);
+    imageSize = sim_fsize_ex(uptr -> fileref);
     current_image_size[thisUnitIndex] = imageSize;
     sectors_per_track[thisUnitIndex] = (dsk_image_size_is_near(
                                             imageSize, MINI_DISK_SIZE,

@@ -239,7 +239,7 @@ static t_stat vfdhd_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_ex(uptr->fileref);
 
     for(i = 0; i < VFDHD_MAX_DRIVES; i++) {
         vfdhd_info->drive[i].uptr = &vfdhd_dev.units[i];

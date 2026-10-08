@@ -604,7 +604,8 @@ return SCPE_OK;
 
 t_stat rs_attach (UNIT *uptr, const char *cptr)
 {
-int32_t drv, p;
+int32_t drv;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = RS_SIZE (GET_DTYPE (uptr->flags));
@@ -618,7 +619,7 @@ rs_update_ds (DS_ATA, drv);                             /* upd drive status */
 
 if ((uptr->flags & UNIT_AUTO) == 0)                     /* autosize? */
     return SCPE_OK;
-p = sim_fsize (uptr->fileref);                          /* get file size */
+p = sim_fsize_ex (uptr->fileref);                       /* get file size */
 if (((p + 1) >> 1) <= RS03_SIZE) {
     uptr->flags &= ~UNIT_DTYPE;
     uptr->capac = RS03_SIZE;

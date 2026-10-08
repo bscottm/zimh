@@ -25,10 +25,8 @@
    sim_fseek         -       conditionally extended (>32b) seek (
    sim_fseeko        -       extended seek (>32b if available)
    sim_can_seek      -       test for seekable (regular file)
-   sim_fsize         -       get file size
-   sim_fsize_name    -       get file size of named file
-   sim_fsize_ex      -       get file size as a t_offset
-   sim_fsize_name_ex -       get file size as a t_offset of named file
+   sim_fsize_name    -       get file size of named file as a sim_off_t
+   sim_fsize_ex      -       get file size as a sim_off_t
    sim_buf_copy_swapped -    copy data swapping elements along the way
    sim_buf_swap_data -       swap data elements inplace in buffer if needed
    sim_byte_swap_data -      swap data elements inplace in buffer
@@ -46,17 +44,27 @@
    sim_print_filelist        print the elements of a filelist
 
    sim_fopen and sim_fseek are OS-dependent.  The other routines are not.
-   sim_fsize is always a 32b routine (it is used only with small capacity random
-   access devices like fixed head disks and DECtapes).
 */
 
 #include "sim_defs.h"
+#include "sim_fio.h"
 #include "sim_host_path.h"
 #include "sim_types.h"
 
+#if defined(_WIN32)
+#include <direct.h>
+#include <io.h>
+#include <fcntl.h>
+#else
+#include <unistd.h>
+#endif
+
+#include <sys/stat.h>
+
 bool sim_end;                       /* true = little endian, false = big endian */
 bool sim_taddr_64;                  /* t_addr is > 32b and Large File Support available */
-bool sim_toffset_64;                /* Large File (>2GB) file I/O Support available */
+ /* Large File (>2GB) file I/O Support available. (Yes, sizeof is a constant.) */
+const bool sim_toffset_64 = (sizeof(sim_off_t) >= 8);
 
 #if defined(fprintf)                /* Make sure to only use the C rtl stream I/O routines */
 #undef fprintf
@@ -81,23 +89,25 @@ bool sim_toffset_64;                /* Large File (>2GB) file I/O Support availa
    Sim_fread swaps in place, sim_fwrite uses an intermediate buffer.
 */
 
-int32_t sim_finit (void)
+int32_t sim_finit(void)
 {
-union {int32_t i; char c[sizeof (int32_t)]; } end_test;
+    union {
+        int32_t i;
+        char c[sizeof(int32_t)];
+    } end_test;
 
-end_test.i = 1;                                         /* test endian-ness */
-sim_end = (end_test.c[0] != 0);
-sim_toffset_64 = (sizeof(t_offset) > sizeof(int32_t));  /* Large File (>2GB) support */
-sim_taddr_64 = sim_toffset_64 && (sizeof(t_addr) > sizeof(int32_t));
-return sim_end;
+    end_test.i = 1; /* test endian-ness */
+    sim_end = (end_test.c[0] != 0);
+    sim_taddr_64 = sim_toffset_64 && (sizeof(t_addr) > sizeof(int32_t));
+    return sim_end;
 }
 
 /* Copy little endian data to local buffer swapping if needed */
-void sim_buf_swap_data (void *bptr, size_t size, size_t count)
+void sim_buf_swap_data(void *bptr, size_t size, size_t count)
 {
-if (sim_end || (count == 0) || (size == sizeof (char)))
-    return;
-sim_byte_swap_data (bptr, size, count);
+    if (sim_end || (count == 0) || (size == sizeof(char)))
+        return;
+    sim_byte_swap_data(bptr, size, count);
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -186,117 +196,128 @@ void sim_byte_swap_data (void *bptr, size_t size, size_t count)
     }
 }
 
-size_t sim_fread (void *bptr, size_t size, size_t count, FILE *fptr)
+size_t sim_fread(void *bptr, size_t size, size_t count, FILE *fptr)
 {
-size_t c;
+    size_t c;
 
-if ((size == 0) || (count == 0))                        /* check arguments */
-    return 0;
-c = fread (bptr, size, count, fptr);                    /* read buffer */
-if (sim_end || (size == sizeof (char)) || (c == 0))     /* le, byte, or err? */
-    return c;                                           /* done */
-sim_buf_swap_data (bptr, size, c);
-return c;
+    if ((size == 0) || (count == 0))                    /* check arguments */
+        return 0;
+    c = fread(bptr, size, count, fptr);                 /* read buffer */
+    if (!sim_end && (size != sizeof(char)) && (c != 0)) /* le, byte, or err? */
+        sim_buf_swap_data(bptr, size, c);
+    return c;
 }
 
-void sim_buf_copy_swapped (void *dbuf, const void *sbuf, size_t size, size_t count)
+void sim_buf_copy_swapped(void *dbuf, const void *sbuf, size_t size, size_t count)
 {
-size_t j, k;
-const uchar_t *sptr = (const uchar_t *)sbuf;
-uchar_t *dptr = (uchar_t *)dbuf;
+    size_t j, k;
+    const uchar_t *sptr = (const uchar_t *)sbuf;
+    uchar_t *dptr = (uchar_t *)dbuf;
 
-if (sim_end || (size == sizeof (char))) {
-    memcpy (dptr, sptr, size * count);
-    return;
+    if (sim_end || (size == sizeof(char))) {
+        memcpy(dptr, sptr, size * count);
+        return;
     }
-for (j = 0; j < count; j++) {                           /* loop on items */
-    /* Unsigned countdown loop. Predecrement k before it's used inside the
-       loop so that k == 0 in the loop body to process the last item, then
-       terminate. Initialize k to size for the same reason: the predecrement
-       gives us size - 1 in the loop body. */
-    for (k = size; k > 0; /* empty */)
-        *(dptr + --k) = *sptr++;
-    dptr = dptr + size;
+    for (j = 0; j < count; j++) { /* loop on items */
+        /* Unsigned countdown loop. Predecrement k before it's used inside the
+           loop so that k == 0 in the loop body to process the last item, then
+           terminate. Initialize k to size for the same reason: the predecrement
+           gives us size - 1 in the loop body. */
+        for (k = size; k > 0; /* empty */)
+            *(dptr + --k) = *sptr++;
+        dptr = dptr + size;
     }
 }
 
-size_t sim_fwrite (const void *bptr, size_t size, size_t count, FILE *fptr)
+size_t sim_fwrite(const void *bptr, size_t size, size_t count, FILE *fptr)
 {
-size_t c, nelem, nbuf, lcnt, total;
-int32_t i;
-const uchar_t *sptr;
-uchar_t *sim_flip;
+    size_t c, nelem, nbuf, lcnt, total;
+    int32_t i;
+    const uchar_t *sptr;
+    uchar_t *sim_flip;
 
-if ((size == 0) || (count == 0))                        /* check arguments */
-    return 0;
-if (sim_end || (size == sizeof (char)))                 /* le or byte? */
-    return fwrite (bptr, size, count, fptr);            /* done */
-sim_flip = (uchar_t *)malloc(FLIP_SIZE);
-if (!sim_flip)
-    return 0;
-nelem = FLIP_SIZE / size;                               /* elements in buffer */
-nbuf = count / nelem;                                   /* number buffers */
-lcnt = count % nelem;                                   /* count in last buf */
-if (lcnt) nbuf = nbuf + 1;
-else lcnt = nelem;
-total = 0;
-sptr = (const uchar_t *) bptr;                          /* init input ptr */
-for (i = (int32_t)nbuf; i > 0; i--) {                   /* loop on buffers */
-    c = (i == 1)? lcnt: nelem;
-    sim_buf_copy_swapped (sim_flip, sptr, size, c);
-    sptr = sptr + size * c;
-    c = fwrite (sim_flip, size, c, fptr);
-    if (c == 0) {
-        free(sim_flip);
-        return total;
+    if ((size == 0) || (count == 0))            /* check arguments */
+        return 0;
+    if (sim_end || (size == sizeof(char)))      /* le or byte? */
+        return fwrite(bptr, size, count, fptr); /* done */
+    sim_flip = (uchar_t *)malloc(FLIP_SIZE);
+    if (!sim_flip)
+        return 0;
+    nelem = FLIP_SIZE / size; /* elements in buffer */
+    nbuf = count / nelem;     /* number buffers */
+    lcnt = count % nelem;     /* count in last buf */
+    if (lcnt)
+        nbuf = nbuf + 1;
+    else
+        lcnt = nelem;
+    total = 0;
+    sptr = (const uchar_t *)bptr;         /* init input ptr */
+    for (i = (int32_t)nbuf; i > 0; i--) { /* loop on buffers */
+        c = (i == 1) ? lcnt : nelem;
+        sim_buf_copy_swapped(sim_flip, sptr, size, c);
+        sptr = sptr + size * c;
+        c = fwrite(sim_flip, size, c, fptr);
+        if (c == 0) {
+            free(sim_flip);
+            return total;
         }
-    total = total + c;
+        total = total + c;
     }
-free(sim_flip);
-return total;
+    free(sim_flip);
+    return total;
 }
 
 /* Forward Declaration */
 
-t_offset sim_ftell (FILE *st);
+sim_off_t sim_ftell (FILE *st);
 
 /* Get file size */
-
-t_offset sim_fsize_ex (FILE *fp)
+sim_off_t sim_fsize_ex(FILE *fp)
 {
-t_offset pos, sz;
+    if (fp == NULL)
+        return 0;
 
-if (fp == NULL)
-    return 0;
-pos = sim_ftell (fp);
-if (sim_fseeko (fp, 0, SEEK_END))
-    return 0;
-sz = sim_ftell (fp);
-if (sim_fseeko (fp, pos, SEEK_SET))
-    return 0;
-return sz;
+    sim_off_t sz;
+
+#if !defined(_WIN32) && !defined(_WIN64)
+    sim_off_t pos;
+
+    pos = sim_ftell(fp);
+    if (sim_fseeko(fp, 0, SEEK_END))
+        return 0;
+    sz = sim_ftell(fp);
+    if (sim_fseeko(fp, pos, SEEK_SET))
+        return 0;
+#else
+    // Need to ensure that pending writes are written before asking for the size.
+    if (fflush(fp) != 0)
+        return 0;
+
+    HANDLE h = (HANDLE)_get_osfhandle(_fileno(fp));
+    LARGE_INTEGER the_size;
+
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    if (!GetFileSizeEx(h, &the_size))
+        return 0;
+
+    sz = (sim_off_t) the_size.QuadPart;
+#endif
+
+    return sz;
 }
 
-t_offset sim_fsize_name_ex (const char *fname)
+sim_off_t sim_fsize_name(const char *fname)
 {
-FILE *fp;
-t_offset sz;
+    FILE *fp;
 
-if ((fp = sim_fopen (fname, "rb")) == NULL)
-    return 0;
-sz = sim_fsize_ex (fp);
-fclose (fp);
-return sz;
-}
+    if ((fp = sim_fopen(fname, "rb")) == NULL)
+        return 0;
 
-uint32_t sim_fsize_name (const char *fname)
-{
-return (uint32_t)(sim_fsize_name_ex (fname));
-}
+    sim_off_t sz = sim_fsize_ex(fp);
 
-uint32_t sim_fsize (FILE *fp)
-{
-return (uint32_t)(sim_fsize_ex (fp));
+    fclose(fp);
+    return sz;
 }
 
 bool sim_can_seek (FILE *fp)
@@ -308,14 +329,6 @@ if ((0 != fstat (fileno (fp), &statb)) ||
     return false;
 return true;
 }
-
-#if defined(_WIN32)
-#include <direct.h>
-#include <io.h>
-#include <fcntl.h>
-#else
-#include <unistd.h>
-#endif
 
 int sim_stat (const char *fname, struct stat *stat_str)
 {
@@ -341,8 +354,8 @@ char pathbuf[PATH_MAX + 1];
 
 if (NULL == sim_normalize_host_path (path, pathbuf, sizeof (pathbuf)))
     return -1;
-#if defined(_WIN32)
-return mkdir (pathbuf);
+#if defined(_WIN32) || defined(_WIN64)
+return _mkdir (pathbuf);
 #else
 return mkdir (pathbuf, 0777);
 #endif
@@ -359,7 +372,7 @@ return rmdir (pathbuf);
 
 static void _sim_filelist_entry (const char *directory,
                                  const char *filename,
-                                 t_offset FileSize,
+                                 sim_off_t FileSize,
                                  const struct stat *filestat,
                                  void *context)
 {
@@ -440,14 +453,14 @@ return f;
 #define S_SIM_IO_FSEEK_EXT_ 1
 #include <sys/stat.h>
 
-int sim_fseeko (FILE *st, t_offset offset, int whence)
+int sim_fseeko (FILE *st, sim_off_t offset, int whence)
 {
 return _fseeki64 (st, (__int64)offset, whence);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)_ftelli64 (st);
+return (sim_off_t)_ftelli64 (st);
 }
 
 #endif                                                  /* end Windows */
@@ -456,14 +469,14 @@ return (t_offset)_ftelli64 (st);
 
 #if defined (__linux) || defined (__linux__)
 #define S_SIM_IO_FSEEK_EXT_ 1
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseeko64 (st, (off64_t)xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftello64 (st));
+return (sim_off_t)(ftello64 (st));
 }
 
 #endif                                                  /* end Linux with LFS */
@@ -472,14 +485,14 @@ return (t_offset)(ftello64 (st));
 
 #if defined (__APPLE__) || defined (__FreeBSD__) || defined(__NetBSD__) || defined (__OpenBSD__)
 #define S_SIM_IO_FSEEK_EXT_ 1
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseeko (st, (off_t)xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftello (st));
+return (sim_off_t)(ftello (st));
 }
 
 #endif  /* end Apple OS/X */
@@ -488,20 +501,20 @@ return (t_offset)(ftello (st));
 /* Default: no OS-specific routine has been defined */
 
 #if !defined (S_SIM_IO_FSEEK_EXT_)
-int sim_fseeko (FILE *st, t_offset xpos, int origin)
+int sim_fseeko (FILE *st, sim_off_t xpos, int origin)
 {
 return fseek (st, (long) xpos, origin);
 }
 
-t_offset sim_ftell (FILE *st)
+sim_off_t sim_ftell (FILE *st)
 {
-return (t_offset)(ftell (st));
+return (sim_off_t)(ftell (st));
 }
 #endif
 
-int sim_fseek (FILE *st, t_addr offset, int whence)
+int sim_fseek (FILE *st, sim_off_t offset, int whence)
 {
-return sim_fseeko (st, (t_offset)offset, whence);
+return sim_fseeko (st, offset, whence);
 }
 
 #if defined(_WIN32)
@@ -575,7 +588,7 @@ return bStat ? SCPE_OK : sim_messagef (SCPE_IOERR, "Error setting file '%s' time
 
 #include <io.h>
 #include <direct.h>
-int sim_set_fsize (FILE *fptr, t_addr size)
+int sim_set_fsize (FILE *fptr, sim_off_t size)
 {
 return _chsize(_fileno(fptr), (long)size);
 }
@@ -669,7 +682,7 @@ return (InterlockedCompareExchange ((LONG volatile *) ptr, newv, oldv) == oldv);
 
 #else /* !defined(_WIN32) */
 #include <unistd.h>
-int sim_set_fsize (FILE *fptr, t_addr size)
+int sim_set_fsize (FILE *fptr, sim_off_t size)
 {
 return ftruncate(fileno(fptr), (off_t)size);
 }
@@ -1348,7 +1361,7 @@ dir = opendir(DirName[0] ? DirName : "/.");
 if (dir) {
     struct dirent *ent;
 #endif
-    t_offset FileSize;
+    sim_off_t FileSize;
     char *FileName;
      char *p_name;
 #if defined (HAVE_GLOB)
@@ -1379,7 +1392,7 @@ if (dir) {
         p_name = FileName + strlen (DirName);
         memset (&filestat, 0, sizeof (filestat));
         (void)stat (FileName, &filestat);
-        FileSize = (t_offset)((filestat.st_mode & S_IFDIR) ? 0 : sim_fsize_name_ex (FileName));
+        FileSize = (sim_off_t)((filestat.st_mode & S_IFDIR) ? 0 : sim_fsize_name (FileName));
         entry (DirName, p_name, FileSize, &filestat, context);
         free (FileName);
         ++found_count;
