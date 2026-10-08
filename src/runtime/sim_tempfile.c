@@ -26,10 +26,21 @@
 #include <unistd.h>
 #endif
 
+/* sim_atomic.h requires windows.h to already be included on Windows for
+   the LONG type, so it must come after the platform block above. */
+#include "sim_atomic.h"
+
 #include "sim_host_path.h"
 
 static const char sim_tempfile_chars[] =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+/* Per-process attempt counter.  Mixed into every generated name so that
+   many temporary files created in quick succession (e.g. in a single
+   tight test loop) do not all start their retry search from the same
+   candidate name, which otherwise relies entirely on the retry loop in
+   sim_tempfile_create to skip collisions. */
+static sim_atomic_value_t sim_tempfile_counter;
 
 /* Return the current host process ID for temporary-name seeding. */
 static uint_t sim_tempfile_process_id(void)
@@ -228,6 +239,7 @@ static int sim_tempfile_create(char *path, size_t path_size,
     seed = sim_tempfile_process_id();
     seed ^= (uint_t)(uintptr_t)path;
     seed ^= (uint_t)time(NULL);
+    seed ^= (uint_t)sim_atomic_add(&sim_tempfile_counter, 1);
 
     for (attempt = 0; attempt < 10000; attempt++) {
         int fd;
