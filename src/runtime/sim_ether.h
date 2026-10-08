@@ -65,6 +65,8 @@
 #include "sim_threads.h"
 #endif
 
+#include "eth_crc32.h"
+
 /* make common BSD code a bit easier to read in this file */
 /* OS/X seems to define and compile using one of these BSD types */
 #if defined(__NetBSD__) || defined(__OpenBSD__) || defined(__FreeBSD__)
@@ -288,8 +290,6 @@ t_stat eth_set_async(ETH_DEV *dev,
 t_stat eth_clr_async(ETH_DEV *dev); /* set read behavior to be not async */
 t_stat eth_set_throttle(ETH_DEV *dev, uint32_t time, uint32_t burst,
                         uint32_t delay); /* set transmit throttle parameters */
-uint32_t eth_crc32(uint32_t crc, const void *vbuf,
-                   size_t len); /* Compute Ethernet Autodin II CRC for buffer */
 
 void eth_packet_trace(ETH_DEV *dev, const uint8_t *msg, int len,
                       const char *txt); /* trace ethernet packet header+crc */

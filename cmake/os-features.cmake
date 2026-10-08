@@ -27,6 +27,7 @@ endif()
 add_library(sim_support STATIC
     ${DUMMY_SRC}
     ${SIMH_LIB_ROOT}/sim_ctype.c
+    ${SIMH_LIB_ROOT}/eth_crc32.c
 )
 
 target_include_directories(sim_support PRIVATE
