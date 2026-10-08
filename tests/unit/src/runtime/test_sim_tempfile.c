@@ -210,6 +210,40 @@ static void test_sim_tmpfile_creates_read_write_stream(void **state)
     assert_int_equal(fclose(stream), 0);
 }
 
+/*
+ * A tight loop of sim_tempfile_open() calls from the same process, at
+ * the same stack address, within the same clock second previously
+ * started every attempt from an identical first candidate name,
+ * relying entirely on EEXIST retries to find a free one. Mix in a
+ * per-process counter so repeated calls land on distinct names up
+ * front instead of colliding every time.
+ */
+static void test_sim_tempfile_open_generates_distinct_names_in_a_loop(
+    void **state)
+{
+    enum { COUNT = 64 };
+    char paths[COUNT][512];
+    int fds[COUNT];
+    int i, j;
+
+    (void)state;
+
+    for (i = 0; i < COUNT; i++) {
+        fds[i] = sim_tempfile_open(paths[i], sizeof(paths[i]), "zimh-dup-",
+                                   NULL);
+        assert_true(fds[i] >= 0);
+    }
+
+    for (i = 0; i < COUNT; i++)
+        for (j = i + 1; j < COUNT; j++)
+            assert_string_not_equal(paths[i], paths[j]);
+
+    for (i = 0; i < COUNT; i++) {
+        assert_int_equal(close(fds[i]), 0);
+        assert_int_equal(unlink(paths[i]), 0);
+    }
+}
+
 static void test_sim_tempfile_open_rejects_invalid_arguments(void **state)
 {
     char path[512];
@@ -255,6 +289,8 @@ int main(void)
         cmocka_unit_test(test_sim_tempfile_open_accepts_default_affixes),
         cmocka_unit_test(test_sim_tempfile_open_stream_creates_read_write_file),
         cmocka_unit_test(test_sim_tmpfile_creates_read_write_stream),
+        cmocka_unit_test(
+            test_sim_tempfile_open_generates_distinct_names_in_a_loop),
         cmocka_unit_test(test_sim_tempfile_open_rejects_invalid_arguments),
         cmocka_unit_test(
             test_sim_tempfile_open_stream_rejects_invalid_mode),
