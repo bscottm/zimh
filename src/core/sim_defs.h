@@ -119,9 +119,13 @@ typedef uint32_t t_value;
 
 #    if defined(USE_INT64) && defined(USE_ADDR64) /* 64b address */
 typedef uint64_t t_addr;
+
 #        define T_ADDR_W 64
+#        define T_ADDR_MAX UINT64_MAX
 #    else                                         /* 32b address */
 typedef uint32_t t_addr;
+
+#        define T_ADDR_MAX UINT32_MAX
 #        define T_ADDR_W 32
 #    endif                                        /* end 64b address */
 

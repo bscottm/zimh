@@ -324,9 +324,7 @@ static t_stat mdsad_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    if(sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
-    } else {
+    if ((uptr->capac = sim_fsize_addr(uptr->fileref)) == 0) {
         uptr->capac = MDSAD_CAPACITY;
     }
 

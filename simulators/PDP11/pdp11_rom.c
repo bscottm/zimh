@@ -198,7 +198,7 @@ if (uptr->flags & UNIT_ATT)
 if (uptr->unit_base == 0)
     return sim_messagef (SCPE_ARG, "Set address first.\n");
 sim_switches |= SWMASK ('Q');
-uptr->capac = sim_fsize_name (cptr);
+uptr->capac = (t_addr)sim_fsize_name (cptr);
 if (uptr->capac == 0)
     return SCPE_OPENERR;
 r = attach_unit (uptr, cptr);
@@ -207,6 +207,10 @@ if (r != SCPE_OK)
 r = rom_make_dib (uptr);
 if (r != SCPE_OK)
     return rom_detach (uptr);
+/* unit_end (u4) is a fixed int32_t regardless of capac's width, so a
+   ROM image whose size pushes unit_base + capac past INT32_MAX would
+   wrap here; the PDP-11 I/O page is only 8KB, so this is unreachable
+   in practice and is not addressed by this widening. */
 uptr->unit_end = uptr->unit_base + uptr->capac;
 return SCPE_OK;
 }

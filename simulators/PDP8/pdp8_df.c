@@ -370,11 +370,12 @@ return SCPE_OK;
 
 t_stat df_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t p, sz;
+sim_off_t sz;
+uint32_t p;
 uint32_t ds_bytes = DF_DKSIZE * sizeof (int16_t);
 
 if ((uptr->flags & UNIT_AUTO) && (sz = sim_fsize_name (cptr))) {
-    p = (sz + ds_bytes - 1) / ds_bytes;
+    p = (uint32_t)((sz + ds_bytes - 1) / ds_bytes);
     if (p >= DF_NUMDK)
         p = DF_NUMDK - 1;
     uptr->flags = (uptr->flags & ~UNIT_PLAT) |

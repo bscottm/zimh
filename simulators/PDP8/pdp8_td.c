@@ -789,12 +789,14 @@ uint16_t pdp11b[D18_NBSIZE], *fbuf;
 int32_t i, k, mtkpb;
 int32_t u = uptr - td_dev.units;
 t_stat r;
-uint32_t ba, sz;
+uint32_t ba;
 
 r = attach_unit (uptr, cptr);                           /* attach */
 if (r != SCPE_OK)                                       /* fail? */
     return r;
 if ((sim_switches & SIM_SW_REST) == 0) {                /* not from rest? */
+    sim_off_t sz;
+
     uptr->flags = (uptr->flags | UNIT_8FMT) & ~UNIT_11FMT;
     if (sim_switches & SWMASK ('F'))                    /* att 18b? */
         uptr->flags = uptr->flags & ~UNIT_8FMT;
@@ -802,9 +804,9 @@ if ((sim_switches & SIM_SW_REST) == 0) {                /* not from rest? */
         uptr->flags = (uptr->flags | UNIT_11FMT) & ~UNIT_8FMT;
     else if (!(sim_switches & SWMASK ('A')) &&          /* autosize? */
         (sz = sim_fsize (uptr->fileref))) {
-        if (sz == D11_FILSIZ)
+        if (sz == (sim_off_t) D11_FILSIZ)
             uptr->flags = (uptr->flags | UNIT_11FMT) & ~UNIT_8FMT;
-        else if (sz > D8_FILSIZ)
+        else if (sz > (sim_off_t) D8_FILSIZ)
             uptr->flags = uptr->flags & ~UNIT_8FMT;
         }
     }

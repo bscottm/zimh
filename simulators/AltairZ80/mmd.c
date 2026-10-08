@@ -3164,9 +3164,8 @@ static t_stat mmd_attach(UNIT *uptr, const char *cptr)
     }
 
     /* Determine length of this disk */
-    if (sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
-    } else {
+    if ((uptr->capac = sim_fsize_addr(uptr->fileref)) == 0) {
+        /* File does not exist, the image size is invalid or has length 0 */
         uptr->capac = MMD_CAPACITY;
     }
 

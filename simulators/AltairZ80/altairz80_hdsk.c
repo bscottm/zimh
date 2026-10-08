@@ -581,7 +581,7 @@ static t_stat hdsk_attach(UNIT *uptr, const char *cptr) {
     }
 
     /* Step 1: Determine capacity of this disk                                                      */
-    uptr -> capac = sim_fsize(uptr -> fileref);             /* the file length is a good indication */
+    uptr -> capac = sim_fsize_addr(uptr -> fileref);        /* the file length is a good indication */
     if (uptr -> capac == 0) {                               /* file does not exist or has length 0  */
         uptr -> capac = (uptr -> HDSK_NUMBER_OF_TRACKS *
                          uptr -> HDSK_SECTORS_PER_TRACK * uptr -> HDSK_SECTOR_SIZE);

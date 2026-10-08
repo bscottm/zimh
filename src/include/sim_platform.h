@@ -201,7 +201,11 @@
 // POSIX
 typedef off_t sim_off_t;
 
-#        define PRIsim_off_t "lld"
+#        if !defined(__APPLE__)
+#            define PRIsim_off_t "ld"
+#        else
+#            define PRIsim_off_t "lld"
+#        endif
 #    else
 // Windows...
 typedef LONGLONG sim_off_t;

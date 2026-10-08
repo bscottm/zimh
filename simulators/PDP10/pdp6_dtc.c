@@ -1173,7 +1173,8 @@ dtc_attach (UNIT *uptr, const char *cptr)
 {
     uint16_t pdp8b[D8_NBSIZE];
     uint16_t pdp11b[D18_BSIZE];
-    uint32_t ba, sz, k, *fbuf;
+    uint32_t ba, k, *fbuf;
+    sim_off_t sz;
     int32_t u = uptr - dtc_dev.units;
     t_stat r;
 

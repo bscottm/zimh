@@ -885,10 +885,10 @@ t_stat dp_attach(UNIT *uptr, const char *cptr)
   /*
    * If this is a newly created file, set the drive size appropriately.
    */
-  if (sim_fsize_ex(uptr->fileref) == 0)
-    sim_set_fsize(uptr->fileref, capac);
+  if (sim_fsize(uptr->fileref) == 0)
+    sim_set_fsize(uptr->fileref, (sim_off_t) capac);
 
-  if (sim_fsize_ex(uptr->fileref) != capac) {
+  if (sim_fsize(uptr->fileref) != (sim_off_t) capac) {
     if (ExecutionStarted) {
       detach_unit(uptr);
       return sim_messagef(SCPE_OPENERR, "Unable to autosize drive after execution started\n");
@@ -897,7 +897,7 @@ t_stat dp_attach(UNIT *uptr, const char *cptr)
      * This is not the correct size according the drive type but this is the
      * first attach. Force the drive to match the size of the disk.
      */
-    switch (sim_fsize_ex(uptr->fileref)) {
+    switch (sim_fsize(uptr->fileref)) {
       case DP854_SIZE:
         uptr->capac = DP854_SIZE;
         uptr->flags |= UNIT_854;
@@ -1159,7 +1159,7 @@ t_stat DPautoload(void)
     uint32_t i;
 
     for (i = 0; i < DP_NUMSC; i++) {
-      t_offset offset = i * DP_NUMBY;
+      sim_off_t offset = i * DP_NUMBY;
       void *buf = &M[i * DP_NUMWD];
 
       if (sim_fseeko(uptr->fileref, offset, SEEK_SET) ||

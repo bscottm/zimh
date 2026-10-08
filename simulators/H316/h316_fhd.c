@@ -468,11 +468,12 @@ return SCPE_OK;
 
 t_stat fhd_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t sz, sf;
+sim_off_t sz;
+uint32_t sf;
 uint32_t ds_bytes = FH_WDPSF * sizeof (int16_t);
 
 if ((uptr->flags & UNIT_AUTO) && (sz = sim_fsize_name (cptr))) {
-    sf = (sz + ds_bytes - 1) / ds_bytes;
+    sf = (uint32_t)((sz + ds_bytes - 1) / ds_bytes);
     if (sf >= FH_NUMSF)
         sf = FH_NUMSF - 1;
     uptr->flags = (uptr->flags & ~UNIT_SF) |

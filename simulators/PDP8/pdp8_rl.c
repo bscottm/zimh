@@ -584,7 +584,7 @@ return SCPE_OK;
 
 t_stat rl_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t p;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = (uptr->flags & UNIT_RL02)? RL02_SIZE: RL01_SIZE;
@@ -600,7 +600,7 @@ if ((p = sim_fsize (uptr->fileref)) == 0) {             /* new disk image? */
     }
 if ((uptr->flags & UNIT_AUTO) == 0)                     /* autosize? */
     return r;
-if (p > (RL01_SIZE * sizeof (int16_t))) {
+if (p > (sim_off_t) (RL01_SIZE * sizeof (int16_t))) {
     uptr->flags = uptr->flags | UNIT_RL02;
     uptr->capac = RL02_SIZE;
     }

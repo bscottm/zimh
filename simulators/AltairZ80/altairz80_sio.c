@@ -260,7 +260,7 @@ static void deleteNameList(void) {
 
 static void processDirEntry (const char *directory,
                              const char *filename,
-                             t_offset FileSize,
+                             sim_off_t FileSize,
                              const struct stat *filestat,
                              void *context) {
     /* Directory traversal callback signature.

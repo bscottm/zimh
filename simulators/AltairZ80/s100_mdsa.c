@@ -244,10 +244,8 @@ t_stat mdsa_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    if(sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
-    } else {
-        uptr->capac = MDSA_CAPACITY;
+    if ((uptr->capac = sim_fsize_addr(uptr->fileref)) == 0) {
+       uptr->capac = MDSA_CAPACITY;
     }
 
     for(i = 0; i < MDSA_MAX_DRIVES; i++) {

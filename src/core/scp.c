@@ -5105,10 +5105,10 @@ return SCPE_OK;
 const char *sprint_capac (DEVICE *dptr, UNIT *uptr)
 {
 static char capac_buf[MAX_WIDTH + 12];
-t_offset kval = (uptr->flags & UNIT_BINK)? 1024: 1000;
-t_offset mval;
+sim_off_t kval = (uptr->flags & UNIT_BINK)? 1024: 1000;
+sim_off_t mval;
 double remfrac;
-t_offset psize = (t_offset)uptr->capac;
+sim_off_t psize = (sim_off_t)uptr->capac;
 const char *scale, *width;
 
 if (sim_switches & SWMASK ('B'))
@@ -5973,18 +5973,18 @@ return show_cmd (0, "DEFAULT");
 
 typedef struct {
     char LastDir[PATH_MAX + 1];
-    t_offset TotalBytes;
+    sim_off_t TotalBytes;
     int TotalDirs;
     int TotalFiles;
     int DirChanges;
     int DirCount;
     int FileCount;
-    t_offset ByteCount;
+    sim_off_t ByteCount;
     } DIR_CTX;
 
 static void sim_dir_entry (const char *directory,
                         const char *filename,
-                        t_offset FileSize,
+                        sim_off_t FileSize,
                         const struct stat *filestat,
                         void *context)
 {
@@ -6089,7 +6089,7 @@ typedef struct {
 
 static void sim_type_entry (const char *directory,
                             const char *filename,
-                            t_offset FileSize,
+                            sim_off_t FileSize,
                             const struct stat *filestat,
                             void *context)
 {
@@ -6188,7 +6188,7 @@ typedef struct {
 
 static void sim_delete_entry (const char *directory,
                               const char *filename,
-                              t_offset FileSize,
+                              sim_off_t FileSize,
                               const struct stat *filestat,
                               void *context)
 {
@@ -6235,7 +6235,7 @@ typedef struct {
 
 static void sim_copy_entry (const char *directory,
                             const char *filename,
-                            t_offset FileSize,
+                            sim_off_t FileSize,
                             const struct stat *filestat,
                             void *context)
 {
@@ -7230,11 +7230,11 @@ for (i = 0; i < (device_count + sim_internal_device_count); i++) {/* loop thru d
     }
 fputc ('\n', sfile);                                    /* end devices */
 if (!ferror (sfile)) {
-    t_offset pos = sim_ftell (sfile);                   /* get current position */
+    sim_off_t pos = sim_ftell (sfile);                   /* get current position */
 
     if (pos < 0)                                        /* error? */
         return SCPE_IOERR;                              /* done! */
-    sim_set_fsize (sfile, (t_addr)pos);                 /* truncate the save file */
+    sim_set_fsize (sfile, pos);                         /* truncate the save file */
     }
 return (ferror (sfile))? SCPE_IOERR: SCPE_OK;           /* error during save? */
 }

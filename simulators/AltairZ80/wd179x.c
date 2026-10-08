@@ -424,7 +424,7 @@ t_stat wd179x_attach(UNIT *uptr, const char *cptr)
         return r;
 
     /* Determine length of this disk */
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_addr(uptr->fileref);
 
     i = find_unit_index(uptr);
 

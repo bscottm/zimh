@@ -285,7 +285,7 @@ t_stat fdc_attach(UNIT *uptr, const char *cptr) {
   if ((rc=attach_unit(uptr,cptr)) != SCPE_OK) return rc;
 
   fdc_drv[i].dr_unit = uptr;
-  uptr->capac = sim_fsize(uptr->fileref);
+  uptr->capac = sim_fsize_addr(uptr->fileref);
   fdc_drv[i].dr_ready = 0;
 
   if (uptr->capac > 0) {
@@ -302,7 +302,7 @@ t_stat fdc_attach(UNIT *uptr, const char *cptr) {
       fdc_drv[i].dr_unit = NULL;
       return SCPE_OPENERR;
     }
-    uptr->capac = sim_fsize(uptr->fileref);
+    uptr->capac = sim_fsize_addr(uptr->fileref);
   }
   sim_debug(DBG_FD_IMD, &fdc_dev, DBG_PCFORMAT2 "Attached to '%s', type=IMD, len=%d\n",
     DBG_PC, cptr, uptr->capac);

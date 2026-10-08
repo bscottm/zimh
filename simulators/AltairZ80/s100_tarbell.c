@@ -472,9 +472,7 @@ static t_stat tarbell_attach(UNIT *uptr, const char *cptr)
     }
 
     /* Determine length of this disk */
-    if (sim_fsize(uptr->fileref) != 0) {
-        uptr->capac = sim_fsize(uptr->fileref);
-    } else {
+    if ((uptr->capac = sim_fsize_addr(uptr->fileref)) == 0) {
         uptr->capac = TARBELL_CAPACITY;
     }
 

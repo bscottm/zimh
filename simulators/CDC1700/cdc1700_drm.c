@@ -722,7 +722,7 @@ t_stat drm_attach (UNIT *uptr, const char *cptr)
 {
   t_addr capac = uptr->capac;
   t_stat r;
-  t_offset tracks;
+  sim_off_t tracks;
 
   r = attach_unit(uptr, cptr);
   if (r != SCPE_OK)
@@ -731,8 +731,8 @@ t_stat drm_attach (UNIT *uptr, const char *cptr)
   /*
    * If this ia a newly created file, set the drum size appropriately.
    */
-  if (sim_fsize_ex(uptr->fileref) == 0)
-    sim_set_fsize(uptr->fileref, capac);
+  if (sim_fsize(uptr->fileref) == 0)
+    sim_set_fsize(uptr->fileref, (sim_off_t) capac);
 
   /*
    * If we are attaching to an existing file, make sure that its size:
@@ -741,8 +741,8 @@ t_stat drm_attach (UNIT *uptr, const char *cptr)
    *   - is between 64 and 1024 tracks (each of 3072 words)
    *   - is a multiple of 64 tracks
    */
-  tracks = sim_fsize_ex(uptr->fileref) / (DRM_NUMSC * DRM_NUMBY);
-  if (((sim_fsize_ex(uptr->fileref) % (DRM_NUMSC * DRM_NUMBY)) != 0) ||
+  tracks = sim_fsize(uptr->fileref) / (DRM_NUMSC * DRM_NUMBY);
+  if (((sim_fsize(uptr->fileref) % (DRM_NUMSC * DRM_NUMBY)) != 0) ||
       (tracks < DRM_MINTRACKS) ||
       (tracks > DRM_MAXTRACKS) ||
       ((tracks & (DRM_MINTRACKS - 1)) != 0)) {
@@ -959,7 +959,7 @@ t_stat DRMautoload(void)
     uint32_t i;
 
     for (i = 0; i < DRM_AUTOLOAD; i++) {
-      t_offset offset = i * DRM_NUMBY;
+      sim_off_t offset = i * DRM_NUMBY;
       void *buf = &M[i * DRM_NUMBY];
 
       if (sim_fseeko(uptr->fileref, offset, SEEK_SET) ||

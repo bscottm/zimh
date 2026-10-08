@@ -1130,10 +1130,10 @@ t_stat cd_attach(UNIT *uptr, const char *cptr)
   /*
    * If this is a newly created file, set the drive size appropriately.
    */
-  if (sim_fsize_ex(uptr->fileref) == 0)
-    sim_set_fsize(uptr->fileref, capac);
+  if (sim_fsize(uptr->fileref) == 0)
+    sim_set_fsize(uptr->fileref, (sim_off_t) capac);
 
-  if (sim_fsize_ex(uptr->fileref) != capac) {
+  if (sim_fsize(uptr->fileref) != (sim_off_t) capac) {
     detach_unit(uptr);
     uptr->capac = capac;
     return sim_messagef(SCPE_OPENERR, "Incorrect file size");
@@ -1412,7 +1412,7 @@ t_stat CDautoload(void)
     uint32_t i;
 
     for (i = 0; i < CD_NUMSC; i++) {
-      t_offset offset = i * CD_NUMBY;
+      sim_off_t offset = i * CD_NUMBY;
       void *buf = &M[i * CD_NUMWD];
 
       if (sim_fseeko(uptr->fileref, offset, SEEK_SET) ||

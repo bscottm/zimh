@@ -1035,10 +1035,10 @@ must perform all address calculations and positioning operations.
 ZIMH provides capabilities to access files larger than 2GB. If a VM is
 compiled with flags `USE_INT64` and `USE_ADDR64` defined, then `t_addr`
 is defined as `uint64_t` rather than `uint32_t`. Routine `sim_fseeko`
-uses `t_offset` for host file offsets, and routine `sim_fseek` allows
-simulated devices to perform random access using a `t_addr` position:
+uses `sim_off_t` for host file offsets, and routine `sim_fseek` allows
+simulated devices to perform random access using a `sim_off_t` position:
 
-- `int sim_fseek(FILE *handle, t_addr position, int where)` -
+- `int sim_fseek(FILE *handle, sim_off_t position, int where)` -
   `sim_fseek` is identical to standard C `fseek`, except that the
   position argument can be a 64 bit integer.
 
@@ -3479,7 +3479,7 @@ support emulated disk drives. These are declared in include file
 - `bool sim_disk_wrp(UNIT *uptr)` – Return `true` if unit `uptr` is
   write-protected.
 
-- `t_offset sim_disk_size(UNIT *uptr)` – Return the disk size.
+- `sim_off_t sim_disk_size(UNIT *uptr)` – Return the disk size.
 
 - `bool sim_disk_vhd_support(void)` – Return `true` if VHD disk-image
   support is available.

@@ -28,3 +28,33 @@ add_unit_test(unit-pdp11-dmc-attach
     DEFINES
         VM_PDP11
 )
+
+add_unit_test(unit-pdp11-rom-attach
+    LABEL unit
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_pdp11_rom_attach.c
+    INCLUDES
+        ${PROJECT_SOURCE_DIR}/simulators/PDP11
+    DEFINES
+        VM_PDP11
+)
+
+add_unit_test(unit-pdp11-ry-attach
+    LABEL unit
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_pdp11_ry_attach.c
+    INCLUDES
+        ${PROJECT_SOURCE_DIR}/simulators/PDP11
+    DEFINES
+        VM_PDP11
+)
+
+add_unit_test(unit-pdp11-rf-attach
+    LABEL unit
+    SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_pdp11_rf_attach.c
+    INCLUDES
+        ${PROJECT_SOURCE_DIR}/simulators/PDP11
+    DEFINES
+        VM_PDP11
+)

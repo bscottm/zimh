@@ -555,7 +555,7 @@ static void decode_bit (int bit, FILE *f)
         decode_fm (bit, f);
         image_count++;
         if (image_count == 108) {
-            t_offset pos;
+            sim_off_t pos;
             uint64 header[2];
             image_state = IMAGE_POSTAMBLE;
             image_count = 0;

@@ -40,13 +40,13 @@ const char *sim_disk_ramdisk_spec_type(const sim_disk_ramdisk_spec *spec);
 
 /* Create the memory buffer and FILE stream for a RAMDISK: attachment. */
 t_stat sim_disk_ramdisk_create(UNIT *uptr, const sim_disk_ramdisk_spec *spec,
-                               t_offset default_size, uint32_t sector_size,
+                               sim_off_t default_size, uint32_t sector_size,
                                bool restoring, const char *mode, FILE **fileref,
                                sim_disk_ramdisk **ramdisk);
 #endif
 
 /* Return the byte size of a live ramdisk attachment. */
-t_offset sim_disk_ramdisk_size(const sim_disk_ramdisk *ramdisk);
+sim_off_t sim_disk_ramdisk_size(const sim_disk_ramdisk *ramdisk);
 
 /* Persist a live ramdisk attachment to its SAVE= image. */
 t_stat sim_disk_ramdisk_save(UNIT *uptr, const sim_disk_ramdisk *ramdisk);

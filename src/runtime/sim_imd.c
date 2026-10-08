@@ -776,7 +776,7 @@ t_stat trackWrite(DISK_INFO *myDisk,
 t_stat assignDiskType(UNIT *uptr) {
     t_stat result = SCPE_OK;
     char header[4];
-    t_offset pos = sim_ftell(uptr->fileref);
+    sim_off_t pos = sim_ftell(uptr->fileref);
 
     rewind(uptr->fileref);
     if (fgets(header, 4, uptr->fileref) == NULL)

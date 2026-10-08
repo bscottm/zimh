@@ -1422,7 +1422,7 @@ t_stat scp_vhelpFromFile(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag,
 {
     FILE *fp;
     char *help, *p;
-    t_offset size, n;
+    sim_off_t size, n;
     int c;
     t_stat r;
 
@@ -1466,7 +1466,7 @@ t_stat scp_vhelpFromFile(FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag,
         return SCPE_UNATT;
     }
 
-    size = sim_fsize_ex(fp);
+    size = sim_fsize(fp);
 
     help = (char *)malloc((size_t)size + 1);
     if (!help) {

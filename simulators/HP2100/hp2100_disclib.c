@@ -1673,7 +1673,8 @@ else                                                    /* the phase is illegal,
 
 t_stat dl_attach (CVPTR cvptr, UNIT *uptr, const char *cptr)
 {
-uint32_t id, size;
+uint32_t id;
+sim_off_t size;
 t_stat result;
 
 result = attach_unit (uptr, cptr);                          /* attach the unit */

@@ -1290,7 +1290,8 @@ return SCPE_OK;
 
 t_stat dp_attach (UNIT *uptr, const char *cptr)
 {
-uint32_t i, p;
+uint32_t i;
+sim_off_t p;
 t_stat r;
 
 uptr->capac = dp_tab[GET_DTYPE (uptr->flags)].capac;
@@ -1304,7 +1305,7 @@ if (p == 0)                                             /* new file? */
     return SCPE_OK;
 for (i = 0; dp_tab[i].sc != 0; i++) {
     if ((dp_tab[i].ctype == DP_C3281) &&                /* only on 3281 */
-        (p <= (dp_tab[i].capac * (uint32_t) sizeof (int32_t)))) {
+        (p <= (sim_off_t) (dp_tab[i].capac * (uint32_t) sizeof (int32_t)))) {
         uptr->flags = (uptr->flags & ~UNIT_DTYPE) | (i << UNIT_V_DTYPE);
         uptr->capac = dp_tab[i].capac;
         return SCPE_OK;

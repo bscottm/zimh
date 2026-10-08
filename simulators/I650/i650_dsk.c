@@ -118,7 +118,8 @@ static t_stat dsk_operation(int cmd, int unit, int arm, int disk, int track)
 {
 
     FILE *f;
-    int flen, i, ic, ZeroNeg;
+    int i, ic, ZeroNeg;
+    sim_off_t flen;
     char buf[DISK_SIZE+1];
     int64_t d;
     char s[6];
@@ -465,7 +466,7 @@ t_stat dsk_reset(DEVICE * dptr)
 t_stat dsk_attach(UNIT * uptr, const char *file)
 {
     t_stat              r;
-    int                    flen;
+    sim_off_t           flen;
 
     if ((r = attach_unit(uptr, file)) != SCPE_OK) return r;
     flen=sim_fsize(uptr->fileref);

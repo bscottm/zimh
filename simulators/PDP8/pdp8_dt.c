@@ -1228,7 +1228,8 @@ uint16_t pdp11b[D18_NBSIZE], *fbuf;
 int32_t i, k;
 int32_t u = uptr - dt_dev.units;
 t_stat r;
-uint32_t ba, sz;
+uint32_t ba;
+sim_off_t sz;
 
 r = attach_unit (uptr, cptr);                           /* attach */
 if (r != SCPE_OK) return r;                             /* fail? */
