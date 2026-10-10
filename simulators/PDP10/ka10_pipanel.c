@@ -178,13 +178,13 @@ struct {
 
 
 void *blink(void *ptr); /* the real-time GPIO multiplexing process to start up */
-pthread_t blink_thread;
+sim_thread_t blink_thread;
 int blink_thread_terminate = 0;
 
 t_stat gpio_mux_thread_start()
 {
     int res;
-    res = pthread_create(&blink_thread, NULL, blink, &blink_thread_terminate);
+    res = sim_thread_create(&blink_thread, blink, &blink_thread_terminate);
     if (res) {
         return sim_messagef(SCPE_IERR,
                      "Error creating gpio_mux thread, return code %d\n", res);
@@ -292,7 +292,7 @@ read_sw()
     return new_as;
 }
 
-void *blink(void *ptr)
+THREAD_FUNC_DEFN(blink)
 {
     int        *terminate = (int *)ptr;
     int        col, row, i;
@@ -304,7 +304,7 @@ void *blink(void *ptr)
 
     spec.tv_sec = 0;
     sp.sched_priority = 98; // maybe 99, 32, 31?
-    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp))
+    if (pthread_setschedparam(sim_thread_self(), SCHED_FIFO, &sp))
         fprintf(stderr, "warning: failed to set RT priority\n");
 
     ret = gpiolib_init();

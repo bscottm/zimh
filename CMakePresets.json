@@ -355,6 +355,14 @@
       "execution": { "jobs": 8, "timeout": 300 }
     },
     {
+      "name": "windows-ninja-relwithdebinfo",
+      "configurePreset": "windows-ninja",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Test: Windows Ninja Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8, "timeout": 300 }
+    },
+    {
       "name": "windows-ninja-debug",
       "configurePreset": "windows-ninja",
       "configuration": "Debug",

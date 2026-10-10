@@ -3,6 +3,7 @@
 #    if defined(HAVE_SLIRP_NETWORK)
 
 #        include "sim_atomic.h"
+#        include "sim_threads.h"
 #        include "libslirp.h"
 #        include "poll_compat.h"
 #        include "simnetwork/eth_types.h"
@@ -52,11 +53,11 @@ struct sim_slirp {
 
 #        if defined(USE_READER_THREAD)
     /* Access lock to libslirp. libslirp is not threaded or protected. */
-    pthread_mutex_t libslirp_lock;
+    sim_mutex_t    libslirp_lock;
 
     /* Condvar, mutex when there are no sockets to poll or select for reading. */
-    pthread_cond_t no_sockets_cv;
-    pthread_mutex_t no_sockets_lock;
+    sim_cond_t     no_sockets_cv;
+    sim_mutex_t    no_sockets_lock;
 #        endif
 
     // Number of currently active sockets.

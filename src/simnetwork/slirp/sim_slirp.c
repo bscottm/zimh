@@ -213,9 +213,9 @@ sim_slirp_network *sim_slirp_open(const char *args, ETH_DEV *eth_dev, DEVICE *dp
     /* SIMH state/config */
     slirp->args = (char *)calloc(1 + strlen(args), sizeof(char));
     strlcpy(slirp->args, args, 1 + strlen(args));
-    pthread_mutex_init(&slirp->libslirp_lock, NULL);
-    pthread_cond_init(&slirp->no_sockets_cv, NULL);
-    pthread_mutex_init(&slirp->no_sockets_lock, NULL);
+    sim_mutex_init(&slirp->libslirp_lock);
+    sim_cond_init(&slirp->no_sockets_cv);
+    sim_mutex_init(&slirp->no_sockets_lock);
     sim_atomic_init(&slirp->n_sockets);
 
     slirp->original_debflags = dptr->debflags;
@@ -436,7 +436,7 @@ void sim_slirp_reader_shutdown(eth_backend_t *backend, ETH_DEV *dev)
      * on the condvar, signal the condition. */
     sim_atomic_put(&slirp->n_sockets, -1);
     if (n_sockets == 0)
-        pthread_cond_broadcast(&slirp->no_sockets_cv);
+        sim_cond_broadcast(&slirp->no_sockets_cv);
 }
 
 void sim_slirp_writer_shutdown(eth_backend_t *backend, ETH_DEV *dev)
@@ -487,10 +487,10 @@ void sim_slirp_close(sim_slirp_network *slirp)
     slirp->fds = NULL;
 #endif
 
-    pthread_mutex_destroy(&slirp->libslirp_lock);
+    sim_mutex_destroy(&slirp->libslirp_lock);
     sim_atomic_destroy(&slirp->n_sockets);
-    pthread_cond_destroy(&slirp->no_sockets_cv);
-    pthread_mutex_destroy(&slirp->no_sockets_lock);
+    sim_cond_destroy(&slirp->no_sockets_cv);
+    sim_mutex_destroy(&slirp->no_sockets_lock);
     sim_atomic_destroy(&slirp->n_sockets);
 
     free(slirp);
@@ -680,7 +680,7 @@ bool before_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
     SIM_UNUSED_ARG(dev);
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
 
-    pthread_mutex_lock(&slirp->libslirp_lock);
+    sim_mutex_lock(&slirp->libslirp_lock);
     return true;
 }
 
@@ -698,7 +698,7 @@ bool after_slirp_send(eth_backend_t *backend, ETH_DEV *dev)
     SIM_UNUSED_ARG(dev);
     sim_slirp_network *slirp = (sim_slirp_network *)backend->state.slirp;
 
-    pthread_mutex_unlock(&slirp->libslirp_lock);
+    sim_mutex_unlock(&slirp->libslirp_lock);
     return true;
 }
 

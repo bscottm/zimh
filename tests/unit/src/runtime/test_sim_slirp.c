@@ -551,9 +551,9 @@ static void sim_slirp_dispatch_for_test(sim_slirp_network *slirp)
     if (slirp == NULL)
         return;
 
-    pthread_mutex_lock(&slirp->libslirp_lock);
+    sim_mutex_lock(&slirp->libslirp_lock);
     slirp_pollfds_poll(slirp->slirp_cxn, 0, slirp_get_events_callback, slirp);
-    pthread_mutex_unlock(&slirp->libslirp_lock);
+    sim_mutex_unlock(&slirp->libslirp_lock);
 }
 
 static int setup_slirp_tests(void **state)

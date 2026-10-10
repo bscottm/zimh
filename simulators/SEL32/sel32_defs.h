@@ -48,7 +48,7 @@
 /* define USE_IPU_THREAD to use IPU thread code instead of fork code */
 #ifndef CPUONLY
 //#undef  USE_IPU_THREAD                  /* run IPU as a forked sel32 */
-#define USE_IPU_THREAD                  /* run IPU in sel32_ipu.c thread */
+#define USE_IPU_THREAD                    /* run IPU in sel32_ipu.c thread */
 #endif
 
 /* enforce proper option combinations for CPU/IPU */
@@ -116,8 +116,8 @@ struct ipcom {
     int     blocked[2];                 /* counting blocked calls */
     int     dropped[2];                 /* counting dropped calls */
     /* anything for mutexs here */
-    pthread_mutex_t mutex;              /* the mutex for controlling access */
-    pthread_cond_t  cond;               /* conditional wait condition */
+    sim_mutex_t mutex;                  /* the mutex for controlling access */
+    sim_cond_t  cond;                   /* conditional wait condition */
     int     pass[2];                    /* count passing */
     int     wait[2];                    /* count waiting */
 };

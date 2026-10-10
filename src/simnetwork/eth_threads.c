@@ -58,6 +58,8 @@ static inline int wait_one_socket(SOCKET socket_fd, long timeout_ms)
 
 static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 {
+    sim_set_io_thread_affinity();
+
     char reader_name[THREAD_NAME_MAX];
 
     sim_debug(dev->dbit, dev->dptr, "Reader Thread Starting\n");
@@ -66,13 +68,6 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
     else
         snprintf(reader_name, sizeof(reader_name), "r: %s", dev->name);
     sim_set_thread_name(reader_name);
-
-    /* Set the reader thread's affinity to the I/O affinity set: */
-    sim_cpu_set_t io_set;
-
-    sim_os_get_cpu_partition(NULL, &io_set, NULL);
-    if (!sim_cpu_set_empty(&io_set))
-        sim_os_set_thread_affinity(&io_set);
 
     /* Signal that reader thread is ready */
     sim_mutex_lock(&dev->startup_lock);
@@ -245,6 +240,8 @@ error_out:
 
 static int eth_writer_init(ETH_DEV *dev)
 {
+    sim_set_io_thread_affinity();
+
     char writer_name[THREAD_NAME_MAX];
 
     sim_debug(dev->dbit, dev->dptr, "Writer Thread Starting\n");
@@ -253,13 +250,6 @@ static int eth_writer_init(ETH_DEV *dev)
     else
         snprintf(writer_name, sizeof(writer_name), "w: %s", dev->name);
     sim_set_thread_name(writer_name);
-
-    /* Set the writer thread's affinity to the I/O affinity set: */
-    sim_cpu_set_t io_set;
-
-    sim_os_get_cpu_partition(NULL, &io_set, NULL);
-    if (!sim_cpu_set_empty(&io_set))
-        sim_os_set_thread_affinity(&io_set);
 
     /* Signal that writer thread is ready */
     sim_mutex_lock(&dev->startup_lock);

@@ -313,3 +313,34 @@ t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, 
 
     return SCPE_OK;
 }
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// DRY utility functions:
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+void sim_set_io_thread_affinity(void)
+{
+    sim_cpu_set_t io_set;
+
+    sim_os_get_cpu_partition(NULL, &io_set, NULL);
+    if (!sim_cpu_set_empty(&io_set))
+        sim_os_set_thread_affinity(&io_set);
+}
+
+void sim_set_main_thread_affinity(void)
+{
+    sim_cpu_set_t main_set;
+
+    sim_os_get_cpu_partition(&main_set, NULL, NULL);
+    if (!sim_cpu_set_empty(&main_set))
+        sim_os_set_thread_affinity(&main_set);
+}
+
+void sim_set_sdl_thread_affinity(void)
+{
+    sim_cpu_set_t sdl_set;
+
+    sim_os_get_cpu_partition(NULL, NULL, &sdl_set);
+    if (!sim_cpu_set_empty(&sdl_set))
+        sim_os_set_thread_affinity(&sdl_set);
+}

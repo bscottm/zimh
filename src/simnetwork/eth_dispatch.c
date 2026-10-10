@@ -156,9 +156,9 @@ int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
     sim_slirp_network *slirp = dev->backend.state.slirp;
 
     /* The mutex serializes the reader and the writer threads. */
-    pthread_mutex_lock(&slirp->libslirp_lock);
+    sim_mutex_lock(&slirp->libslirp_lock);
     slirp_pollfds_poll(slirp->slirp_cxn, 0, slirp_get_events_callback, slirp);
-    pthread_mutex_unlock(&slirp->libslirp_lock);
+    sim_mutex_unlock(&slirp->libslirp_lock);
 
     /* slirp_pollfds_poll() is void, so we can't tell from its return value
      * whether packets arrived. But packets delivered via _slirp_callback()

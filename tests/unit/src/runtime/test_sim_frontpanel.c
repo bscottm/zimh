@@ -42,11 +42,11 @@ static void simh_test_frontpanel_init_panel(PANEL *panel)
 {
     memset(panel, 0, sizeof(*panel));
     panel->sock = 1;
-    assert_int_equal(pthread_mutex_init(&panel->io_lock, NULL), 0);
-    assert_int_equal(pthread_mutex_init(&panel->io_send_lock, NULL), 0);
-    assert_int_equal(pthread_mutex_init(&panel->io_command_lock, NULL), 0);
-    assert_int_equal(pthread_cond_init(&panel->io_done, NULL), 0);
-    assert_int_equal(pthread_cond_init(&panel->startup_done, NULL), 0);
+    assert_int_equal(sim_mutex_init(&panel->io_lock), 0);
+    assert_int_equal(sim_mutex_init(&panel->io_send_lock), 0);
+    assert_int_equal(sim_mutex_init(&panel->io_command_lock), 0);
+    assert_int_equal(sim_cond_init(&panel->io_done), 0);
+    assert_int_equal(sim_cond_init(&panel->startup_done), 0);
     panel->io_response_size = 1;
     panel->io_response = malloc(panel->io_response_size);
     assert_non_null(panel->io_response);
@@ -57,11 +57,11 @@ static void simh_test_frontpanel_init_panel(PANEL *panel)
 static void simh_test_frontpanel_destroy_panel(PANEL *panel)
 {
     free(panel->io_response);
-    pthread_cond_destroy(&panel->startup_done);
-    pthread_cond_destroy(&panel->io_done);
-    pthread_mutex_destroy(&panel->io_command_lock);
-    pthread_mutex_destroy(&panel->io_send_lock);
-    pthread_mutex_destroy(&panel->io_lock);
+    sim_cond_destroy(&panel->startup_done);
+    sim_cond_destroy(&panel->io_done);
+    sim_mutex_destroy(&panel->io_command_lock);
+    sim_mutex_destroy(&panel->io_send_lock);
+    sim_mutex_destroy(&panel->io_lock);
 }
 
 /* Store a simulated command response so _panel_sendf() can complete. */
@@ -93,7 +93,7 @@ static void simh_test_frontpanel_complete_command(PANEL *panel,
              command_status);
     panel->io_response_data = (size_t)response_len;
     panel->io_waiting = 0;
-    pthread_cond_signal(&panel->io_done);
+    sim_cond_signal(&panel->io_done);
 }
 
 /* Capture panel writes and complete synchronous command requests. */
@@ -393,14 +393,14 @@ static void test_frontpanel_debug_flusher_uses_shared_sleep(void **state)
     (void)state;
 
     panel.sock = INVALID_SOCKET;
-    assert_int_equal(pthread_mutex_init(&panel.io_lock, NULL), 0);
-    assert_int_equal(pthread_cond_init(&panel.startup_done, NULL), 0);
+    assert_int_equal(sim_mutex_init(&panel.io_lock), 0);
+    assert_int_equal(sim_cond_init(&panel.startup_done), 0);
     sim_time_set_test_hooks(NULL, simh_test_frontpanel_sleep);
 
     (void)_panel_debugflusher(&panel);
 
-    pthread_cond_destroy(&panel.startup_done);
-    pthread_mutex_destroy(&panel.io_lock);
+    sim_cond_destroy(&panel.startup_done);
+    sim_mutex_destroy(&panel.io_lock);
 
     assert_int_equal(simh_test_frontpanel_sleep_calls, 1);
     assert_int_equal(simh_test_frontpanel_last_sleep_req.tv_sec, 0);
@@ -414,7 +414,7 @@ static void test_frontpanel_set_error_records_text_and_state(void **state)
 
     (void)state;
 
-    assert_int_equal(pthread_mutex_init(&panel.io_lock, NULL), 0);
+    assert_int_equal(sim_mutex_init(&panel.io_lock), 0);
 
     assert_int_equal(sim_panel_set_error(&panel, "frontpanel %s %d",
                                          "error", 17), -1);
@@ -422,7 +422,7 @@ static void test_frontpanel_set_error_records_text_and_state(void **state)
     assert_int_equal(panel.State, Error);
     assert_string_equal(sim_panel_get_error(), "frontpanel error 17");
 
-    pthread_mutex_destroy(&panel.io_lock);
+    sim_mutex_destroy(&panel.io_lock);
 }
 
 /* Verify long formatted error text survives buffer growth. */
@@ -562,9 +562,9 @@ static int simh_test_frontpanel_stop_callback_sleep(const struct timespec *req,
         *rem = (struct timespec){0};
     if ((simh_test_frontpanel_sleep_calls == 2) &&
         (simh_test_frontpanel_sleep_panel != NULL)) {
-        pthread_mutex_lock(&simh_test_frontpanel_sleep_panel->io_lock);
+        sim_mutex_lock(&simh_test_frontpanel_sleep_panel->io_lock);
         simh_test_frontpanel_sleep_panel->usecs_between_callbacks = 0;
-        pthread_mutex_unlock(&simh_test_frontpanel_sleep_panel->io_lock);
+        sim_mutex_unlock(&simh_test_frontpanel_sleep_panel->io_lock);
     }
     return 0;
 }

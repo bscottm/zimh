@@ -24,8 +24,11 @@
 
 #define USE_IPU_CODE
 
-#include <inttypes.h>
-#include <stdint.h>
+#include "sim_platform.h"
+#if defined(SIM_ASYNCH_IO)
+#    include "sim_threads.h"
+#endif
+
 
 #include "sel32_arith_internal.h"
 
@@ -40,7 +43,7 @@ static  int     MyIndex;
 static  int     PeerIndex;
 extern  uint32_t M[];                       /* Memory */
 extern  struct  ipcom   *IPC;               /* TRAPS & flags */
-extern  pthread_t   ipuThread;
+extern  sim_thread_t ipuThread;
 extern  DEVICE  cpu_dev;                    /* cpu device structure */
 extern  uint32_t cpustop;                   /* cpu is stopping */
 
@@ -533,11 +536,11 @@ LOCAL void clr_simsem()
 LOCAL void lock_mutex(void)
 {
     if (IPC != 0) {
-        if (pthread_mutex_trylock((pthread_mutex_t *)&(IPC->mutex)) == 0) {
+        if (pthread_mutex_trylock(&IPC->mutex) == 0) {
             IPC->pass[MyIndex]++;
         } else {
             IPC->wait[MyIndex]++;
-            pthread_mutex_lock((pthread_mutex_t *)&(IPC->mutex));
+            sim_mutex_lock(&IPC->mutex);
             IPC->pass[MyIndex]++;
         }
     }
@@ -546,7 +549,7 @@ LOCAL void lock_mutex(void)
 LOCAL void unlock_mutex(void)
 {
     if (IPC) {
-        pthread_mutex_unlock((pthread_mutex_t *)&(IPC->mutex));
+        sim_mutex_unlock(&IPC->mutex);
     }
 }
 #endif
@@ -1798,10 +1801,11 @@ LOCAL uint32_t TPSD[2];                             /* Temp PSD */
 
 /* Opcode definitions */
 /* called from IPU thread */
-void *ipu_sim_instr(void *value) {
+THREAD_FUNC_DEFN(ipu_sim_instr)
+{
     /* Generic thread entry signature.
        This implementation does not use every parameter. */
-    (void)value;
+    (void) arg;
 
     t_stat              reason = 0;                 /* reason for stopping */
     uint64_t            dest = 0;                   /* Holds destination/source register */
@@ -1996,7 +2000,7 @@ cond_ok:
             if (wait4sipu) {                        /* are we to wait */
                 lock_mutex();                       /* lock mutex */
                 while (IPC->atrap[MyIndex]==0)      /* sleep on the condition */
-                    pthread_cond_wait(&IPC->cond, &IPC->mutex); /* wait for wakeup */
+                    sim_cond_wait(&IPC->cond, &IPC->mutex); /* wait for wakeup */
                 unlock_mutex();                     /* unlock mutex and continue */
                 goto cond_ok;                       /* continue waiting */
             }
@@ -2533,7 +2537,7 @@ exec2:
             fprintf(stdout, "[][][][][][][][][][] IPU HALT [1][][][][][][][][][]\r\n");
             fflush(stdout);
             fflush(sim_deb);
-            pthread_exit((void *)&reason);
+            sim_thread_exit((void *)&reason);
 #else
             if (cpustop == STOP_HALT) {
                 /* CPU is halting and we are halted, so wait for new command */
@@ -2734,7 +2738,7 @@ exec2:
                     if (IPC->atrap[PeerIndex] == 0) {
                         lock_mutex();               /* lock mutex */
                         IPC->atrap[PeerIndex] = SIGNALIPU_TRAP;
-                        pthread_cond_signal(&IPC->cond);    /* wake any waiters */
+                        sim_cond_signal(&IPC->cond);    /* wake any waiters */
                         unlock_mutex();             /* unlock mutex */
                         IPC->sent[MyIndex]++;
                         sim_debug(DEBUG_TRAP, my_dev,
@@ -6761,7 +6765,7 @@ doahalt:
 #ifdef DO_NO_EXIT
                     reason = STOP_HALT;             /* do halt for now */
                     cpustop = reason;               /* tell IPU our state */
-                    pthread_exit((void *)&reason);
+                    sim_thread_exit((void *)&reason);
 #endif
                 } else {
                     uint32_t oldstatus = IPUSTATUS; /* keep for retain blocking state */
@@ -6869,7 +6873,7 @@ doahalt:
 #endif
     fprintf(stdout, "[][][][][][][][][][] IPU HALT [3][][][][][][][][][]\r\n");
     fflush(stdout);
-    pthread_exit((void *)&reason);
+    sim_thread_exit(&reason);
     return (0);                                     /* dummy return for Windows */
 }
 

@@ -29,6 +29,7 @@
 #    include <errno.h>
 #    include <limits.h>
 #    include <math.h>
+#    include <inttypes.h>
 #    include <setjmp.h>
 #    include <stdbool.h>
 #    include <stdarg.h>
@@ -212,5 +213,11 @@ typedef LONGLONG sim_off_t;
 
 #        define PRIsim_off_t PRId64
 #    endif
+
+/* Simulator function status return type. This type is so unversally pervasive in
+ * the SIMH/ZIMH code that it belongs here, without all of the extras from sim_defs.h
+ * where it was originally declared.
+ */
+typedef int t_stat;
 
 #endif /* SIM_PLATFORM_H_ */

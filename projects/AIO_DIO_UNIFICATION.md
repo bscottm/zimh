@@ -237,7 +237,7 @@ single, uniform operation:
 - `sim_disk.c`/`sim_tape.c` each do the real work in their own
   `*_clr_async` (`sim_disk_clr_async`, `sim_disk.c:728-755`;
   `sim_tape_clr_async`, `sim_tape.c:529-...`): lock, clear the
-  context's `asynch_io` flag, signal the condvar, `pthread_join` the
+  context's `asynch_io` flag, signal the condvar, `sim_thread_join` the
   worker, destroy the lock/condvars. But `sim_set_asynch`
   (`scp.c:4388-4435`) never calls either of these directly — it only
   calls `uptr->io_flush`, and it is only because `_sim_disk_io_flush`

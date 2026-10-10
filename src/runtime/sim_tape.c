@@ -127,6 +127,47 @@ static void sim_tape_data_trace (UNIT *uptr, const uint8_t *data, size_t len, co
 static t_stat tape_erase_fwd (UNIT *uptr, t_mtrlnt gap_size);
 static t_stat tape_erase_rev (UNIT *uptr, t_mtrlnt gap_size);
 
+typedef enum {
+    /* Exit tape operation loop. */
+    TOP_DONE,
+    /* sim_tape_rdrecf_a */
+    TOP_RDRF,
+    /* sim_tape_rdrecr_a */
+    TOP_RDRR,
+    /* sim_tape_wrrecf_a */
+    TOP_WREC,
+    /* sim_tape_wrtmk_a */
+    TOP_WTMK,
+    /* sim_tape_wreom_a */
+    TOP_WEOM,
+    /* sim_tape_wreomrw_a */
+    TOP_WEMR,
+    /* sim_tape_wrgap_a */
+    TOP_WGAP,
+    /* sim_tape_sprecf_a */
+    TOP_SPRF,
+    /* sim_tape_sprecsf_a */
+    TOP_SRSF,
+    /* sim_tape_sprecr_a */
+    TOP_SPRR,
+    /* sim_tape_sprecsr_a */
+    TOP_SRSR,
+    /* sim_tape_spfilef */
+    TOP_SPFF,
+    /* sim_tape_spfilebyrecf */
+    TOP_SFRF,
+    /* sim_tape_spfiler */
+    TOP_SPFR,
+    /* sim_tape_spfilebyrecr */
+    TOP_SFRR,
+    /* sim_tape_position_a */
+    TOP_RWND,
+    /* sim_tape_position_a */
+    TOP_POSN,
+    /* Operation loop idle state */
+    TOP_IDLE
+} tape_op_t;
+
 struct tape_context {
     DEVICE              *dptr;              /* Device for unit (access to debug flags) */
     uint32_t            dbit;               /* debugging bit for trace */
@@ -134,14 +175,14 @@ struct tape_context {
 #if defined SIM_ASYNCH_IO
     bool                asynch_io;          /* Asynchronous Interrupt scheduling enabled */
     int                 asynch_io_latency;  /* instructions to delay pending interrupt */
-    pthread_mutex_t     lock;
-    pthread_t           io_thread;          /* I/O Thread Id */
-    pthread_mutex_t     io_lock;
-    pthread_cond_t      io_cond;
-    pthread_cond_t      io_done;
-    pthread_cond_t      startup_cond;
+    sim_mutex_t         lock;
+    sim_thread_t        io_thread;          /* I/O Thread Id */
+    sim_mutex_t         io_lock;
+    sim_cond_t          io_cond;
+    sim_cond_t          io_done;
+    sim_cond_t          startup_cond;
     bool                io_thread_running;
-    int                 io_top;
+    tape_op_t           io_top;
     uint8_t             *buf;
     uint32_t            *bc;
     uint32_t            *fc;
@@ -169,7 +210,7 @@ if ((callback == NULL) || !(ctx->asynch_io))
         struct tape_context *ctx =                                      \
                       (struct tape_context *)uptr->tape_ctx;            \
                                                                         \
-        pthread_mutex_lock (&ctx->io_lock);                             \
+        sim_mutex_lock (&ctx->io_lock);                                 \
                                                                         \
         sim_debug_unit (ctx->dbit, uptr,                                \
       "sim_tape AIO_CALL(op=%d, unit=%d)\n", op, (int)(uptr-ctx->dptr->units));\
@@ -186,113 +227,113 @@ if ((callback == NULL) || !(ctx->asynch_io))
         ctx->bpi = _bpi;                                                \
         ctx->objupdate = _obj;                                          \
         ctx->callback = _callback;                                      \
-        pthread_cond_signal (&ctx->io_cond);                            \
-        pthread_mutex_unlock (&ctx->io_lock);                           \
+        sim_cond_signal (&ctx->io_cond);                                \
+        sim_mutex_unlock (&ctx->io_lock);                               \
         }                                                               \
     else                                                                \
         if (_callback)                                                  \
             (_callback) (uptr, r);
-#define TOP_DONE  0             /* close */
-#define TOP_RDRF  1             /* sim_tape_rdrecf_a */
-#define TOP_RDRR  2             /* sim_tape_rdrecr_a */
-#define TOP_WREC  3             /* sim_tape_wrrecf_a */
-#define TOP_WTMK  4             /* sim_tape_wrtmk_a */
-#define TOP_WEOM  5             /* sim_tape_wreom_a */
-#define TOP_WEMR  6             /* sim_tape_wreomrw_a */
-#define TOP_WGAP  7             /* sim_tape_wrgap_a */
-#define TOP_SPRF  8             /* sim_tape_sprecf_a */
-#define TOP_SRSF  9             /* sim_tape_sprecsf_a */
-#define TOP_SPRR 10             /* sim_tape_sprecr_a */
-#define TOP_SRSR 11             /* sim_tape_sprecsr_a */
-#define TOP_SPFF 12             /* sim_tape_spfilef */
-#define TOP_SFRF 13             /* sim_tape_spfilebyrecf */
-#define TOP_SPFR 14             /* sim_tape_spfiler */
-#define TOP_SFRR 15             /* sim_tape_spfilebyrecr */
-#define TOP_RWND 16             /* sim_tape_rewind_a */
-#define TOP_POSN 17             /* sim_tape_position_a */
 
-static void *
-_tape_io(void *arg)
+static THREAD_FUNC_DEFN(_tape_io)
 {
-UNIT* volatile uptr = (UNIT*)arg;
-struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
+    UNIT *uptr = (UNIT *)arg;
+    struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
 
-    sim_debug_unit (ctx->dbit, uptr, "_tape_io(unit=%d) starting\n", (int)(uptr-ctx->dptr->units));
+    sim_debug_unit(ctx->dbit, uptr, "_tape_io(unit=%d) starting\n", (int)(uptr - ctx->dptr->units));
 
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_set_io_thread_affinity();
+
+    char thread_name[THREAD_NAME_MAX + 1];
+
+    snprintf(thread_name, THREAD_NAME_MAX, "%s tape thread", uptr->uname);
+    sim_set_thread_name(thread_name);
+
+    sim_mutex_lock(&ctx->io_lock);
     ctx->io_thread_running = true;
-    pthread_cond_signal (&ctx->startup_cond);   /* Signal we're ready to go */
+    ctx->io_top = TOP_IDLE;
+    sim_cond_signal(&ctx->startup_cond); /* Signal we're ready to go */
+
+    // Retain the lock on ctx->io_lock on loop entry:
     while (1) {
-        pthread_cond_wait (&ctx->io_cond, &ctx->io_lock);
-        if (ctx->io_top == TOP_DONE)
-            break;
-        pthread_mutex_unlock (&ctx->io_lock);
+        // condition wait will release ctx->io_lock until signal, when it gets
+        // reacquired.
+        sim_cond_wait(&ctx->io_cond, &ctx->io_lock);
+
+        // Retain ctx->io_lock during operation processing.
         switch (ctx->io_top) {
-            case TOP_RDRF:
-                ctx->io_status = sim_tape_rdrecf (uptr, ctx->buf, ctx->bc, ctx->max);
-                break;
-            case TOP_RDRR:
-                ctx->io_status = sim_tape_rdrecr (uptr, ctx->buf, ctx->bc, ctx->max);
-                break;
-            case TOP_WREC:
-                ctx->io_status = sim_tape_wrrecf (uptr, ctx->buf, ctx->vbc);
-                break;
-            case TOP_WTMK:
-                ctx->io_status = sim_tape_wrtmk (uptr);
-                break;
-            case TOP_WEOM:
-                ctx->io_status = sim_tape_wreom (uptr);
-                break;
-            case TOP_WEMR:
-                ctx->io_status = sim_tape_wreomrw (uptr);
-                break;
-            case TOP_WGAP:
-                ctx->io_status = sim_tape_wrgap (uptr, ctx->gaplen);
-                break;
-            case TOP_SPRF:
-                ctx->io_status = sim_tape_sprecf (uptr, ctx->bc);
-                break;
-            case TOP_SRSF:
-                ctx->io_status = sim_tape_sprecsf (uptr, ctx->vbc, ctx->bc);
-                break;
-            case TOP_SPRR:
-                ctx->io_status = sim_tape_sprecr (uptr, ctx->bc);
-                break;
-            case TOP_SRSR:
-                ctx->io_status = sim_tape_sprecsr (uptr, ctx->vbc, ctx->bc);
-                break;
-            case TOP_SPFF:
-                ctx->io_status = sim_tape_spfilef (uptr, ctx->vbc, ctx->bc);
-                break;
-            case TOP_SFRF:
-                ctx->io_status = sim_tape_spfilebyrecf (uptr, ctx->vbc, ctx->bc, ctx->fc, ctx->max != 0);
-                break;
-            case TOP_SPFR:
-                ctx->io_status = sim_tape_spfiler (uptr, ctx->vbc, ctx->bc);
-                break;
-            case TOP_SFRR:
-                ctx->io_status = sim_tape_spfilebyrecr (uptr, ctx->vbc, ctx->bc, ctx->fc);
-                break;
-            case TOP_RWND:
-                ctx->io_status = sim_tape_rewind (uptr);
-                break;
-            case TOP_POSN:
-                ctx->io_status = sim_tape_position (uptr, ctx->vbc, ctx->gaplen, ctx->bc, ctx->bpi, ctx->fc, ctx->objupdate);
-                break;
-            }
-        pthread_mutex_lock (&ctx->io_lock);
-        ctx->io_top = TOP_DONE;
-        pthread_cond_signal (&ctx->io_done);
-        pthread_mutex_unlock (&ctx->io_lock);
-        sim_activate (uptr, ctx->asynch_io_latency);
-        pthread_mutex_lock (&ctx->io_lock);
+        case TOP_DONE:
+            ctx->io_thread_running = false;
+            sim_mutex_unlock(&ctx->io_lock);
+
+            sim_debug_unit(ctx->dbit, uptr, "_tape_io(unit=%d) exiting\n", (int)(uptr - ctx->dptr->units));
+
+            return THREAD_FUNC_RETURN(0);
+
+        case TOP_RDRF:
+            ctx->io_status = sim_tape_rdrecf(uptr, ctx->buf, ctx->bc, ctx->max);
+            break;
+        case TOP_RDRR:
+            ctx->io_status = sim_tape_rdrecr(uptr, ctx->buf, ctx->bc, ctx->max);
+            break;
+        case TOP_WREC:
+            ctx->io_status = sim_tape_wrrecf(uptr, ctx->buf, ctx->vbc);
+            break;
+        case TOP_WTMK:
+            ctx->io_status = sim_tape_wrtmk(uptr);
+            break;
+        case TOP_WEOM:
+            ctx->io_status = sim_tape_wreom(uptr);
+            break;
+        case TOP_WEMR:
+            ctx->io_status = sim_tape_wreomrw(uptr);
+            break;
+        case TOP_WGAP:
+            ctx->io_status = sim_tape_wrgap(uptr, ctx->gaplen);
+            break;
+        case TOP_SPRF:
+            ctx->io_status = sim_tape_sprecf(uptr, ctx->bc);
+            break;
+        case TOP_SRSF:
+            ctx->io_status = sim_tape_sprecsf(uptr, ctx->vbc, ctx->bc);
+            break;
+        case TOP_SPRR:
+            ctx->io_status = sim_tape_sprecr(uptr, ctx->bc);
+            break;
+        case TOP_SRSR:
+            ctx->io_status = sim_tape_sprecsr(uptr, ctx->vbc, ctx->bc);
+            break;
+        case TOP_SPFF:
+            ctx->io_status = sim_tape_spfilef(uptr, ctx->vbc, ctx->bc);
+            break;
+        case TOP_SFRF:
+            ctx->io_status = sim_tape_spfilebyrecf(uptr, ctx->vbc, ctx->bc, ctx->fc, ctx->max != 0);
+            break;
+        case TOP_SPFR:
+            ctx->io_status = sim_tape_spfiler(uptr, ctx->vbc, ctx->bc);
+            break;
+        case TOP_SFRR:
+            ctx->io_status = sim_tape_spfilebyrecr(uptr, ctx->vbc, ctx->bc, ctx->fc);
+            break;
+        case TOP_RWND:
+            ctx->io_status = sim_tape_rewind(uptr);
+            break;
+        case TOP_POSN:
+            ctx->io_status = sim_tape_position(uptr, ctx->vbc, ctx->gaplen, ctx->bc, ctx->bpi, ctx->fc, ctx->objupdate);
+            break;
+        case TOP_IDLE:
+            ctx->io_status = SCPE_OK;
+            sim_debug_unit(ctx->dbit, uptr, "_tape_io(unit=%d) idle\n", (int)(uptr - ctx->dptr->units));
+            break;
+        }
+
+        ctx->io_top = TOP_IDLE;
+        sim_cond_signal(&ctx->io_done);
+        sim_activate(uptr, ctx->asynch_io_latency);
+
+        // ctx->io_lock still acquired on loop iteration.
     }
-    ctx->io_thread_running = false;
-    pthread_mutex_unlock (&ctx->io_lock);
 
-    sim_debug_unit (ctx->dbit, uptr, "_tape_io(unit=%d) exiting\n", (int)(uptr-ctx->dptr->units));
-
-    return NULL;
+    SIM_UNREACHABLE();
 }
 
 /* This routine is called in the context of the main simulator thread before
@@ -311,21 +352,21 @@ TAPE_PCALLBACK callback = ctx->callback;
 
 sim_debug_unit (ctx->dbit, uptr, "_tape_completion_dispatch(unit=%d, top=%d, callback=%p)\n", (int)(uptr-ctx->dptr->units), ctx->io_top, ctx->callback);
 
-if (ctx->io_top != TOP_DONE)
+if (ctx->io_top != TOP_IDLE)
     abort();                                            /* horribly wrong, stop */
 
 if (ctx->asynch_io)
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_mutex_lock (&ctx->io_lock);
 
 if (ctx->callback) {
     ctx->callback = NULL;
     if (ctx->asynch_io)
-        pthread_mutex_unlock (&ctx->io_lock);
+        sim_mutex_unlock (&ctx->io_lock);
     callback (uptr, ctx->io_status);
     }
 else {
     if (ctx->asynch_io)
-        pthread_mutex_unlock (&ctx->io_lock);
+        sim_mutex_unlock (&ctx->io_lock);
     }
 }
 
@@ -335,7 +376,7 @@ struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
 
 if (ctx) {
     sim_debug_unit (ctx->dbit, uptr, "_tape_is_active(unit=%d, top=%d)\n", (int)(uptr-ctx->dptr->units), ctx->io_top);
-    return (ctx->io_top != TOP_DONE);
+    return (ctx->io_top != TOP_IDLE);
     }
 return false;
 }
@@ -347,10 +388,10 @@ struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
 if (ctx) {
     sim_debug_unit (ctx->dbit, uptr, "_tape_cancel(unit=%d, top=%d)\n", (int)(uptr-ctx->dptr->units), ctx->io_top);
     if (ctx->asynch_io) {
-        pthread_mutex_lock (&ctx->io_lock);
-        while (ctx->io_top != TOP_DONE)
-            pthread_cond_wait (&ctx->io_done, &ctx->io_lock);
-        pthread_mutex_unlock (&ctx->io_lock);
+        sim_mutex_lock (&ctx->io_lock);
+        while (ctx->io_top != TOP_IDLE)
+            sim_cond_wait (&ctx->io_done, &ctx->io_lock);
+        sim_mutex_unlock (&ctx->io_lock);
         }
     }
 return false;
@@ -483,29 +524,24 @@ t_stat sim_tape_set_async (UNIT *uptr, int latency)
 return sim_messagef (SCPE_NOFNC, "Tape: can't operate asynchronously\r\n");
 #else
 struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
-pthread_attr_t attr;
 int create_status;
 
 ctx->asynch_io = sim_asynch_enabled;
 ctx->asynch_io_latency = latency;
 if (ctx->asynch_io) {
-    pthread_mutex_init (&ctx->io_lock, NULL);
-    pthread_cond_init (&ctx->io_cond, NULL);
-    pthread_cond_init (&ctx->io_done, NULL);
-    pthread_cond_init (&ctx->startup_cond, NULL);
-    pthread_attr_init(&attr);
-    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_mutex_init (&ctx->io_lock);
+    sim_cond_init (&ctx->io_cond);
+    sim_cond_init (&ctx->io_done);
+    sim_cond_init (&ctx->startup_cond);
+    sim_mutex_lock (&ctx->io_lock);
     ctx->io_thread_running = false;
-    create_status = pthread_create (&ctx->io_thread, &attr, _tape_io,
-                                    (void *)uptr);
-    pthread_attr_destroy(&attr);
+    create_status = sim_thread_create (&ctx->io_thread, _tape_io, (void *)uptr);
     if (create_status != 0) {
-        pthread_mutex_unlock (&ctx->io_lock);
-        pthread_cond_destroy (&ctx->startup_cond);
-        pthread_cond_destroy (&ctx->io_done);
-        pthread_cond_destroy (&ctx->io_cond);
-        pthread_mutex_destroy (&ctx->io_lock);
+        sim_mutex_unlock (&ctx->io_lock);
+        sim_cond_destroy (&ctx->startup_cond);
+        sim_cond_destroy (&ctx->io_done);
+        sim_cond_destroy (&ctx->io_cond);
+        sim_mutex_destroy (&ctx->io_lock);
         ctx->asynch_io = false;
         return sim_messagef (
             SCPE_IOERR,
@@ -513,9 +549,9 @@ if (ctx->asynch_io) {
             sim_uname (uptr), strerror (create_status));
     }
     while (!ctx->io_thread_running)            /* Wait for thread to stabilize */
-        pthread_cond_wait (&ctx->startup_cond, &ctx->io_lock);
-    pthread_mutex_unlock (&ctx->io_lock);
-    pthread_cond_destroy (&ctx->startup_cond);
+        sim_cond_wait (&ctx->startup_cond, &ctx->io_lock);
+    sim_mutex_unlock (&ctx->io_lock);
+    sim_cond_destroy (&ctx->startup_cond);
     }
 uptr->a_check_completion = _tape_completion_dispatch;
 uptr->a_is_active = _tape_is_active;
@@ -540,14 +576,15 @@ struct tape_context *ctx = (struct tape_context *)uptr->tape_ctx;
 if (!ctx) return SCPE_UNATT;
 
 if (ctx->asynch_io) {
-    pthread_mutex_lock (&ctx->io_lock);
+    sim_mutex_lock (&ctx->io_lock);
     ctx->asynch_io = false;
-    pthread_cond_signal (&ctx->io_cond);
-    pthread_mutex_unlock (&ctx->io_lock);
-    pthread_join (ctx->io_thread, NULL);
-    pthread_mutex_destroy (&ctx->io_lock);
-    pthread_cond_destroy (&ctx->io_cond);
-    pthread_cond_destroy (&ctx->io_done);
+    ctx->io_top = TOP_DONE;
+    sim_cond_signal (&ctx->io_cond);
+    sim_mutex_unlock (&ctx->io_lock);
+    sim_thread_join (ctx->io_thread, NULL);
+    sim_mutex_destroy (&ctx->io_lock);
+    sim_cond_destroy (&ctx->io_cond);
+    sim_cond_destroy (&ctx->io_done);
     }
 return SCPE_OK;
 #endif

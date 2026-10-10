@@ -32,7 +32,7 @@
 
 #if !defined(SIM_THREADS_H)
 
-#    include <stdint.h>
+#    include "sim_platform.h"
 
 #    if defined(HAVE_PTHREADS)
 #        include <pthread.h>
@@ -72,10 +72,18 @@ static inline void sim_thread_yield(void)
     sched_yield();
 #    endif
 }
+
 static inline int sim_thread_join(sim_thread_t thread_id, sim_thread_exit_t *exit_val)
 {
 #    if defined(HAVE_PTHREADS)
     return pthread_join(thread_id, exit_val);
+#    endif
+}
+
+static inline void sim_thread_exit(sim_thread_exit_t exitval)
+{
+#    if defined(HAVE_PTHREADS)
+    pthread_exit(exitval);
 #    endif
 }
 
@@ -201,10 +209,16 @@ static inline int sim_cpu_set_empty(const sim_cpu_set_t *s)
     return s->mask == 0;
 }
 
+/* Lower-level CPU affinity functions */
 extern int sim_os_get_cpu_count(void);
 extern t_stat sim_os_get_process_affinity(sim_cpu_set_t *set);
 extern t_stat sim_os_set_thread_affinity(const sim_cpu_set_t *set);
 extern t_stat sim_os_get_cpu_partition(sim_cpu_set_t *main_set, sim_cpu_set_t *io_set, sim_cpu_set_t *sdl_set);
+
+/* Upper-level CPU affinity functions */
+extern void sim_set_io_thread_affinity(void);
+extern void sim_set_main_thread_affinity(void);
+extern void sim_set_sdl_thread_affinity(void);
 
 #    define SIM_THREADS_H
 #endif

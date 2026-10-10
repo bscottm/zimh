@@ -190,14 +190,16 @@ static t_stat sim_set_delay (int32_t flag, const char *cptr);
 
 int32_t sim_int_char = 005;                             /* interrupt character */
 int32_t sim_dbg_int_char = 0;                           /* SIGINT char under debugger */
-static bool sigint_message_issued = false;
 int32_t sim_brk_char = 000;                             /* break character */
 int32_t sim_tt_pchar = 0x00002780;
-#if defined (_WIN32)
+
+#if defined (_WIN32) || defined(_WIN64)
 int32_t sim_del_char = '\b';                            /* delete character */
 #else
 int32_t sim_del_char = 0177;
+static bool sigint_message_issued = false;
 #endif
+
 bool sim_signaled_int_char                              /* WRU character detected by signal while running */
 #if defined (_WIN32) || (defined(USE_SIM_VIDEO) && defined(HAVE_LIBSDL))
                              = false;
@@ -2266,7 +2268,6 @@ if ((r != SCPE_OK) ||
     ((val == 0) && (flag & KMAP_NZ)))
     return SCPE_ARG;
 *(cons_kmap[flag & KMAP_MASK]) = val;
-sigint_message_issued = false;
 return SCPE_OK;
 }
 
@@ -3407,14 +3408,14 @@ return SCPE_OK;
 
 
 #if defined(SIM_ASYNCH_IO) && defined(SIM_ASYNCH_MUX)
-extern pthread_mutex_t     sim_tmxr_poll_lock;
-extern pthread_cond_t      sim_tmxr_poll_cond;
+extern sim_mutex_t         sim_tmxr_poll_lock;
+extern sim_cond_t          sim_tmxr_poll_cond;
 extern int32_t             sim_tmxr_poll_count;
 extern bool                sim_tmxr_poll_running;
 
-pthread_t           sim_console_poll_thread;       /* Keyboard Polling Thread Id */
+sim_thread_t        sim_console_poll_thread;       /* Keyboard Polling Thread Id */
 bool                sim_console_poll_running = false;
-pthread_cond_t      sim_console_startup_cond;
+sim_cond_t          sim_console_startup_cond;
 
 static THREAD_FUNC_DEFN(_console_poll)
 {
@@ -3423,18 +3424,12 @@ DEVICE *d;
 
 sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - starting\n");
 
-/* Set the thread's affinity to the I/O affinity set: */
-sim_cpu_set_t io_set;
-
-sim_os_get_cpu_partition(NULL, &io_set, NULL);
-if (!sim_cpu_set_empty(&io_set))
-    sim_os_set_thread_affinity(&io_set);
-
+sim_set_io_thread_affinity();
 sim_set_thread_name("sim console poll thread");
 
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 sim_console_poll_running = true;
-pthread_cond_signal (&sim_console_startup_cond);   /* Signal we're ready to go */
+sim_cond_signal (&sim_console_startup_cond);      /* Signal we're ready to go */
 while (sim_asynch_enabled) {
 
     if (!sim_is_running) {
@@ -3449,24 +3444,24 @@ while (sim_asynch_enabled) {
     /* If we started something, let it finish before polling again */
     if (wait_count) {
         sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - waiting for %d units\n", wait_count);
-        pthread_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
+        sim_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
         sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - continuing with after wait\n");
         }
 
-    pthread_mutex_unlock (&sim_tmxr_poll_lock);
+    sim_mutex_unlock (&sim_tmxr_poll_lock);
     wait_count = 0;
     if (sim_os_poll_kbd_ready (1000)) {
         sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - Keyboard Data available\n");
-        pthread_mutex_lock (&sim_tmxr_poll_lock);
+        sim_mutex_lock (&sim_tmxr_poll_lock);
         ++wait_count;
         if (!sim_con_ldsc.uptr->a_polling_now) {
             sim_con_ldsc.uptr->a_polling_now = true;
             sim_con_ldsc.uptr->a_poll_waiter_count = 1;
             d = find_dev_from_unit(sim_con_ldsc.uptr);
             sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - Activating %s\n", d->name);
-            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+            sim_mutex_unlock (&sim_tmxr_poll_lock);
             _sim_activate (sim_con_ldsc.uptr, 0);
-            pthread_mutex_lock (&sim_tmxr_poll_lock);
+            sim_mutex_lock (&sim_tmxr_poll_lock);
             }
         else {
             d = find_dev_from_unit(sim_con_ldsc.uptr);
@@ -3475,11 +3470,11 @@ while (sim_asynch_enabled) {
             }
         }
     else
-        pthread_mutex_lock (&sim_tmxr_poll_lock);
+        sim_mutex_lock (&sim_tmxr_poll_lock);
 
     sim_tmxr_poll_count += wait_count;
     }
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 
 sim_debug (DBG_ASY, &sim_con_telnet, "_console_poll() - exiting\n");
 
@@ -3491,15 +3486,15 @@ return THREAD_FUNC_RETURN(0);
 static void
 console_poll_stop (void)
 {
-    pthread_mutex_lock (&sim_tmxr_poll_lock);
+    sim_mutex_lock (&sim_tmxr_poll_lock);
     if (sim_console_poll_running) {
-        pthread_cond_signal (&sim_tmxr_poll_cond);
-        pthread_mutex_unlock (&sim_tmxr_poll_lock);
-        pthread_join (sim_console_poll_thread, NULL);
+        sim_cond_signal (&sim_tmxr_poll_cond);
+        sim_mutex_unlock (&sim_tmxr_poll_lock);
+        sim_thread_join (sim_console_poll_thread, NULL);
         sim_console_poll_running = false;
     }
     else {
-        pthread_mutex_unlock (&sim_tmxr_poll_lock);
+        sim_mutex_unlock (&sim_tmxr_poll_lock);
     }
 }
 
@@ -3538,21 +3533,21 @@ if (sim_asynch_enabled) {
     if (status != SCPE_OK)
         return status;
     }
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 if (sim_asynch_enabled) {
     int create_status;
 
-    pthread_cond_init (&sim_console_startup_cond, NULL);
+    sim_cond_init (&sim_console_startup_cond, NULL);
     sim_console_poll_running = false;
     create_status = sim_thread_create (&sim_console_poll_thread, _console_poll, NULL);
     if (create_status == 0) {
         while (!sim_console_poll_running)          /* Wait for thread to stabilize */
-            pthread_cond_wait (&sim_console_startup_cond, &sim_tmxr_poll_lock);
-        pthread_cond_destroy (&sim_console_startup_cond);
+            sim_cond_wait (&sim_console_startup_cond, &sim_tmxr_poll_lock);
+        sim_cond_destroy (&sim_console_startup_cond);
     } else {
         if (create_status != 0) {
-            pthread_cond_destroy (&sim_console_startup_cond);
-            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+            sim_cond_destroy (&sim_console_startup_cond);
+            sim_mutex_unlock (&sim_tmxr_poll_lock);
             tmxr_stop_poll ();
             return sim_messagef (
                 SCPE_TTIERR,
@@ -3561,7 +3556,7 @@ if (sim_asynch_enabled) {
         }
     }
 }
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 return sim_os_ttrun ();
 }

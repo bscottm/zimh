@@ -6,6 +6,7 @@ add_unit_test(unit-sel32-memory
         ${PROJECT_SOURCE_DIR}/simulators/SEL32
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/tests/unit/support
+    USES_AIO
 )
 
 add_unit_test(unit-sel32-channel
@@ -16,6 +17,7 @@ add_unit_test(unit-sel32-channel
         ${PROJECT_SOURCE_DIR}/simulators/SEL32
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/tests/unit/support
+    USES_AIO
 )
 
 add_unit_test(unit-sel32-cpu
@@ -26,6 +28,7 @@ add_unit_test(unit-sel32-cpu
         ${PROJECT_SOURCE_DIR}/simulators/SEL32
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/tests/unit/support
+    USES_AIO
 )
 
 add_unit_test(unit-sel32-clock
@@ -36,4 +39,5 @@ add_unit_test(unit-sel32-clock
         ${PROJECT_SOURCE_DIR}/simulators/SEL32
         ${PROJECT_SOURCE_DIR}/src/runtime
         ${PROJECT_SOURCE_DIR}/tests/unit/support
+    USES_AIO
 )

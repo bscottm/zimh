@@ -22,9 +22,10 @@
 
 */
 
-#include <inttypes.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include "sim_platform.h"
+#if defined(SIM_ASYNCH_IO)
+#    include "sim_threads.h"
+#endif
 
 #include "sel32_arith_internal.h"
 
@@ -42,7 +43,7 @@ struct  ipcom   *IPC = 0;
 /* this is different than IPU defines */
 int             MyIndex;
 int             PeerIndex;
-pthread_t       ipuThread;                  /* thread structure */
+sim_thread_t    ipuThread;                  /* thread structure */
 uint32_t        M[MAXMEMSIZE] = { 0 };      /* Memory */
 struct  ipcom   myipc = {0};
 struct  ipcom   *IPC = 0;
@@ -546,11 +547,11 @@ LOCAL void clr_simsem()
 static void lock_mutex(void)
 {
     if (IPC != 0) {
-        if (pthread_mutex_trylock((pthread_mutex_t *)&(IPC->mutex)) == 0) {
+        if (pthread_mutex_trylock(&IPC->mutex) == 0) {
             IPC->pass[MyIndex]++;
         } else {
             IPC->wait[MyIndex]++;
-            pthread_mutex_lock((pthread_mutex_t *)&(IPC->mutex));
+            sim_mutex_lock(&IPC->mutex);
             IPC->pass[MyIndex]++;
         }
     }
@@ -559,7 +560,7 @@ static void lock_mutex(void)
 static void unlock_mutex(void)
 {
     if (IPC) {
-        pthread_mutex_unlock((pthread_mutex_t *)&(IPC->mutex));
+        sim_mutex_unlock(&IPC->mutex);
     }
 }
 #endif
@@ -1968,7 +1969,7 @@ wait_loop:
 #else
                 /* if we have a thread already, do't do it again */
                 if (got_ipu == 0) {
-                    rstat = pthread_create(&ipuThread, NULL, ipu_sim_instr, NULL);
+                    rstat = sim_thread_create(&ipuThread, ipu_sim_instr, NULL);
                     if (rstat) {
                         sim_printf("IPU thread create failed rstat = %x\n", rstat);
                         exit(1);
@@ -2165,7 +2166,7 @@ cond_go:
                 if (wait4sipu) {                    /* are we to wait */
                     lock_mutex();                   /* lock mutex */
                     while (IPC->atrap[MyIndex]==0)  /* sleep on the condition */
-                        pthread_cond_wait(&IPC->cond, &IPC->mutex); /* wait for wakeup */
+                        sim_cond_wait(&IPC->cond, &IPC->mutex); /* wait for wakeup */
                     unlock_mutex();                 /* unlock mutex and continue */
                     goto cond_go;                   /* go process */
                 }
@@ -3068,7 +3069,7 @@ exec2:
                     if (IPC->atrap[PeerIndex] == 0) {
                         lock_mutex();               /* lock mutex */
                         IPC->atrap[PeerIndex] = SIGNALIPU_TRAP;
-                        pthread_cond_signal(&IPC->cond);    /* wake any waiters */
+                        sim_cond_signal(&IPC->cond);    /* wake any waiters */
                         unlock_mutex();             /* unlock mutex */
                         IPC->sent[MyIndex]++;
                         sim_debug(DEBUG_TRAP, my_dev,
@@ -7730,7 +7731,7 @@ doahalt:
     fprintf(stdout, "[][][][][][][][][][] IPU HALT3 [3][][][][][][][][][]\r\n");
     fflush(stdout);
 #ifdef USE_IPU_THREAD
-    pthread_exit((void *)&reason);
+    sim_thread_exit(&reason);
 #endif
     return reason;                                  /* exit to simh for halt */
 }
@@ -7846,8 +7847,8 @@ t_stat cpu_reset(DEVICE *dptr)
 #else
 #ifndef USE_POSIX_SEM
         /* intialize the pthread mutex and cond on thread IPU/CPU */
-        pthread_mutex_init(&IPC->mutex, NULL);
-        pthread_cond_init(&IPC->cond, NULL);
+        sim_mutex_init(&IPC->mutex);
+        sim_cond_init(&IPC->cond);
 #endif
 #endif
 #endif

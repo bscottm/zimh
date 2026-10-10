@@ -3973,14 +3973,14 @@ static TMXR **tmxr_open_devices = NULL;
 static int tmxr_open_device_count = 0;
 
 #if defined(SIM_ASYNCH_MUX)
-pthread_t           sim_tmxr_poll_thread;          /* Polling Thread Id */
+sim_thread_t        sim_tmxr_poll_thread;          /* Polling Thread Id */
 #if defined(_WIN32)
-pthread_t           sim_tmxr_serial_poll_thread;   /* Serial Polling Thread Id */
-pthread_cond_t      sim_tmxr_serial_startup_cond;
+sim_thread_t        sim_tmxr_serial_poll_thread;   /* Serial Polling Thread Id */
+sim_cond_t          sim_tmxr_serial_startup_cond;
 #endif
-pthread_mutex_t     sim_tmxr_poll_lock;
-pthread_cond_t      sim_tmxr_poll_cond;
-pthread_cond_t      sim_tmxr_startup_cond;
+sim_mutex_t         sim_tmxr_poll_lock;
+sim_cond_t          sim_tmxr_poll_cond;
+sim_cond_t          sim_tmxr_startup_cond;
 int32_t             sim_tmxr_poll_count = 0;
 bool                sim_tmxr_poll_running = false;
 
@@ -3994,13 +3994,7 @@ UNIT **activated = NULL;
 SOCKET *sockets = NULL;
 int wait_count = 0;
 
-/* Set the thread's affinity to the I/O affinity set: */
-sim_cpu_set_t io_set;
-
-sim_os_get_cpu_partition(NULL, &io_set, NULL);
-if (!sim_cpu_set_empty(&io_set))
-    sim_os_set_thread_affinity(&io_set);
-
+sim_set_io_thread_affinity();
 sim_set_thread_name("sim txmr thread");
 
 sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - starting\n");
@@ -4009,9 +4003,9 @@ units = (UNIT **)calloc(FD_SETSIZE, sizeof(*units));
 activated = (UNIT **)calloc(FD_SETSIZE, sizeof(*activated));
 sockets = (SOCKET *)calloc(FD_SETSIZE, sizeof(*sockets));
 timeout_usec = 1000000;
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 sim_tmxr_poll_running = true;
-pthread_cond_signal (&sim_tmxr_startup_cond);   /* Signal we're ready to go */
+sim_cond_signal (&sim_tmxr_startup_cond);       /* Signal we're ready to go */
 while (sim_asynch_enabled) {
     int i, j, status, select_errno;
     fd_set readfds, errorfds;
@@ -4032,7 +4026,7 @@ while (sim_asynch_enabled) {
     /* If we started something we should wait for, let it finish before polling again */
     if (wait_count) {
         sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - waiting for %d units\n", wait_count);
-        pthread_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
+        sim_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
         sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_poll() - continuing with timeout of %dms\n", timeout_usec/1000);
         }
     FD_ZERO (&readfds);
@@ -4093,7 +4087,7 @@ while (sim_asynch_enabled) {
                 }
             }
         }
-    pthread_mutex_unlock (&sim_tmxr_poll_lock);
+    sim_mutex_unlock (&sim_tmxr_poll_lock);
     if (timeout_usec > 1000000)
         timeout_usec = 1000000;
     timeout.tv_sec = timeout_usec/1000000;
@@ -4107,7 +4101,7 @@ while (sim_asynch_enabled) {
         status = select (1+(int)max_socket_fd, &readfds, NULL, &errorfds, &timeout);
     select_errno = errno;
     wait_count=0;
-    pthread_mutex_lock (&sim_tmxr_poll_lock);
+    sim_mutex_lock (&sim_tmxr_poll_lock);
     switch (status) {
         case 0:     /* timeout */
             for (i=max_socket_fd=socket_count=0; i<tmxr_open_device_count; ++i) {
@@ -4118,9 +4112,9 @@ while (sim_asynch_enabled) {
                         mp->uptr->a_poll_waiter_count = 0;
                         d = find_dev_from_unit(mp->uptr);
                         sim_debug (TMXR_DBG_ASY, d, "_tmxr_poll() - Activating %s to poll connect\n", sim_uname(mp->uptr));
-                        pthread_mutex_unlock (&sim_tmxr_poll_lock);
+                        sim_mutex_unlock (&sim_tmxr_poll_lock);
                         _sim_activate (mp->uptr, 0);
-                        pthread_mutex_lock (&sim_tmxr_poll_lock);
+                        sim_mutex_lock (&sim_tmxr_poll_lock);
                         }
                     if (mp->txcount) {
                         timeout_usec = 10000; /* Wait 10ms next time (this gets doubled below) */
@@ -4139,9 +4133,9 @@ while (sim_asynch_enabled) {
                                 d = find_dev_from_unit(mp->ldsc[j].uptr);
                                 sim_debug (TMXR_DBG_ASY, d, "_tmxr_poll() - Line %d Activating %s to poll data: %d/%d\n",
                                     j, sim_uname(mp->ldsc[j].uptr), tmxr_tqln(&mp->ldsc[j]), tmxr_rqln (&mp->ldsc[j]));
-                                pthread_mutex_unlock (&sim_tmxr_poll_lock);
+                                sim_mutex_unlock (&sim_tmxr_poll_lock);
                                 _sim_activate (mp->ldsc[j].uptr, 0);
-                                pthread_mutex_lock (&sim_tmxr_poll_lock);
+                                sim_mutex_lock (&sim_tmxr_poll_lock);
                                 }
                             }
                         }
@@ -4175,9 +4169,9 @@ while (sim_asynch_enabled) {
                             activated[j]->a_poll_waiter_count = 1;
                             d = find_dev_from_unit(activated[j]);
                             sim_debug (TMXR_DBG_ASY, d, "_tmxr_poll() - Activating for data %s\n", sim_uname(activated[j]));
-                            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+                            sim_mutex_unlock (&sim_tmxr_poll_lock);
                             _sim_activate (activated[j], 0);
-                            pthread_mutex_lock (&sim_tmxr_poll_lock);
+                            sim_mutex_lock (&sim_tmxr_poll_lock);
                             }
                         else {
                             d = find_dev_from_unit(activated[j]);
@@ -4193,7 +4187,7 @@ while (sim_asynch_enabled) {
         }
     sim_tmxr_poll_count += wait_count;
     }
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 free(units);
 free(activated);
 free(sockets);
@@ -4220,8 +4214,8 @@ units = (UNIT **)calloc(MAXIMUM_WAIT_OBJECTS, sizeof(*units));
 activated = (UNIT **)calloc(MAXIMUM_WAIT_OBJECTS, sizeof(*activated));
 serports = (SERHANDLE *)calloc(MAXIMUM_WAIT_OBJECTS, sizeof(*serports));
 timeout_usec = 1000000;
-pthread_mutex_lock (&sim_tmxr_poll_lock);
-pthread_cond_signal (&sim_tmxr_serial_startup_cond);   /* Signal we're ready to go */
+sim_mutex_lock (&sim_tmxr_poll_lock);
+sim_cond_signal (&sim_tmxr_serial_startup_cond);       /* Signal we're ready to go */
 while (sim_asynch_enabled) {
     int i, j;
     DWORD status;
@@ -4241,7 +4235,7 @@ while (sim_asynch_enabled) {
     /* If we started something we should wait for, let it finish before polling again */
     if (wait_count) {
         sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_serial_poll() - waiting for %d units\n", wait_count);
-        pthread_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
+        sim_cond_wait (&sim_tmxr_poll_cond, &sim_tmxr_poll_lock);
         sim_debug (TMXR_DBG_ASY, dptr, "_tmxr_serial_poll() - continuing with timeout of %dms\n", timeout_usec/1000);
         }
     for (i=serport_count=0; i<tmxr_open_device_count; ++i) {
@@ -4258,12 +4252,12 @@ while (sim_asynch_enabled) {
         }
     if (serport_count == 0)                                 /* No open serial ports? */
         break;                                              /* We're done */
-    pthread_mutex_unlock (&sim_tmxr_poll_lock);
+    sim_mutex_unlock (&sim_tmxr_poll_lock);
     if (timeout_usec > 1000000)
         timeout_usec = 1000000;
     status = WaitForMultipleObjects (serport_count, serports, FALSE, timeout_usec/1000);
     wait_count=0;
-    pthread_mutex_lock (&sim_tmxr_poll_lock);
+    sim_mutex_lock (&sim_tmxr_poll_lock);
     switch (status) {
         case WAIT_FAILED:
             sim_printf ("WaitForMultipleObjects() Failed, LastError=%d\r\n", GetLastError());
@@ -4284,9 +4278,9 @@ while (sim_asynch_enabled) {
                 activated[j]->a_poll_waiter_count = 1;
                 d = find_dev_from_unit(activated[j]);
                 sim_debug (TMXR_DBG_ASY, d, "_tmxr_serial_poll() - Activating for data %s\n", sim_uname(activated[j]));
-                pthread_mutex_unlock (&sim_tmxr_poll_lock);
+                sim_mutex_unlock (&sim_tmxr_poll_lock);
                 _sim_activate (activated[j], 0);
-                pthread_mutex_lock (&sim_tmxr_poll_lock);
+                sim_mutex_lock (&sim_tmxr_poll_lock);
                 }
             else {
                 d = find_dev_from_unit(activated[j]);
@@ -4299,7 +4293,7 @@ while (sim_asynch_enabled) {
         }
     sim_tmxr_poll_count += wait_count;
     }
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 free(units);
 free(activated);
 free(serports);
@@ -4315,31 +4309,31 @@ return NULL;
 t_stat tmxr_start_poll (void)
 {
 #if defined(SIM_ASYNCH_MUX)
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 if ((tmxr_open_device_count > 0) &&
     sim_asynch_enabled           &&
     sim_is_running               &&
     !sim_tmxr_poll_running) {
     int create_status;
 
-    pthread_cond_init (&sim_tmxr_startup_cond, NULL);
+    sim_cond_init (&sim_tmxr_startup_cond, NULL);
     sim_tmxr_poll_running = false;
     create_status = sim_thread_create(&sim_tmxr_poll_thread, _tmxr_poll, NULL);
     if (create_status == 0) {
         while (!sim_tmxr_poll_running)             /* Wait for thread to stabilize */
-            pthread_cond_wait (&sim_tmxr_startup_cond, &sim_tmxr_poll_lock);
-        pthread_cond_destroy (&sim_tmxr_startup_cond);
+            sim_cond_wait (&sim_tmxr_startup_cond, &sim_tmxr_poll_lock);
+        sim_cond_destroy (&sim_tmxr_startup_cond);
     } else {
         if (create_status != 0) {
-            pthread_cond_destroy (&sim_tmxr_startup_cond);
-            pthread_mutex_unlock (&sim_tmxr_poll_lock);
+            sim_cond_destroy (&sim_tmxr_startup_cond);
+            sim_mutex_unlock (&sim_tmxr_poll_lock);
             return sim_messagef (
                 SCPE_IOERR, "TMXR: can't start asynchronous poll thread: %s\n",
                 strerror (create_status));
         }
     }
 }
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 return SCPE_OK;
 }
@@ -4347,11 +4341,11 @@ return SCPE_OK;
 t_stat tmxr_stop_poll (void)
 {
 #if defined(SIM_ASYNCH_MUX)
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 if (sim_tmxr_poll_running) {
-    pthread_cond_signal (&sim_tmxr_poll_cond);
-    pthread_mutex_unlock (&sim_tmxr_poll_lock);
-    pthread_join (sim_tmxr_poll_thread, NULL);
+    sim_cond_signal (&sim_tmxr_poll_cond);
+    sim_mutex_unlock (&sim_tmxr_poll_lock);
+    sim_thread_join (sim_tmxr_poll_thread, NULL);
     sim_tmxr_poll_running = false;
     /* Transitioning from asynch mode so kick all polling units onto the event queue */
     if (tmxr_open_device_count) {
@@ -4369,7 +4363,7 @@ if (sim_tmxr_poll_running) {
         }
     }
 else
-    pthread_mutex_unlock (&sim_tmxr_poll_lock);
+    sim_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 return SCPE_OK;
 }
@@ -4382,7 +4376,7 @@ t_stat status = SCPE_OK;
 
 *added = false;
 #if defined(SIM_ASYNCH_MUX)
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 #endif
 for (i=0; i<tmxr_open_device_count; ++i)
     if (tmxr_open_devices[i] == mux) {
@@ -4399,7 +4393,7 @@ if (!found) {
         mux->ldsc[i].send.after = mux->ldsc[i].send.delay = 0;
     }
 #if defined(SIM_ASYNCH_MUX)
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 if ((status == SCPE_OK) &&
     (tmxr_open_device_count == 1) &&
     sim_asynch_enabled)
@@ -4414,7 +4408,7 @@ int i, j;
 
 #if defined(SIM_ASYNCH_MUX)
 tmxr_stop_poll ();
-pthread_mutex_lock (&sim_tmxr_poll_lock);
+sim_mutex_lock (&sim_tmxr_poll_lock);
 #endif
 for (i=0; i<tmxr_open_device_count; ++i)
     if (tmxr_open_devices[i] == mux) {
@@ -4424,7 +4418,7 @@ for (i=0; i<tmxr_open_device_count; ++i)
         break;
         }
 #if defined(SIM_ASYNCH_MUX)
-pthread_mutex_unlock (&sim_tmxr_poll_lock);
+sim_mutex_unlock (&sim_tmxr_poll_lock);
 #endif
 }
 
