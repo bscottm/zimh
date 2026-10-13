@@ -287,21 +287,29 @@ static void sim_external_env_remove_name(const char *name)
         }
 }
 
-/* Return the executable basename used for %SIM_BIN_NAME%. */
+/* Return the executable basename used for %SIM_BIN_NAME%. This function removes the directory path, the CMake
+ * executable prefix and the ".EXE" extension if present to maintain compatibility with older SIMH scripts. */
 static const char *sim_bin_name_value(char *rbuf, size_t rbuf_size)
 {
     const char *base;
 
     if ((NULL == sim_prog_name) || ('\0' == sim_prog_name[0]))
         return NULL;
-    base = strrchr(sim_prog_name, '/');
-    if (base == NULL)
-        base = strrchr(sim_prog_name, '\\');
-    if (base == NULL)
-        base = sim_prog_name;
-    else
+    if ((base = strrchr(sim_prog_name, '/')) != NULL || (base = strrchr(sim_prog_name, '\\')) != NULL)
         ++base;
+    else 
+        base = sim_prog_name;
+
+    if (sim_prog_prefix && sim_prog_prefix[0] != '\0' && strncmp(base, sim_prog_prefix, strlen(sim_prog_prefix)) == 0)
+        base += strlen(sim_prog_prefix);
+
     strlcpy(rbuf, base, rbuf_size);
+
+    const char *exe_ext = match_ext(rbuf, "exe");
+
+    if (exe_ext != NULL)
+        rbuf[exe_ext - rbuf] = '\0';
+
     return rbuf;
 }
 

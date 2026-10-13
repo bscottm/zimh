@@ -285,6 +285,7 @@ extern const char *sim_savename;                        /* Simulator Name used i
 extern t_value *sim_eval;
 extern volatile bool stop_cpu;
 extern const char *sim_prog_name;                       /* executable program name */
+extern const char *sim_prog_prefix;                     /* executable prefix, e.g., "zimh-"*/
 extern FILE *stdnul;
 extern bool sim_asynch_enabled;
 #if defined(SIM_ASYNCH_IO)

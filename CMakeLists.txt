@@ -61,6 +61,11 @@ else()
         "${ZIMH_VERSION_PATCH}.${ZIMH_VERSION_TWEAK}")
 endif()
 
+# The default ZIMH executable prefix, if not previously defined
+if (NOT DEFINED ZIMH_EXECUTABLE_PREFIX)
+    set(ZIMH_EXECUTABLE_PREFIX "zimh")
+endif()
+
 # Places to look for CMake modules/includes
 list(APPEND CMAKE_MODULE_PATH
     ${CMAKE_SOURCE_DIR}/cmake

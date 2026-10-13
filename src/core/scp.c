@@ -531,7 +531,16 @@ static t_stat _sim_debug_flush (void);
 
 /* Global data */
 
+#if defined(ZIMH_EXECUTABLE_PREFIX)
+#define SIM_EXE_PREFIX_FOO(x) #x "-"
+#define SIM_EXE_PREFIX(x) SIM_EXE_PREFIX_FOO(x)
+#else
+#define SIM_EXE_PREFIX(_) "" 
+#endif
+
 const char *sim_prog_name = NULL;                       /* pointer to the executable name */
+                                                        /* Executable's prefix, e.g, "zimh-" */
+const char *sim_prog_prefix = SIM_EXE_PREFIX(ZIMH_EXECUTABLE_PREFIX);
 DEVICE *sim_dflt_dev = NULL;
 UNIT *sim_clock_queue = QUEUE_LIST_END;
 int32_t sim_interval = 0;

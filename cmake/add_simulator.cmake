@@ -101,6 +101,10 @@ function(build_simcore _targ)
             "${SIMH_COMPONENTS_ROOT}"
             "${ZIMH_GENERATED_INCLUDE_DIR}")
 
+        if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+            target_compile_definitions("${lib}" PUBLIC "ZIMH_EXECUTABLE_PREFIX=${ZIMH_EXECUTABLE_PREFIX}")
+        endif() 
+
         if (SIMH_INT64)
             target_compile_definitions(${lib} PUBLIC USE_INT64)
         endif (SIMH_INT64)
@@ -313,6 +317,10 @@ function (simh_executable_template _targ)
         target_compile_definitions("${_targ}" PUBLIC "${SIMH_DEFINES}")
     endif (DEFINED SIMH_DEFINES)
 
+    if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+        target_compile_definitions("${_targ}" PUBLIC "ZIMH_EXECUTABLE_PREFIX=${ZIMH_EXECUTABLE_PREFIX}")
+    endif() 
+
     # This is a quick cheat to make sure that all of the include paths are
     # absolute paths.
     if (DEFINED SIMH_INCLUDES)
@@ -391,7 +399,15 @@ function (add_simulator _targ)
     cmake_parse_arguments(SIMH "${ADD_SIMULATOR_OPTIONS}" "${ADD_SIMULATOR_1ARG}" "${ADD_SIMULATOR_NARG}" ${ARGN})
 
     target_sources(${_targ} PRIVATE ${SIMH_CORE_ROOT}/main.c)
-    set_target_properties(${_targ} PROPERTIES OUTPUT_NAME "zimh-${_targ}")
+
+    if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+        set(output_target "${ZIMH_EXECUTABLE_PREFIX}-${_targ}")
+    else ()
+        set(output_target "${_targ}")
+    endif ()
+
+    set_target_properties(${_targ} PROPERTIES OUTPUT_NAME "${output_target}")
+
 
     set(pkg_family "default_family")
     if (SIMH_PKG_FAMILY)
@@ -427,15 +443,26 @@ function (add_simulator _targ)
         ENDIF ()
     endif ()
 
-    add_test(NAME "zimh-${_targ}" COMMAND ${test_cmd})
+    set(test_target "${_targ}")
+    if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+        string(PREPEND test_target "${ZIMH_EXECUTABLE_PREFIX}-")
+    endif ()
+
+    add_test(NAME "${test_target}" COMMAND ${test_cmd})
 
     set(TEST_LABELS "zimh;integration")
     if (SIMH_LABEL)
-        list(APPEND TEST_LABELS "zimh-${SIMH_LABEL}")
-    endif ()
-    set_tests_properties("zimh-${_targ}" PROPERTIES LABELS "${TEST_LABELS}")
+        set(test_label "${SIMH_LABEL}")
+        if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+            string(PREPEND test_label "${ZIMH_EXECUTABLE_PREFIX}-")
+        endif ()
 
-    set(test_output_dir "${CMAKE_CURRENT_BINARY_DIR}/tests/${_targ}")
+        list(APPEND TEST_LABELS "${test_label}")
+    endif ()
+
+    set_tests_properties("${test_target}" PROPERTIES LABELS "${TEST_LABELS}")
+
+    set(test_output_dir "${CMAKE_CURRENT_BINARY_DIR}/tests/${test_target}")
     file(MAKE_DIRECTORY "${test_output_dir}")
     file(TO_NATIVE_PATH "${test_output_dir}" native_test_output_dir)
 
@@ -485,29 +512,13 @@ function (add_simulator _targ)
         endif ()
     endif ()
 
-    set_property(TEST "zimh-${_targ}" PROPERTY ENVIRONMENT "${test_add_env}")
+    set_property(TEST "${test_target}" PROPERTY ENVIRONMENT "${test_add_env}")
 
     if (NOT WITH_ROMS)
         target_compile_definitions(${_targ} PRIVATE DONT_USE_INTERNAL_ROM)
     elseif (SIMH_BUILDROMS)
         add_dependencies(${_targ} BuildROMs)
     endif ()
-
-    #### This is probably no longer needed.
-    ####
-    # # Create target 'cppcheck' rule, if cppcheck detected:
-    # if (ENABLE_CPPCHECK AND cppcheck_cmd)
-    #     get_property(cppcheck_includes TARGET ${_targ} PROPERTY INCLUDE_DIRECTORIES)
-    #     get_property(cppcheck_defines  TARGET ${_targ} PROPERTY COMPILE_DEFINITIONS)
-    #     list(TRANSFORM cppcheck_includes PREPEND "-I")
-    #     list(TRANSFORM cppcheck_defines  PREPEND "-D")
-    #     add_custom_target("${_targ}_cppcheck"
-    #         COMMAND ${cppcheck_cmd} ${cppcheck_defines} ${cppcheck_includes} ${SIMH_SOURCES}
-    #         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    #     )
-
-    #     add_dependencies(cppcheck "${_targ}_cppcheck")
-    # endif (ENABLE_CPPCHECK AND cppcheck_cmd)
 
     set_property(GLOBAL APPEND PROPERTY SIMH_INTEGRATION_TARGETS ${_targ})
 endfunction ()
@@ -523,8 +534,13 @@ endfunction ()
 ##    (Inherits all standard options from simh_executable_template)
 ## -----------------------------------------------------------------------------
 function(add_unit_test _targ)
-    set(UNIT_TARGET "zimh-${_targ}")
-    set(UNIT_TEST "zimh-${_targ}")
+    set(UNIT_TARGET "${_targ}")
+    set(UNIT_TEST "${_targ}")
+    if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+        string(PREPEND UNIT_TARGET "${ZIMH_EXECUTABLE_PREFIX}-")
+        string(PREPEND UNIT_TEST "${ZIMH_EXECUTABLE_PREFIX}-")
+    endif ()
+
 
     # Set a flag to tell simh_executable_template to add a /tests subdirectory
     set(SIMH_OUTPUT_SUBDIR "tests")
@@ -570,7 +586,11 @@ function(add_unit_test _targ)
     # Apply standard and custom Labels
     set(TEST_LABEL "zimh;unit")
     if (SIMH_LABEL)
-        list(APPEND TEST_LABEL "zimh-${SIMH_LABEL}")
+        if (DEFINED ZIMH_EXECUTABLE_PREFIX)
+            string(PREPEND SIMH_LABEL "${ZIMH_EXECUTABLE_PREFIX}-")
+        endif ()
+
+        list(APPEND TEST_LABEL "${SIMH_LABEL}")
     endif ()
     set_tests_properties(${UNIT_TEST} PROPERTIES LABELS "${TEST_LABEL}")
 

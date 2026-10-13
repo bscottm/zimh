@@ -625,9 +625,7 @@ static void test_sim_get_env_special_handles_windows_sim_bin_name(void **state)
     (void)state;
 
     sim_prog_name = "C:\\test\\bin\\zimh-unit.exe";
-    assert_string_equal(
-        _sim_get_env_special("SIM_BIN_NAME", value, sizeof(value)),
-        "zimh-unit.exe");
+    assert_string_equal(_sim_get_env_special("SIM_BIN_NAME", value, sizeof(value)), "unit");
 }
 
 /* Verify substring extraction and replacement modifiers still work. */
@@ -867,7 +865,7 @@ static void test_sim_sub_args_expands_sim_identity_variables(void **state)
     assert_string_equal(expanded, "Azimh-unitB");
 
     expand_command("A%SIM_BIN_NAME%B", expanded, sizeof(expanded));
-    assert_string_equal(expanded, "Azimh-unit-scp-cmdvarsB");
+    assert_string_equal(expanded, "Aunit-scp-cmdvarsB");
 
     expand_command("A%SIM_BIN_PATH%B", expanded, sizeof(expanded));
     assert_string_equal(expanded, "A/test/bin/zimh-unit-scp-cmdvarsB");
