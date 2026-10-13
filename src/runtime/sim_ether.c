@@ -2317,8 +2317,6 @@ if (dev->backend.eth_api == ETH_API_TEST)
   dev->reflections = 0;
 
 #    if defined(USE_READER_THREAD)
-if (dev->backend.eth_api != ETH_API_TEST)
-{
   r = eth_tailq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
   if (r != SCPE_OK) {
     sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
@@ -2341,23 +2339,24 @@ if (dev->backend.eth_api != ETH_API_TEST)
     return r;
     }
 
-  /* Start reader and writer threads */
-  r = eth_start_threads(dev);
-  if (r != SCPE_OK) {
-    SOCKET opened_fd = dev->fd_handle;
+  if (dev->backend.eth_api != ETH_API_TEST) {
+    /* Start reader and writer threads */
+    r = eth_start_threads(dev);
+    if (r != SCPE_OK) {
+      SOCKET opened_fd = dev->fd_handle;
 
-    /* Don't set dev->fd_handle to 0 until the threads are stopped. The reader
-       thread might start to read from stdin. */
-    eth_stop_threads(dev);
-    eth_destroy_thread_state(dev);
-    _eth_close_port (&dev->backend, opened_fd);
+      /* Don't set dev->fd_handle to 0 until the threads are stopped. The reader
+        thread might start to read from stdin. */
+      eth_stop_threads(dev);
+      eth_destroy_thread_state(dev);
+      _eth_close_port (&dev->backend, opened_fd);
 
-    dev->fd_handle = 0;
-    free(dev->name);
-    eth_zero(dev);
-    return r;
+      dev->fd_handle = 0;
+      free(dev->name);
+      eth_zero(dev);
+      return r;
+      }
     }
-  }
 #endif /* defined (USE_READER_THREAD */
 _eth_add_to_open_list (dev);
 /*

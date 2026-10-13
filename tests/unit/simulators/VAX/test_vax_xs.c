@@ -8,6 +8,9 @@
 #include "test_cmocka.h"
 
 #include "sim_defs.h"
+#include "sim_sock.h"
+#include "sim_disk.h"
+#include "sim_tape.h"
 #include "sim_ether_test.h"
 #include "vax_defs.h"
 #include "vax_xs.h"
@@ -750,6 +753,13 @@ int main(void)
         cmocka_unit_test(
             test_external_transmit_disabled_leaves_descriptor_owned),
     };
+
+    // Important: Ensure that SCP's initialization happens before the test executes!
+    sim_init_sock ();                                       /* init socket capabilities */
+    AIO_INIT;                                               /* init Asynch I/O */
+    sim_finit ();                                           /* init fio package */
+    sim_disk_init ();                                       /* init disk package */
+    sim_tape_init ();                                       /* init tape package */
 
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
