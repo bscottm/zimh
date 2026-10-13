@@ -57,6 +57,9 @@ int eth_writer_nat(ETH_DEV *dev, const ETH_PACK *packet)
     sim_slirp_network *slirp = dev->backend.state.slirp;
     int status;
 
+    if (slirp == NULL)
+        return 1;
+
     status = sim_slirp_send(slirp, (char *)packet->msg, (size_t)packet->len, 0);
 
     return ((status == packet->len) ? 0 : 1);

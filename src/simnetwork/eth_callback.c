@@ -21,6 +21,9 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
     bool from_me = false;
     bool bpf_used;
 
+    fprintf(stderr, "DEBUG eth_process_received_packet: len=%u, api=%d\n", len, dev->backend.eth_api);
+    fflush(stderr);
+
     if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
         uint8_t *datacopy = (uint8_t *) malloc(len);
 
@@ -118,6 +121,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             /* Lock-free enqueue - sim_tailq_t is SPSC safe */
             eth_tailq_insert_data(&dev->read_queue, ETH_ITM_NORMAL, data, 0, pkt_len, crc_len, crc_data, 0);
             ++dev->packets_received;
+
             free(moved_data);
 #else /* !USE_READER_THREAD */
             /* set data in passed read packet */

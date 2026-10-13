@@ -9,10 +9,11 @@
 
 #include "sim_defs.h"
 #include "sim_sock.h"
+#include "sim_disk.h"
+#include "sim_tape.h"
 #include "sim_ether.h"
 #include "simnetwork/slirp/sim_slirp.h"
 #include "simnetwork/eth_threads.h"
-#include "simnetwork/eth_dispatch.h"
 #include "sim_types.h"
 #include "sim_tailq.h"
 
@@ -144,6 +145,11 @@ static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, co
      * Threads will be started after sim_slirp_open() initializes the backend. */
     dev->backend.packet_wait = eth_wait_nat;
     dev->backend.packet_read = eth_reader_nat;
+    dev->backend.before_packet_write = before_slirp_send;
+    dev->backend.write_packet = eth_writer_nat;
+    dev->backend.after_packet_write = after_slirp_send;
+    dev->backend.reader_shutdown = sim_slirp_reader_shutdown;
+    dev->backend.writer_shutdown = sim_slirp_writer_shutdown;
 #endif
 }
 
@@ -179,6 +185,8 @@ static int dequeue_packet_to_capture(ETH_DEV *dev, struct callback_capture *capt
 #endif
 }
 
+/* Unused helper functions - kept for potential future test expansion */
+#if 0
 static void assert_ipv4_equal(struct in_addr actual, const char *expected)
 {
     struct in_addr parsed;
@@ -204,6 +212,7 @@ static void capture_packet(void *opaque, const uchar_t *buf, int len)
     capture->last_packet_size = len;
     memcpy(capture->last_packet, buf, (size_t)len);
 }
+#endif
 
 static void put_be16(uint8_t *ptr, uint16_t value)
 {
@@ -599,14 +608,31 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
 
+    /* Connect the slirp backend to the mock ETH_DEV */
+    mock_eth_dev.backend.state.slirp = slirp;
+
+    /* Register the guest MAC address as a filter so packets are accepted */
+    ETH_MAC filter_addr;
+    memcpy(filter_addr, guest_mac, sizeof(ETH_MAC));
+    assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr, false, true), SCPE_OK);
+
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
     eth_start_threads(&mock_eth_dev);
+
+    /* Give threads a moment to fully initialize */
+    sim_os_ms_sleep(50);
 #endif
 
-    assert_int_equal(
-        sim_slirp_send(slirp, (const char *)request, sizeof(request), 0),
-        sizeof(request));
+    /* Send the ARP request through the ETH_DEV interface */
+    ETH_PACK arp_packet;
+    memset(&arp_packet, 0, sizeof(arp_packet));
+    memcpy(arp_packet.msg, request, sizeof(request));
+    /* Pad to minimum Ethernet frame size (60 bytes) */
+    arp_packet.len = (sizeof(request) < ETH_MIN_PACKET) ? ETH_MIN_PACKET : sizeof(request);
+
+    t_stat write_status = eth_write(&mock_eth_dev, &arp_packet, NULL);
+    assert_int_equal(write_status, SCPE_OK);
 
     /* With USE_READER_THREAD, responses are asynchronous via the reader thread.
      * Wait briefly for the reader thread to process the response. */
@@ -616,9 +642,6 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
         dequeue_packet_to_capture(&mock_eth_dev, &capture);
         retries++;
     }
-
-    fprintf(stderr, "DEBUG ARP: After %d retries, packet_count=%d, queue_empty=%d\n",
-            retries, capture.packet_count, sim_tailq_empty(&mock_eth_dev.read_queue));
 
     assert_int_equal(capture.packet_count, 1);
     assert_true(capture.last_packet_size >= 42);
@@ -660,9 +683,20 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
 
+    /* Connect the slirp backend to the mock ETH_DEV */
+    mock_eth_dev.backend.state.slirp = slirp;
+
+    /* Register the guest MAC address as a filter so packets are accepted */
+    ETH_MAC filter_addr_dhcp;
+    memcpy(filter_addr_dhcp, guest_mac, sizeof(ETH_MAC));
+    assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_dhcp, false, true), SCPE_OK);
+
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
     eth_start_threads(&mock_eth_dev);
+
+    /* Give threads a moment to fully initialize */
+    sim_os_ms_sleep(50);
 #endif
 
     assert_int_equal(
@@ -750,9 +784,20 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
 
+    /* Connect the slirp backend to the mock ETH_DEV */
+    mock_eth_dev.backend.state.slirp = slirp;
+
+    /* Register the guest MAC address as a filter so packets are accepted */
+    ETH_MAC filter_addr_ping;
+    memcpy(filter_addr_ping, guest_mac, sizeof(ETH_MAC));
+    assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_ping, false, true), SCPE_OK);
+
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
     eth_start_threads(&mock_eth_dev);
+
+    /* Give threads a moment to fully initialize */
+    sim_os_ms_sleep(50);
 #endif
 
     assert_int_equal(sim_slirp_send(slirp, (const char *)packet, 42, 0), 42);
@@ -824,9 +869,20 @@ static void test_slirp_handles_dns_query(void **state)
     assert_non_null(slirp);
     assert_string_equal(errbuf, "");
 
+    /* Connect the slirp backend to the mock ETH_DEV */
+    mock_eth_dev.backend.state.slirp = slirp;
+
+    /* Register the guest MAC address as a filter so packets are accepted */
+    ETH_MAC filter_addr_dns;
+    memcpy(filter_addr_dns, guest_mac, sizeof(ETH_MAC));
+    assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_dns, false, true), SCPE_OK);
+
 #if defined(USE_READER_THREAD)
     /* Now that slirp is initialized, start the reader/writer threads */
     eth_start_threads(&mock_eth_dev);
+
+    /* Give threads a moment to fully initialize */
+    sim_os_ms_sleep(50);
 #endif
 
     /* Build and send DNS query for example.com */
@@ -865,6 +921,12 @@ static void test_slirp_handles_dns_query(void **state)
 
 int main(void)
 {
+    sim_init_sock ();                                       /* init socket capabilities */
+    AIO_INIT;                                               /* init Asynch I/O */
+    sim_finit ();                                           /* init fio package */
+    sim_disk_init ();                                       /* init disk package */
+    sim_tape_init ();                                       /* init tape package */
+
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_slirp_real_backend_answers_local_arp),
         cmocka_unit_test(test_slirp_real_backend_answers_dhcp_discover),

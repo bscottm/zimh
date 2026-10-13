@@ -2769,10 +2769,12 @@ t_stat _eth_write(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
 int status = 1;   /* default to failure */
 
 /* make sure device exists */
-if (dev == NULL || (dev->backend.eth_api == ETH_API_NONE)) return SCPE_UNATT;
+if (dev == NULL || (dev->backend.eth_api == ETH_API_NONE))
+    return SCPE_UNATT;
 
 /* make sure packet exists */
-if (packet == NULL) return SCPE_ARG;
+if (packet == NULL)
+    return SCPE_ARG;
 
 /* make sure packet is acceptable length */
 if ((packet->len >= ETH_MIN_PACKET) && (packet->len <= ETH_MAX_PACKET)) {
