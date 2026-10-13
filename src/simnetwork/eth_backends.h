@@ -62,12 +62,13 @@ typedef struct eth_backend_s {
     /* API interface: */
 
     /* Wait for a packet's arrival at the reader. This is the poll/select point.
+     * timeout_ms: Maximum time to wait in milliseconds (0 = non-blocking poll)
      * Returns:
      * > 0: One or more packets have arrived.
      *   0: No packet arrival, not an error.
      * < 0: Error waiting for packet arrival.
      */
-    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev);
+    int (*packet_wait)(struct eth_backend_s *backend, ETH_DEV *dev, int timeout_ms);
     /* Read a packet and queue it for simulator device processing.
      * > 0: Packet read successfully, queued for simulator device.
      *   0: No packet read (not an error, safe to retry)
@@ -117,12 +118,13 @@ typedef struct eth_backend_s {
 
 /*--- API functions for eth_backend_t ---*/
 
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev);
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev);
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
+int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms);
 
 int eth_reader_pcap(eth_backend_t *backend, ETH_DEV *dev);
 int eth_reader_tap(eth_backend_t *backend, ETH_DEV *dev);

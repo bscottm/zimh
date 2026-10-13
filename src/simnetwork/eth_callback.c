@@ -21,9 +21,6 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
     bool from_me = false;
     bool bpf_used;
 
-    fprintf(stderr, "DEBUG eth_process_received_packet: len=%u, api=%d\n", len, dev->backend.eth_api);
-    fflush(stderr);
-
     if (LOOPBACK_PHYSICAL_RESPONSE(dev, data)) {
         uint8_t *datacopy = (uint8_t *) malloc(len);
 
@@ -149,7 +146,7 @@ void eth_process_received_packet(ETH_DEV *dev, const uint8_t *data, uint32_t len
             ++dev->packets_received;
 
             /* call optional read callback function */
-            if (dev->read_callback)
+            if (dev->read_callback != NULL)
                 (dev->read_callback)(0);
 #endif
         }

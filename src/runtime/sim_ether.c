@@ -2146,6 +2146,13 @@ else { /* !tap: */
         if (backend->state.pcap == NULL)  /* can't open device */
           return sim_messagef (SCPE_OPENERR, "Eth: pcap_open_live error - %s\n", errbuf);
         backend->eth_api = ETH_API_PCAP;
+        backend->packet_wait = eth_wait_pcap;
+        backend->packet_read = eth_reader_pcap;
+        backend->before_packet_write = NULL;
+        backend->write_packet = eth_writer_pcap;
+        backend->after_packet_write = NULL;
+        backend->reader_shutdown = NULL;
+        backend->writer_shutdown = NULL;
 #if !defined(HAS_PCAP_SENDPACKET) && defined (xBSD) && !defined (__APPLE__)
         /* Tell the kernel that the header is fully-formed when it gets it.
            This is required in order to fake the src address. */
@@ -2956,136 +2963,65 @@ _eth_hash_validate(tMacs, sizeof(tMacs)/sizeof(tMacs[0]), thash);
 }
 #endif
 
-int eth_read(ETH_DEV* dev, ETH_PACK* packet, ETH_PCALLBACK routine)
+int eth_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 {
-int status;
+    int status;
 
-/* Make sure device exists, the backend is legitimate and the packet is
- * also valid. */
+    /* Make sure device exists, the backend is legitimate and the packet is
+     * also valid. */
 
-if (dev == NULL || dev->backend.eth_api == ETH_API_NONE || packet == NULL)
-    return 0;
+    if (dev == NULL || dev->backend.eth_api == ETH_API_NONE || packet == NULL)
+        return 0;
 
-packet->len = 0;
-if (dev->backend.eth_api == ETH_API_TEST)
-  return eth_test_read(dev, packet, routine);
+    packet->len = 0;
+    if (dev->backend.eth_api == ETH_API_TEST)
+        return eth_test_read(dev, packet, routine);
 
 #    if !defined(USE_READER_THREAD)
-/* set read packet */
-dev->read_packet = packet;
+    /* set read packet */
+    dev->read_packet = packet;
 
-/* set optional callback routine */
-dev->read_callback = routine;
+    /* set optional callback routine */
+    dev->read_callback = routine;
 
-/* dispatch read request to either receive a filtered packet or timeout */
-do {
-  status = 0;
-
-  switch (dev->backend.eth_api) {
-    case ETH_API_PCAP:
-      status = eth_reader_pcap(&dev->backend, dev);
-      break;
-
-    case ETH_API_TAP:
-#        ifdef HAVE_TAP_NETWORK
-      {
-        int len;
-        u_char buf[ETH_MAX_JUMBO_FRAME];
-
-        len = read(dev->fd_handle, buf, sizeof(buf));
-        if (len > 0) {
-          status = 1;
-          eth_process_received_packet(dev, buf, len, len);
-          }
-        else {
-          if (len < 0)
-            status = -1;
-          else
-            status = 0;
-          }
+    /* dispatch read request to either receive a filtered packet or timeout */
+    do {
+        /* Use 0ms timeout for non-blocking poll */
+        status = dev->backend.packet_wait(&dev->backend, dev, 0);
+        if (status > 0) {
+            // Possibly received a packet, so read it.
+            status = dev->backend.packet_read(&dev->backend, dev);
         }
-#        endif /* HAVE_TAP_NETWORK */
-      break;
 
-    case ETH_API_NAT:
-#        ifdef HAVE_SLIRP_NETWORK
-      status = -1;
-      sim_messagef(SCPE_IERR, "USE_READER_THREAD must be defined to use the SLIRP network API");
-#        endif /* HAVE_SLIRP_NETWORK */
-      break;
+        // It's possible to have filtered off the packet (libpcap) so that status > 0
+        // but packet->len == 0. In that case, we continue the loop to try again.
+    } while ((status > 0) && (0 == packet->len));
 
-    case ETH_API_VDE:
-#        ifdef HAVE_VDE_NETWORK
-      {
-        int len;
-        u_char buf[ETH_MAX_JUMBO_FRAME];
-
-        len = vde_recv(dev->backend.state.vde, buf, sizeof(buf), 0);
-        if (len > 0) {
-          status = 1;
-          eth_process_received_packet(dev, buf, len, len);
-          }
-        else {
-          if (len < 0)
-            status = -1;
-          else
-            status = 0;
-          }
-        }
-#        endif /* HAVE_VDE_NETWORK */
-      break;
-
-    case ETH_API_UDP:
-      {
-        int len;
-        u_char buf[ETH_MAX_JUMBO_FRAME];
-
-        len = (int)sim_read_sock (dev->fd_handle, (char *)buf, (int32_t)sizeof(buf));
-        if (len > 0) {
-          status = 1;
-          eth_process_received_packet(dev, buf, len, len);
-          }
-        else {
-          if (len < 0)
-            status = -1;
-          else
-            status = 0;
-          }
-        }
-      break;
-    case ETH_API_NONE:
-    case ETH_API_TEST:
-    case ETH_API_COUNT:
-      /* Should never reach here - these are not valid runtime API types */
-      status = -1;
-      break;
+    if (status < 0) {
+        ++dev->receive_packet_errors;
+        _eth_error(dev, "eth_reader");
     }
-  } while ((status > 0) && (0 == packet->len));
-if (status < 0) {
-  ++dev->receive_packet_errors;
-  _eth_error (dev, "eth_reader");
-  }
 
-#    else      /* USE_READER_THREAD */
+#    else /* USE_READER_THREAD */
 
-  status = 0;
-  /* Lock-free dequeue - sim_tailq_t is SPSC safe */
-  if (!sim_tailq_empty(&dev->read_queue)) {
-    struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
-    if (item) {
-      const uint8_t *src_data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
-      packet->len = item->packet.len;
-      packet->crc_len = item->packet.crc_len;
-      memcpy(packet->msg, src_data, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
-      status = 1;
-      ethq_item_free((sim_tailq_item_t)item);
+    status = 0;
+    /* Lock-free dequeue - sim_tailq_t is SPSC safe */
+    if (!sim_tailq_empty(&dev->read_queue)) {
+        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+        if (item) {
+            const uint8_t *src_data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
+            packet->len = item->packet.len;
+            packet->crc_len = item->packet.crc_len;
+            memcpy(packet->msg, src_data, ((packet->len > packet->crc_len) ? packet->len : packet->crc_len));
+            status = 1;
+            ethq_item_free((sim_tailq_item_t)item);
+        }
     }
-  }
-  if ((status) && (routine))
-    routine(0);
+    if ((status) && (routine))
+        routine(0);
 #    endif
 
-return status;
+    return status;
 }
 
 static t_stat eth_bpf_filter (ETH_DEV* dev, int addr_count, ETH_MAC* const filter_address,

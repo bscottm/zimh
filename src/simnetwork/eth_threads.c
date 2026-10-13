@@ -85,74 +85,76 @@ static eth_reader_status_t eth_reader_init(ETH_DEV *dev)
 /* Forward declarations of API-specific wait handlers */
 
 /* PCAP wait implementation */
-int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_pcap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void) dev;
 #if defined(_WIN32)
     /* Windows: Use event-based waiting */
-    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), ETH_READER_POLL_TMO) ? 1 : 0);
+    return (WAIT_OBJECT_0 == WaitForSingleObject(pcap_getevent(backend->state.pcap), timeout_ms) ? 1 : 0);
 #else
-    return wait_one_socket(pcap_get_selectable_fd(backend->state.pcap), ETH_READER_POLL_TMO);
+    return wait_one_socket(pcap_get_selectable_fd(backend->state.pcap), timeout_ms);
 #endif
 }
 
 /* TAP wait implementation */
-int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_tap(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)backend;
 
 #if defined(HAVE_TAP_NETWORK)
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
+    return wait_one_socket(dev->fd_handle, timeout_ms);
 #else
     return 1;
 #endif
 }
 
 /* VDE wait implementation */
-int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_vde(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void) dev;
 
 #if defined(HAVE_VDE_NETWORK)
-    return wait_one_socket(vde_datafd(backend->state.vde), ETH_READER_POLL_TMO);
+    return wait_one_socket(vde_datafd(backend->state.vde), timeout_ms);
 #else
     return 1;
 #endif
 }
 
 /* UDP wait implementation */
-int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_udp(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void) backend;
-    return wait_one_socket(dev->fd_handle, ETH_READER_POLL_TMO);
+    return wait_one_socket(dev->fd_handle, timeout_ms);
 }
 
 /* NAT (SLiRP) wait implementation */
-int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_nat(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     (void)dev;
 #ifdef HAVE_SLIRP_NETWORK
-    return sim_slirp_select(backend->state.slirp, ETH_READER_POLL_TMO);
+    return sim_slirp_select(backend->state.slirp, timeout_ms);
 #else
     return 1;
 #endif
 }
 
 /* Test API wait implementation */
-int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_test(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     /* Test API doesn't wait, always return immediately */
     (void)backend;
     (void)dev;
+    (void)timeout_ms;
     return 1;
 }
 
 /* None API wait implementation */
-int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev)
+int eth_wait_none(eth_backend_t *backend, ETH_DEV *dev, int timeout_ms)
 {
     /* No API configured, return immediately */
     (void)backend;
     (void)dev;
+    (void)timeout_ms;
     return 1;
 }
 
@@ -204,7 +206,7 @@ THREAD_FUNC_DEFN(_eth_reader)
     while ((eth_reader_status_t)sim_atomic_get(&dev->reader_status) == ETH_READER_RUNNING) {
         /* Dispatch to API-specific wait handler */
         eth_backend_t *backend = &dev->backend;
-        int status = backend->packet_wait(backend, dev);
+        int status = backend->packet_wait(backend, dev, ETH_READER_POLL_TMO);
 
         /* Packet available? */
         if (status > 0) {
