@@ -352,7 +352,7 @@
       "configuration": "Release",
       "displayName": "Test: Windows Ninja Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-ninja-relwithdebinfo",
@@ -360,7 +360,7 @@
       "configuration": "RelWithDebInfo",
       "displayName": "Test: Windows Ninja Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-ninja-debug",
@@ -368,7 +368,7 @@
       "configuration": "Debug",
       "displayName": "Test: Windows Ninja Debug",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2022-debug",
@@ -376,7 +376,7 @@
       "configuration": "Debug",
       "displayName": "Test: VS2022 Debug",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2022-relwithdebinfo",
@@ -384,7 +384,7 @@
       "configuration": "RelWithDebInfo",
       "displayName": "Test: VS2022 RelWithDebInfo",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2022-release",
@@ -392,7 +392,7 @@
       "configuration": "Release",
       "displayName": "Test: VS2022 Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2026-debug",
@@ -400,7 +400,7 @@
       "configuration": "Debug",
       "displayName": "Test: VS2026 Debug",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2026-relwithdebinfo",
@@ -408,7 +408,7 @@
       "configuration": "RelWithDebInfo",
       "displayName": "Test: VS2026 RelWithDebInfo",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "windows-vs2026-release",
@@ -416,42 +416,42 @@
       "configuration": "Release",
       "displayName": "Test: VS2026 Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "make-debug",
       "configurePreset": "make-debug",
       "displayName": "Test: Makefile Debug",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "make-release",
       "configurePreset": "make-release",
       "displayName": "Test: Makefile Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "ninja-debug",
       "configurePreset": "ninja-debug",
       "displayName": "Test: Ninja Debug",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "ninja-release",
       "configurePreset": "ninja-release",
       "displayName": "Test: Ninja Release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     },
     {
       "name": "ninja-sanitizer-asan",
       "configurePreset": "ninja-sanitizer-asan",
       "displayName": "Test: Ninja ASan (Optimized)",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8, "timeout": 300 }
+      "execution": { "timeout": 300 }
     }
   ]
 }
