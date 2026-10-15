@@ -201,24 +201,11 @@
       "binaryDir": "${sourceDir}/build/ninja/sanitizers/ubsan"
     },
     {
-      "name": "xcode-debug",
-      "displayName": "XCode Debug",
-      "description": "macOS XCode-based debug build",
+      "name": "macos-xcode",
+      "displayName": "macOS XCode",
+      "description": "macOS XCode-based build",
       "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/xcode/Debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "xcode-release",
-      "displayName": "XCode Release",
-      "description": "macOS XCode-based release build",
-      "generator": "Xcode",
-      "binaryDir": "${sourceDir}/build/xcode/Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
+      "binaryDir": "${sourceDir}/build/xcode"
     }
   ],
   "buildPresets": [
@@ -334,13 +321,19 @@
     },
     {
       "name": "xcode-debug",
-      "configurePreset": "xcode-debug",
+      "configurePreset": "macos-xcode",
       "configuration": "Debug",
       "displayName": "Build: Xcode Debug"
     },
     {
+      "name": "xcode-relwithdebinfo",
+      "configurePreset": "macos-xcode",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Build: Xcode Release+Debug"
+    },
+    {
       "name": "xcode-release",
-      "configurePreset": "xcode-release",
+      "configurePreset": "macos-xcode",
       "configuration": "Release",
       "displayName": "Build: Xcode Release"
     }
@@ -450,6 +443,31 @@
       "name": "ninja-sanitizer-asan",
       "configurePreset": "ninja-sanitizer-asan",
       "displayName": "Test: Ninja ASan (Optimized)",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 300 }
+    },
+    {
+      "name": "xcode-debug",
+      "configurePreset": "macos-xcode",
+      "configuration": "Debug",
+      "displayName": "Test: Xcode Debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 300 }
+
+    },
+    {
+      "name": "xcode-relwithdebinfo",
+      "configurePreset": "macos-xcode",
+      "configuration": "RelWithDebInfo",
+      "displayName": "Test: Xcode Release+Debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 300 }
+    },
+    {
+      "name": "xcode-release",
+      "configurePreset": "macos-xcode",
+      "configuration": "Release",
+      "displayName": "Test: Xcode Release",
       "output": { "outputOnFailure": true },
       "execution": { "timeout": 300 }
     }
