@@ -427,3 +427,35 @@ t_stat eth_start_threads(ETH_DEV *dev)
     return sim_messagef(SCPE_OPENERR, "Eth: can't start %s thread: %s\n",
                         thread_name, strerror(create_status));
 }
+
+/*
+ * Stop any ethernet background threads that were successfully started.  The
+ * startup path can fail after creating only the reader thread, so shutdown must
+ * use explicit join-ownership flags rather than assuming both threads exist.
+ */
+void eth_stop_threads(ETH_DEV *dev)
+{
+    /* Signal reader thread to shutdown by atomically setting its state */
+    sim_atomic_put(&dev->reader_status, (sim_atomic_type_t)ETH_READER_SHUTDOWN);
+
+    /* Join reader thread - will exit on next timeout (max 250ms) */
+    if (dev->backend.reader_shutdown != NULL) {
+        dev->backend.reader_shutdown(&dev->backend, dev);
+    }
+
+    sim_thread_join(dev->reader_thread, NULL);
+
+    /* Wake up writer thread if it's waiting on the condition variable */
+    /* Signal writer thread to shutdown by atomically setting its state */
+    sim_mutex_lock(&dev->writer_lock);
+    sim_atomic_put(&dev->writer_status, (sim_atomic_type_t)ETH_WRITER_SHUTDOWN);
+    sim_cond_signal(&dev->writer_cond);
+    sim_mutex_unlock(&dev->writer_lock);
+
+    /* Join writer thread - will exit when it checks shutdown flag */
+    if (dev->backend.writer_shutdown != NULL) {
+        dev->backend.writer_shutdown(&dev->backend, dev);
+    }
+
+    sim_thread_join(dev->writer_thread, NULL);
+}

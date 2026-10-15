@@ -23,6 +23,9 @@ THREAD_FUNC_DEFN(_eth_writer);
  * Returns SCPE_OK on success, or an error code on failure. */
 t_stat eth_start_threads(ETH_DEV *dev);
 
+/* Terminate any active background Ethernet threads. */
+void eth_stop_threads(ETH_DEV *dev);
+
 #endif /* USE_READER_THREAD */
 
 #endif /* ETH_THREADS_H */
