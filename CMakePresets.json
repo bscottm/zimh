@@ -471,5 +471,6 @@
       "output": { "outputOnFailure": true },
       "execution": { "timeout": 300 }
     }
+
   ]
 }

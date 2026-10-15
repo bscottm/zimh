@@ -4,7 +4,7 @@ include(CheckSymbolExists)
 include(CMakePushCheckState)
 
 function(configure_uuid_feature target)
-    if (WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         target_link_libraries(${target} INTERFACE rpcrt4)
         return()
     endif ()

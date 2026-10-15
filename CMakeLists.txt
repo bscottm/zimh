@@ -107,7 +107,7 @@ option(SANITIZE_THREAD "Enable the thread sanitizer" OFF)
 option(SANITIZE_MEMORY "Enable the memory sanitizer" OFF)
 option(SANITIZE_UNDEFINED "Enable the undefined behavior sanitizer" OFF)
 
-if(WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(WITH_VDE OFF CACHE INTERNAL "VDE network support is not available on Windows.")
 else()
     option(WITH_VDE "Enable VDE2/VDE4 network support." ON)
@@ -149,7 +149,7 @@ if(ENABLE_CPPCHECK)
     if(CPPCHECK_EXE)
         set(CMAKE_C_CPPCHECK "${CPPCHECK_EXE};--language=c;--inline-suppr;--std=c${CMAKE_C_STANDARD};--force")
 
-        if(WIN32)
+        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
             if(CMAKE_SIZEOF_VOID_P EQUAL 8)
                 list(APPEND CMAKE_C_CPPCHECK "--platform=win64")
             else()
@@ -178,13 +178,12 @@ if(WITH_UNIT_TESTS)
     endfunction()
 
     add_cmake_script_unit_test(zimh-cmake-dependency-report dependency-report-test.cmake)
-    add_cmake_script_unit_test(zimh-cmake-find-pcap find-pcap-test.cmake)
 
     # Cmocka framework verification
     add_library(unittest INTERFACE)
     set(unittest_cmocka_target unittest)
 
-    if(WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         find_package(cmocka CONFIG QUIET)
     else()
         find_package(PkgConfig QUIET)

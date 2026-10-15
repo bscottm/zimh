@@ -486,7 +486,7 @@ function (add_simulator _targ)
     list(APPEND test_add_env
          "SIMH_TEST_OUTPUT_DIR=${native_test_output_dir}")
 
-    if (WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         if (BUILD_SHARED_DEPS)
             # For multi-config, use generator expression to get the right config directory
             if(CMAKE_CONFIGURATION_TYPES)

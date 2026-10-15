@@ -32,7 +32,7 @@
 set(EXTRA_TARGET_CFLAGS)
 set(EXTRA_TARGET_LFLAGS)
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     ## At some point, bring this back in to deal with MS ISO C99 deprecation.
     ## Right now, it's not in the code base and the warnings are squelched.
     ##

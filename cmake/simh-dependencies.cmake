@@ -109,7 +109,7 @@ if(WITH_NETWORK)
     # Note: This will be headers-only on Windows, full library linkage
     # everywhere else.
     # -----------------------------------------------------------------------------
-    if(WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         # 1. Windows / vcpkg Pipeline
         # vcpkg intercepts find_package(PCAP) and provides its own internal target mapping
         find_package(PCAP REQUIRED)
@@ -147,7 +147,7 @@ if(WITH_NETWORK)
     # Default: We don' have libslirp.
     set(HAVE_LIBSLIRP FALSE)
     if(WITH_SLIRP)
-        if(WIN32)
+        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
             find_vcpkg_pkgconfig_target(slirp slirp SLIRP_TARGET)
             find_vcpkg_pkgconfig_target(glib2 glib-2.0 GLIB2_TARGET)
 

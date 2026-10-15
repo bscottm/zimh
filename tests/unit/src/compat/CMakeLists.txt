@@ -25,7 +25,7 @@ add_unit_test(unit-compat-string
     DEFINES ${SIMH_COMPAT_STRING_DEFINES}
 )
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_unit_test(unit-compat-time
         LABEL unit
         SOURCES

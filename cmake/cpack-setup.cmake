@@ -32,7 +32,7 @@ if (ZIMH_PACKAGE_SUFFIX)
     set(buildSuffix "${ZIMH_PACKAGE_SUFFIX}")
 else ()
     set(buildSuffix "")
-    if (WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         if (CMAKE_SIZEOF_VOID_P EQUAL 8)
             list(APPEND buildSuffix "win64")
         else ()
@@ -75,7 +75,7 @@ set(CPACK_PACKAGE_MAINTAINER "open-simh@nowhere.org")
 ## Runtime dependencies:
 ## Do not install runtime dependencies on POSIX platforms. Their
 ## package managers should take care of dependency resolution for us.
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     if (SIMH_CMAKE_RUNTIME_DEPENDENCIES_SUPPORTED)
         install(RUNTIME_DEPENDENCY_SET simhRuntime
             COMPONENT runtime_support

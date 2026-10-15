@@ -12,7 +12,7 @@ endif()
 set(PTW_FOUND FALSE)
 
 # Windows Pathway: Resolve vcpkg's 'pthreads' port target
-if(WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     find_package(PThreads4W QUIET)
     if(TARGET PThreads4W::PThreads4W)
         add_library(PTW::PTW INTERFACE IMPORTED)

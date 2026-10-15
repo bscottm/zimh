@@ -28,7 +28,7 @@ add_simulator(ibm1130
     PKG_FAMILY ibm_family
     TEST ibm1130)
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     ## Add GUI support, compile in resources:
     target_compile_definitions(ibm1130 PRIVATE GUI_SUPPORT)
     target_sources(ibm1130 PRIVATE ibm1130.rc)

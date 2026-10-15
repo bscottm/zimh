@@ -21,7 +21,7 @@ add_simulator(i650
     PKG_FAMILY ibm_family
     TEST i650)
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     if (MSVC)
         set(I650_STACK_FLAG "/STACK:8388608")
     elseif (CMAKE_C_COMPILER_ID STREQUAL "Clang")

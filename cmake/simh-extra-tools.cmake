@@ -40,7 +40,7 @@ target_include_directories(frontpaneltest PUBLIC
     "${SIMH_COMPONENTS_ROOT}")
 target_link_libraries(frontpaneltest PUBLIC sim_support aio_support)
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(frontpaneltest PUBLIC simh_network)
 
     if (MSVC)
@@ -48,7 +48,7 @@ if (WIN32)
     elseif (MINGW)
         target_link_options(frontpaneltest PUBLIC "-mconsole")
     endif ()
-endif (WIN32)
+endif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
 ## Developer/sample utilities that are useful to keep buildable but are not
 ## part of the default simulator or test workflows.
