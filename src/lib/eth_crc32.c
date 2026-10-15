@@ -40,8 +40,30 @@
 #   else
 #       error "Cannot determine byte order on Apple target"
 #   endif
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#   include <sys/endian.h>
+#   if defined(__LITTLE_ENDIAN)
+#       undef __LITTLE_ENDIAN
+#   endif
+#   if defined(__BIG_ENDIAN)
+#       undef __BIG_ENDIAN
+#   endif
+#   define __BYTE_ORDER    BYTE_ORDER
+#   define __LITTLE_ENDIAN LITTLE_ENDIAN
+#   define __BIG_ENDIAN    BIG_ENDIAN
+#elif defined(__OpenBSD__)
+#   include <endian.h>
+#   if defined(__LITTLE_ENDIAN)
+#       undef __LITTLE_ENDIAN
+#   endif
+#   if defined(__BIG_ENDIAN)
+#       undef __BIG_ENDIAN
+#   endif
+#   define __BYTE_ORDER    BYTE_ORDER
+#   define __LITTLE_ENDIAN LITTLE_ENDIAN
+#   define __BIG_ENDIAN    BIG_ENDIAN
 #else
-// defines __BYTE_ORDER as __LITTLE_ENDIAN or __BIG_ENDIAN
+// sys/param.h defines __BYTE_ORDER as __LITTLE_ENDIAN or __BIG_ENDIAN?
 #    include <sys/param.h>
 #endif
 

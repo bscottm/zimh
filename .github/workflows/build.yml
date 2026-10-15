@@ -47,20 +47,20 @@ jobs:
             test_preset: windows-vs2022-release
             name: "Windows (VS 2022 Release)"
 
-          - os: windows-2022
-            config_preset: windows-ninja
-            build_preset: windows-ninja-debug
-            test_preset: windows-ninja-debug
-            name: "Windows (Ninja Multi Debug)"
-          - os: windows-2022
-            config_preset: windows-ninja
-            build_preset: windows-ninja-release
-            test_preset: windows-ninja-release
-            name: "Windows (Ninja Multi Release)"
+          - os: windows-latest
+            config_preset: windows-vs2026
+            build_preset: windows-vs2026-debug
+            test_preset: windows-vs2026-debug
+            name: "Windows latest (VS2026 Debug)"
+          - os: windows-latest
+            config_preset: windows-vs2026
+            build_preset: windows-vs2026-release
+            test_preset: windows-vs2026-release
+            name: "Windows latest (VS2026 Release)"
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         submodules: recursive
 
@@ -68,7 +68,7 @@ jobs:
     # Windows-Only: vcpkg Environment & Binary Caching
     # -------------------------------------------------------------------------
     - name: Initialize vcpkg Environment (Windows)
-      if: matrix.os == 'windows-2022'
+      if: matrix.os == 'windows-2022' || matrix.os == 'windows-latest'
       shell: pwsh
       run: |
         echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
@@ -81,8 +81,8 @@ jobs:
         echo "VCPKG_COMMIT=$vcpkgCommit" >> $env:GITHUB_ENV
 
     - name: Cache vcpkg Binary Archives (Windows)
-      if: matrix.os == 'windows-2022'
-      uses: actions/cache@v5
+      if: matrix.os == 'windows-2022' || matrix.os == 'windows-latest'
+      uses: actions/cache@v6
       with:
         path: ${{ github.workspace }}\.vcpkg_cache
         key: vcpkg-windows-${{ env.VCPKG_COMMIT }}-${{ matrix.build_preset }}-${{ hashFiles('**/vcpkg.json') }}
@@ -105,7 +105,7 @@ jobs:
         sh tools/ci/deps/deps.sh osx
 
     - name: Windows setup
-      if: matrix.os == 'windows-2022'
+      if: matrix.os == 'windows-2022' || matrix.os == 'windows-latest'
       shell: pwsh
       run: |
         Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -124,3 +124,35 @@ jobs:
 
     - name: Run CMake Test
       run: ctest --preset ${{ matrix.test_preset }}
+
+  netbsd:
+    runs-on: ubuntu-latest
+    name: NetBSD
+    steps:
+      - uses: actions/checkout@v7
+      - name: NetBSD Release build
+        id: netbsd-release
+        uses: vmactions/netbsd-vm@v1
+        with:
+          prepare: |
+            export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r | cut -d_ -f1)/All"
+            pkg_add pkgin
+            pkgin -Fy install git
+            echo "Installing X11 sets."
+            cd /tmp
+            ftp -o xbase.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xbase.tar.xz
+            ftp -o xfont.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xfont.tar.xz
+            ftp -o xserver.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xserver.tar.xz
+            ftp -o xetc.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xetc.tar.xz
+            # Extract into /
+            cd /
+            for f in /tmp/x*.tar.xz; do
+                tar xJpf "$f"
+            done 
+            echo "Installing compile-time dependencies"
+            cd "$GITHUB_WORKSPACE"
+            sh tools/ci/deps/deps.sh netbsd-pkgin
+          run: |
+            cmake --preset ninja-release
+            cmake --build --preset ninja-release
+            ctest --preset ninja-release

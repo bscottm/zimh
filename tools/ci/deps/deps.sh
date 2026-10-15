@@ -89,9 +89,15 @@ install_clang64() {
 }
 
 install_netbsd_pkgin() {
-    pkgin update
-    pkgin install pkgconf pcre2 png editline SDL2 freetype SDL2_ttf \
-	cmake zlib cmocka ninja bison libslirp
+    pkgin -y update
+    pkgin -y install pkgconf pcre2 png editline SDL2 freetype SDL2_ttf \
+	cmake zlib cmocka ninja-build bison libslirp
+}
+
+install_netbsd_pkgadd() {
+    pkg_add update
+    pkg_add install pkgconf pcre2 png editline SDL2 freetype SDL2_ttf \
+	cmake zlib cmocka ninja-build bison libslirp
 }
 
 
@@ -101,6 +107,9 @@ case "$1" in
     ;;
   netbsd-pkgin)
     install_netbsd_pkgin
+    ;;
+  netbsd-pkgadd)
+    install_netbsd_pkgadd
     ;;
   arch-linux)
     install_arch_linux
