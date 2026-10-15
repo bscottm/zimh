@@ -132,10 +132,11 @@ void *xmalloc_isolated(size_t size)
 
 #elif defined(__APPLE__) && defined(__MACH__)
     /* macOS: Use VM_FLAGS_SUPERPAGE_SIZE_ANY in fd parameter for superpage promotion */
-    ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, VM_FLAGS_SUPERPAGE_SIZE_ANY, 0);
-    if (ptr == MAP_FAILED)
-        return NULL;
-
+    if ((ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, VM_FLAGS_SUPERPAGE_SIZE_ANY, 0)) == MAP_FAILED) {
+        /* Try again, without super pages. */
+        if ((ptr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0)) == MAP_FAILED)
+            return NULL;
+    }
 #else
     /* Linux/BSD: Standard mmap followed by madvise for huge pages */
 #    if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
