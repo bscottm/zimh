@@ -153,6 +153,19 @@ static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, co
 #endif
 }
 
+void do_start_eth_threads(ETH_DEV *dev)
+{
+#if defined(USE_READER_THREAD)
+    eth_start_threads(dev);
+#endif
+}
+
+void do_stop_eth_threads(ETH_DEV *dev)
+{
+#if defined(USE_READER_THREAD)
+    eth_stop_threads(dev);
+#endif
+}
 
 /* Helper to dequeue a packet from the ETH_DEV queue and copy to capture */
 static int dequeue_packet_to_capture(ETH_DEV *dev, struct callback_capture *capture)
@@ -616,13 +629,7 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     memcpy(filter_addr, guest_mac, sizeof(ETH_MAC));
     assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr, false, true), SCPE_OK);
 
-#if defined(USE_READER_THREAD)
-    /* Now that slirp is initialized, start the reader/writer threads */
-    eth_start_threads(&mock_eth_dev);
-
-    /* Give threads a moment to fully initialize */
-    sim_os_ms_sleep(50);
-#endif
+    do_start_eth_threads(&mock_eth_dev);
 
     /* Send the ARP request through the ETH_DEV interface */
     ETH_PACK arp_packet;
@@ -652,6 +659,7 @@ static void test_slirp_real_backend_answers_local_arp(void **state)
     assert_memory_equal(capture.last_packet + 32, guest_mac, ether_addr_len);
     assert_memory_equal(capture.last_packet + 38, request + 28, 4);
 
+    do_stop_eth_threads(&mock_eth_dev);
     sim_slirp_close(slirp);
 }
 
@@ -691,13 +699,7 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     memcpy(filter_addr_dhcp, guest_mac, sizeof(ETH_MAC));
     assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_dhcp, false, true), SCPE_OK);
 
-#if defined(USE_READER_THREAD)
-    /* Now that slirp is initialized, start the reader/writer threads */
-    eth_start_threads(&mock_eth_dev);
-
-    /* Give threads a moment to fully initialize */
-    sim_os_ms_sleep(50);
-#endif
+    do_start_eth_threads(&mock_eth_dev);
 
     assert_int_equal(
         sim_slirp_send(slirp, (const char *)request, request_len, 0),
@@ -755,6 +757,7 @@ static void test_slirp_real_backend_answers_dhcp_discover(void **state)
     assert_int_equal(option_len, 4);
     assert_ipv4_bytes_equal(option, "10.0.2.3");
 
+    do_stop_eth_threads(&mock_eth_dev);
     sim_slirp_close(slirp);
 }
 
@@ -792,13 +795,7 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     memcpy(filter_addr_ping, guest_mac, sizeof(ETH_MAC));
     assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_ping, false, true), SCPE_OK);
 
-#if defined(USE_READER_THREAD)
-    /* Now that slirp is initialized, start the reader/writer threads */
-    eth_start_threads(&mock_eth_dev);
-
-    /* Give threads a moment to fully initialize */
-    sim_os_ms_sleep(50);
-#endif
+    do_start_eth_threads(&mock_eth_dev);
 
     assert_int_equal(sim_slirp_send(slirp, (const char *)packet, 42, 0), 42);
 
@@ -841,6 +838,7 @@ static void test_slirp_real_backend_answers_gateway_ping(void **state)
     assert_int_equal(get_be16(capture.last_packet + 40), 1);
     assert_memory_equal(capture.last_packet + 42, "zimh", 4);
 
+    do_stop_eth_threads(&mock_eth_dev);
     sim_slirp_close(slirp);
 }
 
@@ -877,13 +875,7 @@ static void test_slirp_handles_dns_query(void **state)
     memcpy(filter_addr_dns, guest_mac, sizeof(ETH_MAC));
     assert_int_equal(eth_filter(&mock_eth_dev, 1, &filter_addr_dns, false, true), SCPE_OK);
 
-#if defined(USE_READER_THREAD)
-    /* Now that slirp is initialized, start the reader/writer threads */
-    eth_start_threads(&mock_eth_dev);
-
-    /* Give threads a moment to fully initialize */
-    sim_os_ms_sleep(50);
-#endif
+    do_start_eth_threads(&mock_eth_dev);
 
     /* Build and send DNS query for example.com */
     packet_len = build_dns_query(packet, guest_mac, "example.com", dns_txid);
@@ -898,24 +890,47 @@ static void test_slirp_handles_dns_query(void **state)
     sim_slirp_select(slirp, 1000);
     sim_slirp_dispatch_for_test(slirp);
 
-    /* Dequeue any response packet that arrived */
-    dequeue_packet_to_capture(&mock_eth_dev, &capture);
+    /* Dequeue packets until we find the DNS response or hit retry limit.
+     * SLIRP sends administrative packets (ARP, DHCP) during initialization,
+     * so we need to search through multiple packets to find the DNS response. */
+    int retries = 0;
+    bool found_dns_response = false;
+    while (retries < 50 && !found_dns_response) {
+        dequeue_packet_to_capture(&mock_eth_dev, &capture);
 
-    /* Verify we got a response - we don't assert on the actual answer
+        if (capture.packet_count > 0) {
+            /* Check if this packet is a valid DNS response */
+            if (is_valid_dns_response(capture.last_packet,
+                                     (size_t)capture.last_packet_size,
+                                     dns_txid)) {
+                found_dns_response = true;
+                break;
+            }
+            /* Not a DNS response - could be ARP, DHCP, or other administrative packet.
+             * Reset packet_count to continue searching. */
+            capture.packet_count = 0;
+        }
+
+        sim_os_ms_sleep(10);  /* 10ms sleep between retries */
+        retries++;
+    }
+
+    /* Verify we got a DNS response - we don't assert on the actual answer
      * since it depends on external DNS, but we verify:
      * 1. We got a packet back
      * 2. It's a valid DNS response structure
      * 3. The transaction ID matches
      */
-    if (capture.packet_count > 0) {
+    if (found_dns_response) {
         assert_true(is_valid_dns_response(capture.last_packet,
                                          (size_t)capture.last_packet_size,
                                          dns_txid));
     }
-    /* Note: If packet_count is 0, libslirp may not have been able to
+    /* Note: If we didn't find a DNS response, libslirp may not have been able to
      * forward the query (no network, DNS timeout, etc). This is acceptable
      * for a protocol test - we're just verifying it doesn't crash. */
 
+    do_stop_eth_threads(&mock_eth_dev);
     sim_slirp_close(slirp);
 }
 
