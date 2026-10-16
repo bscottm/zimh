@@ -78,6 +78,15 @@
 #        endif
 #    endif
 
+/* Forced inlining */
+#if defined(_MSC_VER)
+    #define FORCE_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+    #define FORCE_INLINE __attribute__((always_inline)) inline
+#else
+    #define FORCE_INLINE inline
+#endif
+
 /* Unused argument macro: easier to comprehend than a "(void) var;" statement. */
 #    define SIM_UNUSED_ARG(x) (void)x
 

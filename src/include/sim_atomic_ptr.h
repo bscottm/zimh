@@ -33,6 +33,12 @@
  *   occurred, zero (false) otherwise. If the swap fails, *expected is updated with
  *   the current value. Uses SEQ_CST ordering.
  *
+ * sim_atomic_ptr_cas_explicit(sim_atomic_ptr_t *p, void **expected, void *desired,
+ *                             int order)
+ *   Compare-and-swap operation for pointers. Returns non-zero (true) if the swap
+ *   occurred, zero (false) otherwise. If the swap fails, *expected is updated with
+ *   the current value. Ordering determined by the order parameter.
+ *
  * sim_atomic_ptr_exchange(sim_atomic_ptr_t *p, void *newval): Atomically exchanges
  *   the pointer, returning the old value. Uses SEQ_CST ordering.
  *
@@ -65,7 +71,7 @@ typedef struct sim_atomic_ptr_s {
  * Initialization, destruction:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline void sim_atomic_ptr_init(sim_atomic_ptr_t *p)
+static FORCE_INLINE void sim_atomic_ptr_init(sim_atomic_ptr_t *p)
 {
 #if HAVE_STD_ATOMIC
     atomic_init(&p->ptr, NULL);
@@ -74,7 +80,7 @@ static inline void sim_atomic_ptr_init(sim_atomic_ptr_t *p)
 #endif
 }
 
-static inline void sim_atomic_ptr_destroy(sim_atomic_ptr_t *p)
+static FORCE_INLINE void sim_atomic_ptr_destroy(sim_atomic_ptr_t *p)
 {
     /* Set to recognizable sentinel value for debugging */
     p->ptr = (void *)(uintptr_t)0xDEADBEEF;
@@ -84,7 +90,7 @@ static inline void sim_atomic_ptr_destroy(sim_atomic_ptr_t *p)
  * Load operations:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline void *sim_atomic_ptr_get_explicit(const sim_atomic_ptr_t *p, int order)
+static FORCE_INLINE void *sim_atomic_ptr_get_explicit(const sim_atomic_ptr_t *p, int order)
 {
     void *retval;
 
@@ -115,16 +121,16 @@ static inline void *sim_atomic_ptr_get_explicit(const sim_atomic_ptr_t *p, int o
     return retval;
 }
 
-static inline void *sim_atomic_ptr_get(const sim_atomic_ptr_t *p)
+static FORCE_INLINE void *sim_atomic_ptr_get(const sim_atomic_ptr_t *p)
 {
-    return sim_atomic_ptr_get_explicit(p, SIM_ATOMIC_ACQUIRE);
+    return sim_atomic_ptr_get_explicit(p, SIM_ATOMIC_SEQ_CST);
 }
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
  * Store operations:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline void sim_atomic_ptr_put_explicit(sim_atomic_ptr_t *p, void *newval, int order)
+static FORCE_INLINE void sim_atomic_ptr_put_explicit(sim_atomic_ptr_t *p, void *newval, int order)
 {
 #if HAVE_STD_ATOMIC
     atomic_store_explicit(&p->ptr, newval, order);
@@ -140,36 +146,30 @@ static inline void sim_atomic_ptr_put_explicit(sim_atomic_ptr_t *p, void *newval
 #endif
 }
 
-static inline void sim_atomic_ptr_put(sim_atomic_ptr_t *p, void *newval)
+static FORCE_INLINE void sim_atomic_ptr_put(sim_atomic_ptr_t *p, void *newval)
 {
-    sim_atomic_ptr_put_explicit(p, newval, SIM_ATOMIC_RELEASE);
+    sim_atomic_ptr_put_explicit(p, newval, SIM_ATOMIC_SEQ_CST);
 }
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
  * Compare-and-swap:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline int sim_atomic_ptr_cas(sim_atomic_ptr_t *p, void **expected, void *desired)
+static FORCE_INLINE int sim_atomic_ptr_cas_explicit(sim_atomic_ptr_t *p, void **expected, void *desired, int order)
 {
     int result;
 
 #if HAVE_STD_ATOMIC
-    result = atomic_compare_exchange_strong_explicit(&p->ptr, expected, desired,
-                                                      SIM_ATOMIC_SEQ_CST,
-                                                      SIM_ATOMIC_SEQ_CST);
+    result = atomic_compare_exchange_strong_explicit(&p->ptr, expected, desired, order, SIM_ATOMIC_RELAXED);
 #elif HAVE_ATOMIC_PRIMS
 #  if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
-    result = __atomic_compare_exchange(&p->ptr, expected, &desired,
-                                       0,  /* strong CAS */
-                                       __ATOMIC_SEQ_CST,
-                                       __ATOMIC_SEQ_CST);
+    result = __atomic_compare_exchange(&p->ptr, expected, &desired, 0 /* strong cas */, order, SIM_ATOMIC_RELAXED);
 #  elif defined(_WIN32) || defined(_WIN64)
-    {
-        void *old_val = InterlockedCompareExchangePointer((PVOID*)&p->ptr, desired, *expected);
-        result = (old_val == *expected);
-        if (!result) {
-            *expected = old_val;
-        }
+    void *old_val = InterlockedCompareExchangePointer((PVOID volatile *)&p->ptr, desired, *expected);
+
+    result = (old_val == *expected);
+    if (!result) {
+        *expected = old_val;
     }
 #  endif
 #endif
@@ -177,9 +177,14 @@ static inline int sim_atomic_ptr_cas(sim_atomic_ptr_t *p, void **expected, void 
     return result;
 }
 
+static FORCE_INLINE int sim_atomic_ptr_cas(sim_atomic_ptr_t *p, void **expected, void *desired)
+{
+    return sim_atomic_ptr_cas_explicit(p, expected, desired, SIM_ATOMIC_SEQ_CST);
+}
+
 /* Weak CAS variant: May spuriously fail even when values match.
  * Useful in loops where retry is acceptable. */
-static inline int sim_atomic_ptr_cas_weak(sim_atomic_ptr_t *p, void **expected, void *desired)
+static FORCE_INLINE int sim_atomic_ptr_cas_weak(sim_atomic_ptr_t *p, void **expected, void *desired)
 {
     int result;
 
@@ -206,7 +211,7 @@ static inline int sim_atomic_ptr_cas_weak(sim_atomic_ptr_t *p, void **expected, 
  * Exchange:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline void *sim_atomic_ptr_exchange(sim_atomic_ptr_t *p, void *newval)
+static FORCE_INLINE void *sim_atomic_ptr_exchange(sim_atomic_ptr_t *p, void *newval)
 {
     void *retval;
 
@@ -216,7 +221,7 @@ static inline void *sim_atomic_ptr_exchange(sim_atomic_ptr_t *p, void *newval)
 #  if defined(__ATOMIC_SEQ_CST) && (defined(__GNUC__) || defined(__clang__))
     retval = __atomic_exchange_n(&p->ptr, newval, __ATOMIC_SEQ_CST);
 #  elif defined(_WIN32) || defined(_WIN64)
-    retval = InterlockedExchangePointer((PVOID*)&p->ptr, newval);
+    retval = InterlockedExchangePointer((PVOID volatile *)&p->ptr, newval);
 #  endif
 #endif
 

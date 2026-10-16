@@ -86,7 +86,6 @@ sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform
     current_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail);
     tail_next = (sim_tailq_elem_t *)sim_atomic_ptr_get(&current_tail->next);
     head = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->head);
-
     if (tail_next == head) {
         /* Queue full, add more nodes */
         if (tailq_add_node(tailq) == NULL) {
@@ -97,16 +96,14 @@ sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq, sim_tailq_xform_t xform
     /* Advance tail to next available slot */
     sim_tailq_elem_t *elem = advance_tail(tailq);
 
-    /* Mark item as BUSY during transformation
-     * RELEASE: ensures consumer sees BUSY before tail advances */
-    sim_atomic_put_explicit(&elem->item_status, TAILQ_ITEM_BUSY, SIM_ATOMIC_RELEASE);
+    /* Mark item as BUSY during transformation */
+    sim_atomic_put(&elem->item_status, TAILQ_ITEM_BUSY);
 
     /* Transform the item (plain store is safe, protected by BUSY/READY protocol) */
     elem->item = xform(elem->item, xform_arg);
 
-    /* Mark item as READY
-     * RELEASE: ensures consumer sees item write before READY */
-    sim_atomic_put_explicit(&elem->item_status, TAILQ_ITEM_READY, SIM_ATOMIC_RELEASE);
+    /* Mark item as READY */
+    sim_atomic_put(&elem->item_status, TAILQ_ITEM_READY);
 
     return tailq;
 }
@@ -116,10 +113,9 @@ sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq)
     sim_tailq_item_t item = NULL;
     sim_tailq_elem_t *head, *tail;
 
-    /* SPSC Consumer side: Check if queue is empty
-     * ACQUIRE: ensures we see producer's writes */
-    head = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->head, SIM_ATOMIC_ACQUIRE);
-    tail = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->tail, SIM_ATOMIC_ACQUIRE);
+    /* SPSC Consumer side: Check if queue is empty. */
+    head = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->head);
+    tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail);
 
     if (head == tail)
         return NULL;
@@ -127,9 +123,8 @@ sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq)
     /* Advance head to dequeue */
     sim_tailq_elem_t *elem = advance_head(tailq);
 
-    /* Spin until item is ready
-     * ACQUIRE: ensures we see producer's item write */
-    while (sim_atomic_get_explicit(&elem->item_status, SIM_ATOMIC_ACQUIRE) != TAILQ_ITEM_READY) {
+    /* Spin until item is ready */
+    while (sim_atomic_get(&elem->item_status) != TAILQ_ITEM_READY) {
         sim_thread_yield();
     }
 
@@ -137,9 +132,8 @@ sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq)
     item = elem->item;
     elem->item = NULL;
 
-    /* Mark slot as available for reuse
-     * RELEASE: ensures producer sees item = NULL before reusing slot */
-    sim_atomic_put_explicit(&elem->item_status, TAILQ_ITEM_BUSY, SIM_ATOMIC_RELEASE);
+    /* Mark slot as available for reuse */
+    sim_atomic_put(&elem->item_status, TAILQ_ITEM_BUSY);
 
     return item;
 }
@@ -210,13 +204,11 @@ sim_tailq_elem_t *advance_head(sim_tailq_t *tailq)
 {
     sim_tailq_elem_t *old_head, *new_head;
 
-    /* SPSC: Only consumer writes head, so no CAS needed
-     * ACQUIRE: see producer's writes to the node */
-    old_head = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->head, SIM_ATOMIC_ACQUIRE);
+    /* SPSC: Only consumer writes head, so no CAS needed */
+    old_head = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->head);
     new_head = (sim_tailq_elem_t *)sim_atomic_ptr_get(&old_head->next);
 
-    /* RELEASE: make our consumption visible to producer */
-    sim_atomic_ptr_put_explicit(&tailq->head, new_head, SIM_ATOMIC_RELEASE);
+    sim_atomic_ptr_put(&tailq->head, new_head);
 
     sim_atomic_dec(&tailq->n_elements);
     return old_head;
@@ -226,13 +218,11 @@ sim_tailq_elem_t *advance_tail(sim_tailq_t *tailq)
 {
     sim_tailq_elem_t *old_tail, *new_tail;
 
-    /* SPSC: Only producer writes tail, so no CAS needed
-     * ACQUIRE: see consumer's writes (item = NULL) */
-    old_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get_explicit(&tailq->tail, SIM_ATOMIC_ACQUIRE);
+    /* SPSC: Only producer writes tail, so no CAS needed */
+    old_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail);
     new_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&old_tail->next);
 
-    /* RELEASE: make tail advance visible to consumer */
-    sim_atomic_ptr_put_explicit(&tailq->tail, new_tail, SIM_ATOMIC_RELEASE);
+    sim_atomic_ptr_put(&tailq->tail, new_tail);
 
     sim_atomic_inc(&tailq->n_elements);
     return old_tail;
@@ -259,19 +249,13 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
         current_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail);
         tail_next = (sim_tailq_elem_t *)sim_atomic_ptr_get(&current_tail->next);
 
-        /* Insert node between current_tail and tail_next */
-        sim_atomic_ptr_put(&node->next, tail_next);
+        sim_atomic_ptr_put_explicit(&node->next, tail_next, SIM_ATOMIC_RELEASE);
 
-        /* Try to update current_tail->next to point to new node */
         expected = tail_next;
         if (sim_atomic_ptr_cas(&current_tail->next, &expected, node)) {
             break; /* Success */
         }
-
-        /* CAS failed - check if tail moved */
-        if ((sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail) != current_tail) {
-            continue; /* Tail moved, retry */
-        }
+        /* CAS failed - reentrant call modified next, always retry */
     } while (1);
 
     sim_atomic_inc(&tailq->n_allocated);
