@@ -135,24 +135,40 @@ jobs:
         uses: vmactions/netbsd-vm@v1
         with:
           prepare: |
+            echo "::group::Prepare the NetBSD environment (pkgin, X11, deps)"
+
             export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r | cut -d_ -f1)/All"
             pkg_add pkgin
             pkgin -Fy install git
+            unset PKG_PATH
+
             echo "Installing X11 sets."
+
             cd /tmp
             ftp -o xbase.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xbase.tar.xz
             ftp -o xfont.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xfont.tar.xz
             ftp -o xserver.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xserver.tar.xz
             ftp -o xetc.tar.xz https://cdn.netbsd.org/pub/NetBSD/NetBSD-$(uname -r | cut -d_ -f1)/amd64/binary/sets/xetc.tar.xz
-            # Extract into /
             cd /
             for f in /tmp/x*.tar.xz; do
                 tar xJpf "$f"
             done 
+            rm -f /tmp/x*.tar.xz
+
             echo "Installing compile-time dependencies"
             cd "$GITHUB_WORKSPACE"
             sh tools/ci/deps/deps.sh netbsd-pkgin
+
+            echo "::endgroup::"
           run: |
+            echo "::group:: Configure ZIMH CMake"
             cmake --preset ninja-release
+            echo "::endgroup::"
+
+            echo "::group:: Build ZIMH"
             cmake --build --preset ninja-release
+            echo "::endgroup::"
+
+            echo "::group:: CTest"
             ctest --preset ninja-release
+            echo "::endgroup::"
