@@ -389,23 +389,27 @@ t_stat sim_disk_ramdisk_save(UNIT *uptr, const sim_disk_ramdisk *ramdisk)
 
     if (ramdisk == NULL)
         return SCPE_OK;
-    if (fflush(uptr->fileref) != 0)
-        return sim_messagef(SCPE_IOERR,
-                            "%s: Cannot flush RAMDISK: contents before "
-                            "SAVE\n",
-                            sim_uname(uptr));
-    save_file = sim_fopen(ramdisk->save_path, "wb");
-    if (save_file == NULL)
-        return sim_messagef(
-            SCPE_OPENERR, "%s: Cannot open RAMDISK: SAVE image '%s': %s\n",
-            sim_uname(uptr), ramdisk->save_path, strerror(errno));
-    bytes_written =
-        sim_fwrite(ramdisk->buffer, 1, (size_t)ramdisk->size, save_file);
+
+    /* Only flush fileref for writable units */
+    if ((uptr->fileref != NULL) && ((uptr->flags & UNIT_RO) == 0)) {
+        if (fflush(uptr->fileref) != 0)
+            return sim_messagef(SCPE_IOERR, "%s: Cannot flush RAMDISK: contents before SAVE\n",
+                                sim_uname(uptr));
+    }
+
+    if ((save_file = sim_fopen(ramdisk->save_path, "wb")) == NULL) {
+        return sim_messagef(SCPE_OPENERR, "%s: Cannot open RAMDISK: SAVE image '%s': %s\n",
+                            sim_uname(uptr), ramdisk->save_path, strerror(errno));
+    }
+
+    bytes_written = sim_fwrite(ramdisk->buffer, 1, (size_t)ramdisk->size, save_file);
     close_status = fclose(save_file);
-    if ((bytes_written != (size_t)ramdisk->size) || (close_status == EOF))
-        return sim_messagef(SCPE_IOERR,
-                            "%s: Error writing RAMDISK: SAVE image '%s'\n",
+
+    if ((bytes_written != (size_t)ramdisk->size) || (close_status == EOF)) {
+        return sim_messagef(SCPE_IOERR, "%s: Error writing RAMDISK: SAVE image '%s'\n",
                             sim_uname(uptr), ramdisk->save_path);
+    }
+
     return SCPE_OK;
 }
 
