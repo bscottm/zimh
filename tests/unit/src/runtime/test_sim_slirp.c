@@ -127,7 +127,8 @@ static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, co
 
 #if defined(USE_READER_THREAD)
     /* Initialize the read queue for thread-based operation */
-    eth_tailq_init(&dev->read_queue, 10);
+    dev->read_queue = eth_tailq_init();
+    assert_non_null(dev->read_queue);
 
     /* Initialize mutexes and condition variables */
     sim_mutex_init(&dev->lock);
@@ -138,7 +139,8 @@ static void init_mock_eth_dev(ETH_DEV *dev, struct callback_capture *capture, co
     sim_cond_init(&dev->startup_cond);
 
     /* Initialize write queue */
-    eth_tailq_init(&dev->write_requests, 10);
+    dev->write_requests = eth_tailq_init();
+    assert_non_null(dev->write_requests);
 
     /* Set up backend function pointers for NAT/slirp.
      * NOTE: Threads cannot be started yet because backend.state.slirp is NULL.
@@ -171,8 +173,8 @@ void do_stop_eth_threads(ETH_DEV *dev)
 static int dequeue_packet_to_capture(ETH_DEV *dev, struct callback_capture *capture)
 {
 #if defined(USE_READER_THREAD)
-    if (!sim_tailq_empty(&dev->read_queue)) {
-        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+    if (!sim_tailq_empty(dev->read_queue)) {
+        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(dev->read_queue);
         if (item && item->packet.len <= sizeof(capture->last_packet)) {
             capture->packet_count++;
             capture->last_packet_size = (int)item->packet.len;

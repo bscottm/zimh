@@ -219,7 +219,7 @@ THREAD_FUNC_DEFN(_eth_reader)
          * Note: libslirp is notorious for putting packets on the read queue even if no packets are
          * actually read from an active socket. Hence the "status >= 0" check, which will succeed and the
          * check for a non-empty read queue. */
-        if (status >= 0 && dev->asynch_io && !sim_tailq_empty(&dev->read_queue)) {
+        if (status >= 0 && dev->asynch_io && !sim_tailq_empty(dev->read_queue)) {
             sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
             sim_activate_abs(dev->dptr->units, dev->asynch_io_latency);
         } else if (status < 0 && errno != EINTR && !eth_reader_error_handler(dev)) {
@@ -283,7 +283,7 @@ THREAD_FUNC_DEFN(_eth_writer)
     sim_atomic_put(&dev->writer_status, start_status);
 
     while ((eth_writer_state_t)sim_atomic_get(&dev->writer_status) == ETH_WRITER_RUNNING) {
-        while (sim_tailq_empty(&dev->write_requests)) {
+        while (sim_tailq_empty(dev->write_requests)) {
             /* Check for shutdown before waiting */
             if ((eth_writer_state_t)sim_atomic_get(&dev->writer_status) != ETH_WRITER_RUNNING) {
                 goto writer_done;
@@ -300,7 +300,7 @@ THREAD_FUNC_DEFN(_eth_writer)
         }
 
         /* Dequeue and process outbound packets: */
-        ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+        ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(dev->write_requests);
 
         while (outbound != NULL && (eth_writer_state_t)sim_atomic_get(&dev->writer_status) == ETH_WRITER_RUNNING) {
             /* Check if throttling is enabled */
@@ -328,7 +328,7 @@ THREAD_FUNC_DEFN(_eth_writer)
             local_freelist = outbound;
 
             /* Check for more work without blocking */
-            outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+            outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(dev->write_requests);
         }
 
         /* After write housekeeping... */
@@ -369,8 +369,8 @@ writer_done:
     }
 
     /* If we exited with requests in queue, avoid leaking by putting them on free list */
-    while (!sim_tailq_empty(&dev->write_requests)) {
-        ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(&dev->write_requests);
+    while (!sim_tailq_empty(dev->write_requests)) {
+        ETH_WRITE_REQUEST *outbound = (ETH_WRITE_REQUEST *)sim_tailq_dequeue(dev->write_requests);
         outbound->next = dev->write_buffers;
         dev->write_buffers = outbound;
     }

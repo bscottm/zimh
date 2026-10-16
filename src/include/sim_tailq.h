@@ -1,11 +1,23 @@
 // SPDX-FileCopyrightText: 2026 The ZIMH Project
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-2-Clause
+
+// NOTE: The code in this file is adapated from FreeBSD's buf_ring.h source code:
+// https://cgit.freebsd.org/src/plain/sys/sys/buf_ring.h?h=stable/15
+//
+// Original attribution:
+// Copyright (c) 2007-2009 Kip Macy <kmacy@freebsd.org>
+// All rights reserved.
+// Copyright (c) 2024 Arm Ltd
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
- * sim_tailq_t: Lock-free SPSC (Single Producer, Single Consumer) tail queue.
+ * sim_tailq_t: Lock-free SPSC (Single Producer, Single Consumer) ring buffer.
  *
- * Threading model: Only one thread may call enqueue operations at a time (producer),
- * and only one thread may call dequeue operations at a time (consumer). These may be
+ * This implementation uses atomic head pointers for producer and consumer.
+ * The producer and consumer each maintain a cached copy of their head position
+ * to minimize atomic operations while maintaining correctness.
+ *
+ * Threading model: Only one thread may call enqueue operations (producer),
+ * and only one thread may call dequeue operations (consumer). These may be
  * different threads.
  *
  * Uses C11 atomics or compiler intrinsics for synchronization.
@@ -15,124 +27,77 @@
 #define SIM_TAILQ_H
 
 #include <stdbool.h>
+#include "sim_platform.h"
 #include "sim_atomic.h"
-#include "sim_atomic_ptr.h"
 
-/* Generic pointer to items stored in the tail queue. This forces type casts to
- * the desired pointer type and avoids the potential bugs that can arise from
- * `void *`.
- */
+/* Generic pointer to items stored in the tail queue. This type exists to force the user to cast to their pointer type,
+ * vs. using "void *", which often leads to interesting bugs. */
 typedef struct sim_tailq_item_s {
     struct sim_tailq_item_s *__dummy_ignored_never_used;
 } *sim_tailq_item_t;
 
-/* Item status indicator.
+/* The ring buffer queue.
  *
- * An internal `item` status indicator that ensures that the `sim_tailq_elem_t->item`
- * member is stable. `TAILQ_ITEM_READY` indicates that the `item` pointer is stable,
- * i.e., not being modified. `TAILQ_ITEM_BUSY` indicates that the `item` pointer is
- * not stable, i.e., being modified, and a dequeue operation needs to wait until
- * the status changes to `TAILQ_ITEM_READY`.
- */
-typedef enum sim_tailq_item_status_e {
-    TAILQ_ITEM_READY,
-    TAILQ_ITEM_BUSY
-} sim_tailq_item_status_t;
-
-/* Queue element (node) type */
-typedef struct sim_tailq_elem_s {
-    /* Generic element pointer. Plain pointer; ordering is enforced by the
-     *  item_status release/acquire handshake surrounding all writes and reads. */
-    sim_tailq_item_t item;
-    /* Item status — BUSY while the producer is filling `item`, READY when done. */
-    sim_atomic_value_t item_status;
-    /*! Next element in the tail queue (circular ring). */
-    sim_atomic_ptr_t next;
-} sim_tailq_elem_t;
-
-/* The tail queue list type.
+ * Fixed-size ring buffer with power-of-2 capacity for fast modulo.
+ * Producer and consumer head positions are cache-line aligned to prevent
+ * false sharing between producer and consumer threads.
  *
- * An atomic access-controlled circular ring queue that also tracks the number of
- * active elements and the total number of allocated ring nodes.
- *
- * SPSC invariant: the head pointer is written only by the consumer thread;
- *   the tail pointer is written only by the producer thread. Both may be read by
- *   either thread, which is why they are atomically accessed.
- *
- * The queue is initialized using `sim_tailq_init()`.
- *
- * Items are enqueued and dequeued using `sim_tailq_enqueue()` /
- * `sim_tailq_enqueue_xform()` and `sim_tailq_dequeue()`.
- *
- * `sim_tailq_destroy()` cleans the queue when it is no longer needed.
+ * The slots array uses plain sim_tailq_item_t pointers (not atomic).
+ * Synchronization is provided by the RELEASE store to prod_tail (producer)
+ * and ACQUIRE load of prod_tail (consumer), matching FreeBSD's buf_ring
+ * implementation.
  */
 typedef struct sim_tailq_s {
-    sim_atomic_ptr_t head;
-    sim_atomic_ptr_t tail;
-    sim_atomic_value_t n_elements;
-    sim_atomic_value_t n_allocated;
+    sim_atomic_value_t prod_head;
+    sim_atomic_value_t prod_tail;
+    size_t prod_size;
+    size_t prod_mask;
+    SIM_CACHELINE_ALIGNED sim_atomic_value_t cons_head;
+    sim_atomic_value_t cons_tail;
+    size_t cons_size;
+    size_t cons_mask;
+    SIM_CACHELINE_ALIGNED sim_tailq_item_t slots[0];
 } sim_tailq_t;
 
-/* Item transformer function used when enqueuing a new item.
- *
- * - item: The item. Cast it to the required type, e.g., an Ethernet packet.
- * - arg: Pointer to extra data passed by the caller.
- *
- * Typical use case: `memcpy()` or `memmove()` from a source packet passed in
- * `arg` into `item`.
+/* Allocate and initialize a tail queue with the default capacity.
+ * Returns NULL on allocation failure.
  */
-typedef sim_tailq_item_t (*sim_tailq_xform_t)(sim_tailq_item_t item, void *arg);
+sim_tailq_t *sim_tailq_init();
 
-/* Initialization. */
-int sim_tailq_init(sim_tailq_t *tailq);
-/* Destruction.
- *
- * - free_item: A function pointer that cleans up the item's internals. Cast it
- *   to the required type.
+/* Allocate and initialize a tail queue with specified capacity (must be power of 2, >= 2).
+ * Returns NULL on failure (capacity < 2, capacity isn't a power of 2, allocation)
  */
+sim_tailq_t *sim_tailq_init_capacity(size_t capacity);
+
+/* Destruction. Optionally frees items if free_item is provided. */
 void sim_tailq_destroy(sim_tailq_t *tailq, void (*free_item)(sim_tailq_item_t));
 
-/* Enqueue new data to the tail. */
+/* Enqueue new data. Returns NULL if queue is full, tailq otherwise. */
 sim_tailq_t *sim_tailq_enqueue(sim_tailq_t *tailq, sim_tailq_item_t item);
 
-/* Enqueue new data to the tail, applies a transform function to the new item. */
-sim_tailq_t *sim_tailq_enqueue_xform(sim_tailq_t *tailq,
-                                     sim_tailq_xform_t xform, void *xform_arg);
-
-/* Dequeue from the tail. */ 
+/* Dequeue from head. Returns NULL if queue is empty. */
 sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq);
 
-/* Access the item in the node. */
-static inline void *sim_tailq_item(const sim_tailq_elem_t *node)
-{
-    return node->item;
-}
-
-/* Number of elements in the queue (queue depth.) */
-static inline sim_atomic_type_t sim_tailq_count(const sim_tailq_t *tailq)
-{
-    return sim_atomic_get(&tailq->n_elements);
-}
-
-/* Number of elements allocated (>= queue depth.) */
-static inline sim_atomic_type_t sim_tailq_allocated(const sim_tailq_t *tailq)
-{
-    return sim_atomic_get(&tailq->n_allocated);
-}
-
-/* Empty predicate */
+/* Check if queue is empty (consumer-side check) */
 static inline int sim_tailq_empty(const sim_tailq_t *tailq)
 {
-    /* This is SPSC-safe because:
-     *
-     * - If producer sees empty and enqueues, consumer will see non-empty next
-     *   check
-     * - If consumer sees non-empty and dequeues, producer will see empty next
-     *   check
-     *
-     * No data race, just a benign time-of-change to time-of-use (TOCTOU) issue.
-     */
-    return (sim_atomic_ptr_get(&tailq->head) == sim_atomic_ptr_get(&tailq->tail));
+     return (sim_atomic_get(&tailq->cons_head) == sim_atomic_get(&tailq->prod_tail));
+}
+
+/* Number of elements in the queue (approximate, for monitoring only).
+ * In SPSC, positions are not fully synchronized, so this is a snapshot.
+ */
+static inline sim_atomic_type_t sim_tailq_count(const sim_tailq_t *tailq)
+{
+    size_t prod_tail = (size_t)sim_atomic_get(&tailq->prod_tail);
+    size_t cons_tail = (size_t)sim_atomic_get(&tailq->cons_tail);
+    return ((sim_atomic_type_t)(tailq->prod_size + prod_tail - cons_tail) & tailq->prod_mask);
+}
+
+/* Number of elements allocated (capacity). */
+static inline sim_atomic_type_t sim_tailq_allocated(const sim_tailq_t *tailq)
+{
+    return (sim_atomic_type_t)tailq->prod_size;
 }
 
 #endif /* SIM_TAILQ_H */
