@@ -352,11 +352,11 @@ TAPE_PCALLBACK callback = ctx->callback;
 
 sim_debug_unit (ctx->dbit, uptr, "_tape_completion_dispatch(unit=%d, top=%d, callback=%p)\n", (int)(uptr-ctx->dptr->units), ctx->io_top, ctx->callback);
 
-if (ctx->io_top != TOP_IDLE)
-    abort();                                            /* horribly wrong, stop */
-
 if (ctx->asynch_io)
     sim_mutex_lock (&ctx->io_lock);
+
+if (ctx->io_top != TOP_IDLE)
+    abort();                                            /* horribly wrong, stop */
 
 if (ctx->callback) {
     ctx->callback = NULL;
