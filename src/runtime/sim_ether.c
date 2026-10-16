@@ -578,11 +578,9 @@ static void ethq_item_free(sim_tailq_item_t item)
   }
 }
 
-t_stat eth_tailq_init(sim_tailq_t* que, int max)
+sim_tailq_t *eth_tailq_init()
 {
-  (void)max;  /* sim_tailq grows dynamically, no fixed max */
-  /* sim_tailq_init returns 1 on success, 0 on failure */
-  return (sim_tailq_init(que) == 0) ? SCPE_MEM : SCPE_OK;
+  return sim_tailq_init();
 }
 
 void eth_tailq_destroy(sim_tailq_t* que)
@@ -1782,8 +1780,8 @@ eth_destroy_thread_state(ETH_DEV *dev)
         dev->write_buffers = buffer->next;
         free(buffer);
     }
-    eth_tailq_destroy(&dev->write_requests);
-    eth_tailq_destroy(&dev->read_queue);
+    eth_tailq_destroy(dev->write_requests);
+    eth_tailq_destroy(dev->read_queue);
     dev->threading_initialized = false;
 }
 #endif
@@ -1813,7 +1811,7 @@ if (dev->backend.eth_api == ETH_API_TEST)
 dev->asynch_io = (sim_asynch_enabled != 0);
 dev->asynch_io_latency = latency;
 /* Lock-free queue check */
-if (!sim_tailq_empty(&dev->read_queue)) {
+if (!sim_tailq_empty(dev->read_queue)) {
   sim_debug(dev->dbit, dev->dptr, "Queueing automatic poll\n");
   sim_activate_abs (dev->dptr->units, dev->asynch_io_latency);
   }
@@ -2291,13 +2289,13 @@ if (dev->backend.eth_api == ETH_API_TEST)
   dev->reflections = 0;
 
 #    if defined(USE_READER_THREAD)
-  r = eth_tailq_init (&dev->read_queue, 200);     /* initialize FIFO queue */
-  if (r != SCPE_OK) {
+  dev->read_queue = eth_tailq_init ();     /* initialize FIFO queue */
+  if (dev->read_queue == NULL) {
     sim_printf("eth_open: eth_tailq_init FAILED with status %d\n", r);
     _eth_close_port (&dev->backend, dev->fd_handle);
     free(dev->name);
     eth_zero(dev);
-    return r;
+    return SCPE_MEM;
     }
   sim_mutex_init (&dev->lock);
   sim_mutex_init (&dev->writer_lock);
@@ -2305,12 +2303,12 @@ if (dev->backend.eth_api == ETH_API_TEST)
   sim_mutex_init (&dev->startup_lock);
   sim_cond_init (&dev->writer_cond);
   sim_cond_init (&dev->startup_cond);
-  r = eth_tailq_init (&dev->write_requests, 200);
-  if (r != SCPE_OK) {
+  dev->write_requests = eth_tailq_init(dev->write_requests);
+  if (dev->write_requests == NULL) {
     _eth_close_port (&dev->backend, dev->fd_handle);
     free(dev->name);
     eth_zero(dev);
-    return r;
+    return SCPE_MEM;
     }
 
   if (dev->backend.eth_api != ETH_API_TEST) {
@@ -2839,9 +2837,9 @@ request->packet.crc_len = packet->crc_len;
 memcpy(request->packet.msg, packet->msg, packet->len);
 
 /* Insert buffer at the end of the write queue */
-int write_queue_size = (int)sim_tailq_count(&dev->write_requests) + 1;
+int write_queue_size = (int)sim_tailq_count(dev->write_requests) + 1;
 
-sim_tailq_enqueue(&dev->write_requests, (sim_tailq_item_t)request);
+sim_tailq_enqueue(dev->write_requests, (sim_tailq_item_t)request);
 
 if (write_queue_size > dev->write_queue_peak) {
     dev->write_queue_peak = write_queue_size;
@@ -2973,8 +2971,8 @@ int eth_read(ETH_DEV *dev, ETH_PACK *packet, ETH_PCALLBACK routine)
 
     status = 0;
     /* Lock-free dequeue - sim_tailq_t is SPSC safe */
-    if (!sim_tailq_empty(&dev->read_queue)) {
-        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+    if (!sim_tailq_empty(dev->read_queue)) {
+        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(dev->read_queue);
         if (item) {
             const uint8_t *src_data = item->packet.oversize ? item->packet.oversize : item->packet.msg;
             packet->len = item->packet.len;
@@ -3243,7 +3241,7 @@ if (dev->backend.eth_api == ETH_API_PCAP) {
     }
 #        ifdef USE_READER_THREAD
   /* Lock-free queue clear */
-  eth_tailq_clear (&dev->read_queue); /* Empty FIFO Queue when filter list changes */
+  eth_tailq_clear (dev->read_queue); /* Empty FIFO Queue when filter list changes */
 #        endif
   }
 #    endif     /* USE_BPF */
@@ -3292,8 +3290,8 @@ if (dev->asynch_io)
   fprintf(st, "  Interrupt Latency:       %d uSec\n", dev->asynch_io_latency);
 if (dev->throttle_count)
   fprintf(st, "  Throttle Delays:         %d\n", dev->throttle_count);
-fprintf(st, "  Read Queue: Count:       %ld\n", (long)sim_tailq_count(&dev->read_queue));
-fprintf(st, "  Read Queue: Allocated:   %ld\n", (long)sim_tailq_allocated(&dev->read_queue));
+fprintf(st, "  Read Queue: Count:       %ld\n", (long)sim_tailq_count(dev->read_queue));
+fprintf(st, "  Read Queue: Allocated:   %ld\n", (long)sim_tailq_allocated(dev->read_queue));
 fprintf(st, "  Peak Write Queue Size:   %d\n", dev->write_queue_peak);
 #    endif
 if (dev->error_needs_reset)

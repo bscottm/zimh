@@ -148,12 +148,12 @@ typedef struct sim_atomic_value_s {
  * Initialization, destruction:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=*/
 
-static inline void sim_atomic_init(sim_atomic_value_t *p)
+static FORCE_INLINE void sim_atomic_init(sim_atomic_value_t *p)
 {
     p->value = 0;
 }
 
-static inline void sim_atomic_destroy(sim_atomic_value_t *p)
+static FORCE_INLINE void sim_atomic_destroy(sim_atomic_value_t *p)
 {
     p->value = 0xcafef00d;
 }
@@ -162,7 +162,7 @@ static inline void sim_atomic_destroy(sim_atomic_value_t *p)
  * Primitives:
  *~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~*/
 
-static inline sim_atomic_type_t sim_atomic_get_explicit(const sim_atomic_value_t *p, sim_memory_order_t order)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_get_explicit(const sim_atomic_value_t *p, sim_memory_order_t order)
 {
     sim_atomic_type_t retval;
 
@@ -182,12 +182,12 @@ static inline sim_atomic_type_t sim_atomic_get_explicit(const sim_atomic_value_t
     return retval;
 }
 
-static inline sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_get(const sim_atomic_value_t *p)
 {
     return sim_atomic_get_explicit(p, SIM_ATOMIC_SEQ_CST);
 }
 
-static inline void sim_atomic_put_explicit(sim_atomic_value_t *p, sim_atomic_type_t newval, sim_memory_order_t order)
+static FORCE_INLINE void sim_atomic_put_explicit(sim_atomic_value_t *p, sim_atomic_type_t newval, sim_memory_order_t order)
 {
 #    if HAVE_STD_ATOMIC
     atomic_store_explicit(&p->value, newval, order);
@@ -202,12 +202,12 @@ static inline void sim_atomic_put_explicit(sim_atomic_value_t *p, sim_atomic_typ
 #    endif
 }
 
-static inline void sim_atomic_put(sim_atomic_value_t *p, sim_atomic_type_t newval)
+static FORCE_INLINE void sim_atomic_put(sim_atomic_value_t *p, sim_atomic_type_t newval)
 {
     sim_atomic_put_explicit(p, newval, SIM_ATOMIC_SEQ_CST);
 }
 
-static inline sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_atomic_type_t x)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_atomic_type_t x)
 {
     sim_atomic_type_t retval;
 
@@ -234,7 +234,7 @@ static inline sim_atomic_type_t sim_atomic_add(sim_atomic_value_t *p, sim_atomic
     return retval;
 }
 
-static inline sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_atomic_type_t x)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_atomic_type_t x)
 {
     sim_atomic_type_t retval;
 
@@ -262,7 +262,7 @@ static inline sim_atomic_type_t sim_atomic_sub(sim_atomic_value_t *p, sim_atomic
     return retval;
 }
 
-static inline sim_atomic_type_t sim_atomic_inc(sim_atomic_value_t *p)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_inc(sim_atomic_value_t *p)
 {
     sim_atomic_type_t retval;
 
@@ -279,7 +279,7 @@ static inline sim_atomic_type_t sim_atomic_inc(sim_atomic_value_t *p)
     return retval;
 }
 
-static inline sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
 {
     sim_atomic_type_t retval;
 
@@ -305,7 +305,7 @@ static inline sim_atomic_type_t sim_atomic_dec(sim_atomic_value_t *p)
  * If they don't match, stores the current value in *expected and returns zero (false).
  * Uses SEQ_CST ordering for both success and failure.
  */
-static inline int sim_atomic_cas(sim_atomic_value_t *p, sim_atomic_type_t *expected, sim_atomic_type_t desired)
+static FORCE_INLINE int sim_atomic_cas(sim_atomic_value_t *p, sim_atomic_type_t *expected, sim_atomic_type_t desired)
 {
     int result;
 
@@ -333,7 +333,7 @@ static inline int sim_atomic_cas(sim_atomic_value_t *p, sim_atomic_type_t *expec
 /* Weak CAS variant: May spuriously fail even when values match.
  * Useful in loops where retry is acceptable. Generally faster on some architectures.
  */
-static inline int sim_atomic_cas_weak(sim_atomic_value_t *p, sim_atomic_type_t *expected, sim_atomic_type_t desired)
+static FORCE_INLINE int sim_atomic_cas_weak(sim_atomic_value_t *p, sim_atomic_type_t *expected, sim_atomic_type_t desired)
 {
     int result;
 
@@ -356,7 +356,7 @@ static inline int sim_atomic_cas_weak(sim_atomic_value_t *p, sim_atomic_type_t *
 /* Atomic exchange: Atomically replaces the value with newval and returns the old value.
  * Uses SEQ_CST ordering.
  */
-static inline sim_atomic_type_t sim_atomic_exchange(sim_atomic_value_t *p, sim_atomic_type_t newval)
+static FORCE_INLINE sim_atomic_type_t sim_atomic_exchange(sim_atomic_value_t *p, sim_atomic_type_t newval)
 {
     sim_atomic_type_t retval;
 

@@ -166,7 +166,7 @@ int eth_reader_nat(eth_backend_t *backend, ETH_DEV *dev)
     /* slirp_pollfds_poll() is void, so we can't tell from its return value
      * whether packets arrived. But packets delivered via _slirp_callback()
      * are queued to dev->read_queue, so check if the queue is non-empty. */
-    return sim_tailq_empty(&dev->read_queue) ? 0 : 1;
+    return sim_tailq_empty(dev->read_queue) ? 0 : 1;
 #else
     (void)backend;
     (void)dev;

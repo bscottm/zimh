@@ -240,13 +240,13 @@ struct eth_device {
   int threads_ready; /* Count of threads that have signaled ready */
   
   /* Reader thread: */
-  sim_tailq_t read_queue; /* Lock-free SPSC packet queue */
+  sim_tailq_t *read_queue; /* Lock-free SPSC packet queue */
 
   /* Writer thread: */
   sim_mutex_t writer_lock;
   sim_mutex_t self_lock;
   sim_cond_t writer_cond;
-  sim_tailq_t write_requests;
+  sim_tailq_t *write_requests;
   int write_queue_peak;
   ETH_WRITE_REQUEST *write_buffers;
   t_stat write_status;
@@ -333,8 +333,7 @@ t_stat ethq_destroy(ETH_QUE *que); /* release FIFO queue */
 #if defined(USE_READER_THREAD)
 /* Adapter functions for lock-free SPSC queue - only used internally in
  * sim_ether.c */
-t_stat eth_tailq_init(sim_tailq_t *que,
-                      int max);           /* initialize lock-free queue */
+sim_tailq_t *eth_tailq_init();            /* initialize lock-free queue */
 void eth_tailq_clear(sim_tailq_t *que);   /* clear lock-free queue */
 void eth_tailq_destroy(sim_tailq_t *que); /* destroy lock-free queue */
 void eth_tailq_insert_data(sim_tailq_t *que,
