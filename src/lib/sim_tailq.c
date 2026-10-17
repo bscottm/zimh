@@ -249,7 +249,8 @@ sim_tailq_elem_t *tailq_add_node(sim_tailq_t *tailq)
         current_tail = (sim_tailq_elem_t *)sim_atomic_ptr_get(&tailq->tail);
         tail_next = (sim_tailq_elem_t *)sim_atomic_ptr_get(&current_tail->next);
 
-        sim_atomic_ptr_put_explicit(&node->next, tail_next, SIM_ATOMIC_RELEASE);
+        // sim_atomic_ptr_put_explicit(&node->next, tail_next, SIM_ATOMIC_RELEASE);
+        sim_atomic_ptr_put(&node->next, tail_next);
 
         expected = tail_next;
         if (sim_atomic_ptr_cas(&current_tail->next, &expected, node)) {
