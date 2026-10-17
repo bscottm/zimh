@@ -72,9 +72,9 @@ uint_t vu_updkstart[2], vu_updkend[2];
 uint_t VU[2];
 
 REG vu_reg[] = {
-    { REGDATA ( Готов, READY2, 2,  8, 16, 1, NULL, NULL, 0, 0, 0) },
-    { ORDATA  ( ВУ-0, VU[0], 24) },
-    { ORDATA  ( ВУ-1, VU[1], 24) },
+    { REGDATA ( "Готов", READY2, 2,  8, 16, 1, NULL, NULL, 0, 0, 0) },
+    { ORDATA  ( "ВУ-0", VU[0], 24) },
+    { ORDATA  ( "ВУ-1", VU[1], 24) },
     { 0 }
 };
 
