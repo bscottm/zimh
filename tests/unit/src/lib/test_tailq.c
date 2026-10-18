@@ -5,7 +5,6 @@
 #include <stddef.h>
 #include <setjmp.h>
 #include <cmocka.h>
-#include <cmocka_version.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -15,6 +14,9 @@
 #include "sim_tailq.h"
 #include "sim_threads.h"
 
+#if defined(HAVE_CMOCKA_VERSION_H)
+#    include <cmocka_version.h>
+#endif
 
 #if defined(CMOCKA_VERSION_MAJOR) && CMOCKA_VERSION_MAJOR >= 2
 #    define sim_assert_int_in_range(val, min, max) assert_int_in_range((val), (min), (max))

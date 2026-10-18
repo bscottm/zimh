@@ -198,13 +198,26 @@ if(WITH_UNIT_TESTS)
 
         if(TARGET cmocka::cmocka)
             target_link_libraries(unittest INTERFACE cmocka::cmocka)
+            get_target_property(CMOCKA_INCLUDE_DIRS cmocka::cmocka INTERFACE_INCLUDE_DIRECTORIES)
         endif()
 
         if(TARGET PkgConfig::CMOCKA)
             target_link_libraries(unittest INTERFACE PkgConfig::CMOCKA)
+            get_target_property(CMOCKA_INCLUDE_DIRS PkgConfig::CMOCKA INTERFACE_INCLUDE_DIRECTORIES)
         endif()
 
         target_link_libraries(unittest INTERFACE sim_support)
+
+        include(CheckIncludeFile)
+
+        cmake_push_check_state()
+        string(APPEND CMAKE_REQUIRED_INCLUDES  ${CMOCKA_INCLUDE_DIRS})
+        check_include_file("cmocka_version.h" have_cmocka_version_h)
+        cmake_pop_check_state()
+
+        if (have_cmocka_version_h)
+            target_compile_definitions(unittest INTERFACE "HAVE_CMOCKA_VERSION_H")
+        endif ()
     endif()
 endif()
 
