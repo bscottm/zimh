@@ -347,6 +347,14 @@ t_stat sim_disk_ramdisk_create(UNIT *uptr, const sim_disk_ramdisk_spec *spec,
                                 "without SAVE=\n",
                                 sim_uname(uptr));
         }
+        /* Reject restore when SAVE= explicitly points to the null device */
+        if (strcmp(created->save_path, NULL_DEVICE) == 0) {
+            sim_disk_ramdisk_free(created);
+            return sim_messagef(SCPE_ARG,
+                                "%s: RAMDISK: cannot restore contents from "
+                                "null device\n",
+                                sim_uname(uptr));
+        }
         r = seed_from_file(uptr, created, created->save_path, true);
     } else if (spec->has_from) {
         r = seed_from_file(uptr, created, spec->from, false);
