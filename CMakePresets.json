@@ -433,6 +433,13 @@
       "execution": { "timeout": 300 }
     },
     {
+      "name": "ninja-relwithdebinfo",
+      "configurePreset": "ninja-relwithdebinfo",
+      "displayName": "Test: Ninja RelWithDebInfo",
+      "output": { "outputOnFailure": true },
+      "execution": { "timeout": 300 }
+    },
+    {
       "name": "ninja-release",
       "configurePreset": "ninja-release",
       "displayName": "Test: Ninja Release",
