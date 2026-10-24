@@ -173,8 +173,8 @@ void do_stop_eth_threads(ETH_DEV *dev)
 static int dequeue_packet_to_capture(ETH_DEV *dev, struct callback_capture *capture)
 {
 #if defined(USE_READER_THREAD)
-    if (!sim_tailq_empty(&dev->read_queue)) {
-        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(&dev->read_queue);
+    if (!sim_tailq_empty(dev->read_queue)) {
+        struct eth_item *item = (struct eth_item *)sim_tailq_dequeue(dev->read_queue);
         if (item && item->packet.len <= sizeof(capture->last_packet)) {
             capture->packet_count++;
             capture->last_packet_size = (int)item->packet.len;
