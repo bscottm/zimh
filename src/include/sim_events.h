@@ -1,0 +1,66 @@
+/* sim_events.h: Non-intrusive event queue public API */
+// SPDX-FileCopyrightText: 2024 B. Scott Michel
+// SPDX-License-Identifier: X11
+
+#ifndef SIM_EVENTS_H_
+#define SIM_EVENTS_H_
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "sim_defs.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Event heap initialization and cleanup */
+
+/* Initialize the event heap - call once at simulator startup */
+t_stat sim_event_heap_init(void);
+
+/* Clean up the event heap - call at simulator shutdown */
+void sim_event_heap_cleanup(void);
+
+/* Event heap operations */
+
+/* Insert an event into the heap - O(log n) complexity */
+t_stat sim_event_heap_insert(UNIT_EVENT *event);
+
+/* Remove and return the earliest-firing event - O(log n) complexity
+   Returns NULL if heap is empty. Caller takes ownership of returned event. */
+UNIT_EVENT *sim_event_heap_pop(void);
+
+/* Peek at the earliest-firing event without removing it - O(1) complexity
+   Returns NULL if heap is empty. Heap retains ownership. */
+UNIT_EVENT *sim_event_heap_peek(void);
+
+/* Remove an event from an arbitrary position - O(log n) complexity
+   Used by sim_cancel() to remove a specific event by heap_index. */
+t_stat sim_event_heap_remove_at(size_t index);
+
+/* Query functions */
+
+/* Return the number of events currently in the heap - O(1) complexity */
+size_t sim_event_heap_count(void);
+
+/* Get the current instruction time maintained by the event system */
+uint64_t sim_event_heap_now(void);
+
+/* Set the current instruction time (called by sim_process_event) */
+void sim_event_heap_set_now(uint64_t time);
+
+/* Debug validation */
+
+#ifndef NDEBUG
+/* Validate heap invariant - returns true if heap property holds
+   Use in assertions during development: assert(sim_event_heap_validate()); */
+bool sim_event_heap_validate(void);
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SIM_EVENTS_H_ */

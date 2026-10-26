@@ -278,6 +278,7 @@ typedef uint32_t t_addr;
 
 typedef struct DEVICE DEVICE;
 typedef struct UNIT UNIT;
+typedef struct unit_event UNIT_EVENT;
 typedef struct REG REG;
 typedef struct CTAB CTAB;
 typedef struct C1TAB C1TAB;
@@ -432,6 +433,22 @@ struct UNIT {
     double a_due_gtime;  /* due time (in instructions) for timer event */
     double a_usec_delay; /* time delay for timer event */
 #    endif
+};
+
+/* Event descriptor structure - separates event tracking from unit state
+
+   This structure enables non-intrusive event scheduling with O(log n)
+   performance. Each scheduled event is represented by a separate UNIT_EVENT
+   allocation that tracks when the event fires and maintains its position
+   in the event heap for efficient updates and cancellation.
+*/
+
+struct unit_event {
+    UNIT *unit;              /* backpointer to unit being scheduled */
+    uint64_t fire_time;      /* absolute instruction time when event fires */
+    double fire_wallclock;   /* absolute wall-clock time (for timer events) */
+    uint32_t heap_index;     /* position in min-heap (for O(log n) removal) */
+    bool is_timer_event;     /* true: wall-clock scheduling; false: instruction-based */
 };
 
 /* Unit flags */
