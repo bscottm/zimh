@@ -349,6 +349,46 @@ void sim_merge_async_events(void)
 2. Choose synchronization strategy (A/B/C above)
 3. Implement and stress-test with `tmxr` devices
 
+## Vestigial Definitions Removed
+
+Once phases 2-4 are complete, these definitions become obsolete and can be
+removed:
+
+### QUEUE_LIST_END Sentinel (sim_defs.h:275)
+
+```c
+/* Old: Weird sentinel value to distinguish NULL from "end of list" */
+#define QUEUE_LIST_END ((UNIT *)1)
+```
+
+**Why it existed:** The linked list implementation needed to distinguish:
+- `NULL` = unit not in any queue
+- `QUEUE_LIST_END` = end of the queue chain
+
+This was necessary because `UNIT.next` served double duty as both "am I
+queued?" flag and linked list pointer.
+
+**Why it's vestigial after Phase 2:**
+- Min-heap uses array indexing, not pointer chasing
+- Empty heap: `heap->count == 0` (no sentinel needed)
+- Unit not scheduled: `uptr->event == NULL` (natural NULL test)
+- No more pointer chain traversal with `QUEUE_LIST_END` checks
+
+**Removal in Phase 2:**
+1. Replace all `for (cptr = queue; cptr != QUEUE_LIST_END; cptr = cptr->next)`
+   with heap iteration
+2. Replace all `queue == QUEUE_LIST_END` with `sim_event_heap_count() == 0`
+3. Remove `#define QUEUE_LIST_END` from sim_defs.h
+4. Remove all `QUEUE_LIST_END` references from scp.c (24 occurrences)
+
+**Grep shows current usage:**
+```
+src/core/scp.c: 24 references
+src/core/sim_defs.h: 1 definition + 1 comment
+```
+
+All become dead code once the heap replaces linked list traversal.
+
 ## Testing Requirements
 
 Per repository `TESTING.md` methodology:
