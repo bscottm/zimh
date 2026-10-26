@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sim_atomic.h"
 #include "sim_defs.h"
 
 /* Event heap structure */

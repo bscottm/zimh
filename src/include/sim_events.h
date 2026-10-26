@@ -15,10 +15,7 @@
 extern "C" {
 #endif
 
-/* Event heap initialization and cleanup */
-
-/* Initialize the event heap - call once at simulator startup */
-t_stat sim_event_heap_init(void);
+/* Event heap cleanup */
 
 /* Clean up the event heap - call at simulator shutdown */
 void sim_event_heap_cleanup(void);

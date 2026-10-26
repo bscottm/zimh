@@ -44,12 +44,12 @@ typedef struct event_manager {
     /* Global state */
     uint64_t now;               /* current instruction time */
     
-    /* Statistics */
-    uint64_t total_allocs;      /* lifetime allocations */
-    uint64_t total_frees;       /* lifetime frees */
-    uint64_t malloc_slow;       /* malloc fallbacks */
-    uint64_t heap_inserts;      /* total insertions */
-    uint64_t heap_removes;      /* total removals */
+    /* Statistics - atomic for lock-free slow path updates */
+    uint64_t heap_inserts;      /* total insertions (protected by lock) */
+    uint64_t heap_removes;      /* total removals (protected by lock) */
+    sim_atomic_value_t total_allocs_atomic;   /* atomic counter */
+    sim_atomic_value_t total_frees_atomic;    /* atomic counter */
+    sim_atomic_value_t malloc_slow_atomic;    /* atomic counter */
     
     /* Thread safety (Phase 1: simple mutex; Phase 4: lock-free) */
     pthread_mutex_t lock;       /* protects entire structure */
@@ -70,6 +70,11 @@ static EVENT_MANAGER *sim_event_manager = NULL;
 #define INITIAL_HEAP_CAPACITY 128  /* initial heap size */
 ```
 
+**Key changes from scattered globals:**
+1. **sim_atomic_value_t** - Uses portable atomics from `sim_atomic.h` instead of `__sync_*` intrinsics
+2. **Lazy initialization** - No public `sim_event_heap_init()`, manager created on first `sim_event_alloc()`
+3. **Atomic counters** - `malloc_slow`, `total_allocs`, `total_frees` use `sim_atomic_add()` for lock-free updates in slow path
+
 **Benefits:**
 1. **Single allocation point** - One `malloc(sizeof(EVENT_MANAGER))` at init
 2. **Locality** - Heap metadata + free list metadata in same cache line
@@ -82,8 +87,12 @@ static EVENT_MANAGER *sim_event_manager = NULL;
 ```c
 UNIT_EVENT *sim_event_alloc(void)
 {
-    if (sim_event_manager == NULL)
-        return NULL;
+    if (sim_event_manager == NULL) {
+        /* Lazy initialization on first use */
+        sim_event_manager_init();
+        if (sim_event_manager == NULL)
+            return NULL;
+    }
     
     pthread_mutex_lock(&sim_event_manager->lock);
     
@@ -108,13 +117,17 @@ UNIT_EVENT *sim_event_alloc(void)
     if (node == NULL)
         return NULL;
     
-    __sync_fetch_and_add(&sim_event_manager->malloc_slow, 1);
-    __sync_fetch_and_add(&sim_event_manager->total_allocs, 1);
+    /* Use portable atomic add from sim_atomic.h */
+    sim_atomic_add(&sim_event_manager->malloc_slow_atomic, 1);
+    sim_atomic_add(&sim_event_manager->total_allocs_atomic, 1);
     
     memset(&node->event, 0, sizeof(UNIT_EVENT));
     return &node->event;
 }
 ```
+
+**Note:** Uses `sim_atomic_add()` from `src/include/sim_atomic.h` for
+portable cross-platform atomic operations instead of raw `__sync_fetch_and_add`.
 
 ### Deallocation (Unified)
 
@@ -154,7 +167,7 @@ void sim_event_free(UNIT_EVENT *event)
 ### Initialization
 
 ```c
-t_stat sim_event_manager_init(void)
+static t_stat sim_event_manager_init(void)
 {
     if (sim_event_manager != NULL)
         return SCPE_OK;  /* already initialized */
@@ -166,6 +179,11 @@ t_stat sim_event_manager_init(void)
     
     /* Initialize mutex */
     pthread_mutex_init(&sim_event_manager->lock, NULL);
+    
+    /* Initialize atomic counters */
+    sim_atomic_init(&sim_event_manager->total_allocs_atomic);
+    sim_atomic_init(&sim_event_manager->total_frees_atomic);
+    sim_atomic_init(&sim_event_manager->malloc_slow_atomic);
     
     /* Allocate heap array */
     sim_event_manager->heap_events = 
@@ -195,11 +213,8 @@ t_stat sim_event_manager_init(void)
     return SCPE_OK;
 }
 
-/* Backward-compatible wrapper */
-t_stat sim_event_heap_init(void)
-{
-    return sim_event_manager_init();
-}
+/* Note: No public sim_event_heap_init() - initialization happens
+   automatically on first sim_event_alloc() call */
 ```
 
 ### Cleanup (Unified)
@@ -233,6 +248,11 @@ void sim_event_manager_cleanup(void)
         node = next;
     }
     
+    /* Destroy atomic counters */
+    sim_atomic_destroy(&sim_event_manager->total_allocs_atomic);
+    sim_atomic_destroy(&sim_event_manager->total_frees_atomic);
+    sim_atomic_destroy(&sim_event_manager->malloc_slow_atomic);
+    
     pthread_mutex_unlock(&sim_event_manager->lock);
     pthread_mutex_destroy(&sim_event_manager->lock);
     
@@ -240,7 +260,7 @@ void sim_event_manager_cleanup(void)
     sim_event_manager = NULL;
 }
 
-/* Backward-compatible wrapper */
+/* Public API wrapper */
 void sim_event_heap_cleanup(void)
 {
     sim_event_manager_cleanup();
@@ -381,6 +401,11 @@ t_stat sim_show_event_stats(FILE *st, DEVICE *dptr, UNIT *uptr,
     
     pthread_mutex_lock(&sim_event_manager->lock);
     
+    /* Read atomic counters */
+    uint64_t total_allocs = sim_atomic_get(&sim_event_manager->total_allocs_atomic);
+    uint64_t total_frees = sim_atomic_get(&sim_event_manager->total_frees_atomic);
+    uint64_t malloc_slow = sim_atomic_get(&sim_event_manager->malloc_slow_atomic);
+    
     fprintf(st, "Event system statistics:\n");
     fprintf(st, "  Heap:\n");
     fprintf(st, "    Active events:    %zu\n", sim_event_manager->heap_count);
@@ -393,13 +418,12 @@ t_stat sim_show_event_stats(FILE *st, DEVICE *dptr, UNIT *uptr,
     fprintf(st, "    High water mark:  %zu\n", sim_event_manager->free_high_water);
     fprintf(st, "\n");
     fprintf(st, "  Allocation:\n");
-    fprintf(st, "    Total allocs:     %lu\n", sim_event_manager->total_allocs);
-    fprintf(st, "    Total frees:      %lu\n", sim_event_manager->total_frees);
-    fprintf(st, "    Malloc fallbacks: %lu", sim_event_manager->malloc_slow);
+    fprintf(st, "    Total allocs:     %lu\n", total_allocs);
+    fprintf(st, "    Total frees:      %lu\n", total_frees);
+    fprintf(st, "    Malloc fallbacks: %lu", malloc_slow);
     
-    if (sim_event_manager->total_allocs > 0) {
-        double pct = 100.0 * sim_event_manager->malloc_slow / 
-                     sim_event_manager->total_allocs;
+    if (total_allocs > 0) {
+        double pct = 100.0 * malloc_slow / total_allocs;
         fprintf(st, " (%.1f%%)\n", pct);
         
         if (pct > 10.0)
@@ -414,6 +438,9 @@ t_stat sim_show_event_stats(FILE *st, DEVICE *dptr, UNIT *uptr,
     return SCPE_OK;
 }
 ```
+
+**Note:** Uses `sim_atomic_get()` from `sim_atomic.h` to safely read
+atomic counters that may be updated concurrently by slow path allocation.
 
 Expose via: `SHOW EVENT STATISTICS`
 
