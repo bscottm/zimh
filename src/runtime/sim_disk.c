@@ -53,8 +53,6 @@ Internal routines:
 
 */
 
-#define _FILE_OFFSET_BITS 64    /* 64 bit file offset for raw I/O operations  */
-
 #include "sim_defs.h"
 #include "sim_disk.h"
 #include "sim_disk_ramdisk.h"
@@ -62,16 +60,9 @@ Internal routines:
 #include "sim_ether.h"
 #include "sim_types.h"
 #include "sim_uuid.h"
-#include <ctype.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
+
 #include <sys/stat.h>
 #include <time.h>
-
-#if defined SIM_ASYNCH_IO
-#include <pthread.h>
-#endif
 
 /* Newly created SIMH (and possibly RAW) disk containers       */
 /* will have this data as the last 512 bytes of the container  */
