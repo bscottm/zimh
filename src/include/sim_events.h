@@ -57,4 +57,11 @@ void sim_event_heap_set_now(uint64_t time);
    Use in assertions during development: assert(sim_event_heap_validate()); */
 bool sim_event_heap_validate(void);
 
+/* Integration layer functions (Phase 4A) */
+
+/* Heap-based replacements for core event functions */
+t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time);
+t_stat sim_cancel_heap(UNIT *uptr);
+t_stat sim_process_event_heap(void);
+
 #endif /* SIM_EVENTS_H_ */

@@ -218,6 +218,7 @@
 #include "sim_video.h"
 #include "sim_sock.h"
 #include "sim_frontpanel.h"
+#include "sim_events.h"
 #include "zimh_version.h"
 #include <ctype.h>
 #include <inttypes.h>
@@ -10251,9 +10252,6 @@ return _sim_activate (uptr, event_time);
 
 t_stat _sim_activate (UNIT *uptr, int32_t event_time)
 {
-UNIT *cptr, *prvptr;
-int32_t accum;
-
 AIO_ACTIVATE (_sim_activate, uptr, event_time);
 if (sim_is_active (uptr))                               /* already active? */
     return SCPE_OK;
@@ -10261,27 +10259,8 @@ UPDATE_SIM_TIME;                                        /* update sim time */
 
 sim_debug (SIM_DBG_ACTIVATE, &sim_scp_dev, "Activating %s delay=%d\n", sim_uname (uptr), event_time);
 
-prvptr = NULL;
-accum = 0;
-for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
-    if (event_time < (accum + cptr->time))
-        break;
-    accum = accum + cptr->time;
-    prvptr = cptr;
-    }
-if (prvptr == NULL) {                                   /* insert at head */
-    cptr = uptr->next = sim_clock_queue;
-    sim_clock_queue = uptr;
-    }
-else {
-    cptr = uptr->next = prvptr->next;                   /* insert at prvptr */
-    prvptr->next = uptr;
-    }
-uptr->time = event_time - accum;
-if (cptr != QUEUE_LIST_END)
-    cptr->time = cptr->time - uptr->time;
-sim_interval = sim_clock_queue->time;
-return SCPE_OK;
+/* Phase 4A: Use heap-based event scheduling */
+return _sim_activate_heap(uptr, event_time);
 }
 
 /* sim_activate_abs - activate (queue) event even if event already scheduled
@@ -10381,7 +10360,6 @@ return sim_timer_activate_after (uptr, usec_delay);
 
 t_stat sim_cancel (UNIT *uptr)
 {
-UNIT *cptr, *nptr;
 t_stat cancel_status;
 
 AIO_VALIDATE(uptr);
@@ -10394,43 +10372,14 @@ if (uptr->dynflags & UNIT_TMR_UNIT) {
     }
 AIO_CANCEL(uptr);
 AIO_UPDATE_QUEUE;
-if (sim_clock_queue == QUEUE_LIST_END)
-    return SCPE_OK;
+
 if (!sim_is_active (uptr))
     return SCPE_OK;
 UPDATE_SIM_TIME;                                        /* update sim time */
 sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Canceling Event for %s\n", sim_uname(uptr));
-nptr = QUEUE_LIST_END;
 
-if (sim_clock_queue == uptr) {
-    nptr = sim_clock_queue = uptr->next;
-    uptr->next = NULL;                                  /* hygiene */
-    }
-else {
-    for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
-        if (cptr->next == uptr) {
-            nptr = cptr->next = uptr->next;
-            uptr->next = NULL;                          /* hygiene */
-            break;                                      /* end queue scan */
-            }
-        }
-    }
-if (nptr != QUEUE_LIST_END)
-    nptr->time += (uptr->next) ? 0 : uptr->time;
-if (!uptr->next)
-    uptr->time = 0;
-uptr->usecs_remaining = 0;
-if (sim_clock_queue != QUEUE_LIST_END)
-    sim_interval = sim_clock_queue->time;
-else
-    sim_interval = noqueue_time = NOQUEUE_WAIT;
-if (uptr->next) {
-    sim_printf ("Cancel failed for %s\n", sim_uname(uptr));
-    if (sim_deb)
-        fclose(sim_deb);
-    abort ();
-    }
-return SCPE_OK;
+/* Phase 4A: Use heap-based event cancellation */
+return sim_cancel_heap(uptr);
 }
 
 /* sim_is_active - test for entry in queue
