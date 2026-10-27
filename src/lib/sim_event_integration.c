@@ -61,9 +61,10 @@ static inline void event_heap_lock_release(void)
 /* Helper: Ensure heap is initialized (lazy init) */
 static inline void ensure_heap_initialized(void)
 {
+    /* Auto-initialize heap on first use */
     if (sim_event_heap_count() == 0 && sim_event_heap_peek() == NULL) {
-        /* Heap exists but may need initialization */
-        /* sim_event_heap_init() removed - heap self-initializes */
+        /* Check if heap exists at all */
+        sim_event_heap_init();  /* Initialize if needed - idempotent */
     }
 }
 
@@ -78,6 +79,9 @@ t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time)
 {
     UNIT_EVENT *evt;
     t_stat status;
+
+    /* Ensure heap is initialized */
+    ensure_heap_initialized();
 
     /* Check if already active */
     if (uptr->next != NULL)
@@ -129,6 +133,9 @@ t_stat sim_cancel_heap(UNIT *uptr)
     UNIT_EVENT *evt;
     t_stat status;
 
+    /* Ensure heap is initialized */
+    ensure_heap_initialized();
+
     /* Not active? */
     if (uptr->next == NULL)
         return SCPE_OK;
@@ -177,6 +184,9 @@ t_stat sim_process_event_heap(void)
     UNIT_EVENT *evt;
     UNIT *uptr;
     t_stat reason;
+
+    /* Ensure heap is initialized */
+    ensure_heap_initialized();
 
     event_heap_lock_acquire();
 
