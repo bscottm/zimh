@@ -278,7 +278,7 @@ typedef uint32_t t_addr;
 
 typedef struct DEVICE DEVICE;
 typedef struct UNIT UNIT;
-typedef struct unit_event UNIT_EVENT;
+typedef struct UNIT_EVENT UNIT_EVENT;
 typedef struct REG REG;
 typedef struct CTAB CTAB;
 typedef struct C1TAB C1TAB;
@@ -443,7 +443,7 @@ struct UNIT {
    in the event heap for efficient updates and cancellation.
 */
 
-struct unit_event {
+struct UNIT_EVENT {
     UNIT *unit;              /* backpointer to unit being scheduled */
     uint64_t fire_time;      /* absolute instruction time when event fires */
     double fire_wallclock;   /* absolute wall-clock time (for timer events) */
