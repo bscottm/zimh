@@ -10142,7 +10142,8 @@ if (sim_interval > 0) {
     sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Interval not yet expired: %d\n", sim_interval);
     return SCPE_OK;
     }
-if (sim_clock_queue == QUEUE_LIST_END) {                /* queue empty? */
+/* Phase 4A: Check heap instead of linked list */
+if (sim_event_heap_count() == 0) {                      /* queue empty? */
     sim_interval = noqueue_time = NOQUEUE_WAIT;         /* flag queue empty */
     sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Queue Empty New Interval = %d\n", sim_interval);
     return SCPE_OK;
@@ -10157,28 +10158,39 @@ if (sim_interval < 0) {
     sim_interval_catchup = sim_interval;
     sim_interval = 0;
     UPDATE_SIM_TIME;                          /* update sim time */
-    sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "Processing event for %s with sim_interval = %d, event time = %.0f\n",
-        sim_uname (sim_clock_queue), sim_interval_catchup, sim_gtime ());
-    if (sim_clock_queue->next != QUEUE_LIST_END)
-        sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "- Next event for %s after = %d\n",
-            sim_uname (sim_clock_queue->next), sim_clock_queue->next->time);
-    sim_vm_time -= sim_clock_queue->time;
-    sim_rtime -= sim_clock_queue->time;
+    /* Phase 4A: Heap-based event system - debug output simplified */
+    sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "Processing event with negative interval: sim_interval_catchup = %d, event time = %.0f\n",
+        sim_interval_catchup, sim_gtime ());
+    /* Phase 4A: Can't easily get next event time from heap without popping, skip that debug */
     }
 else
     sim_interval_catchup = 0;
 do {
-    uptr = sim_clock_queue;                             /* get first */
-    sim_clock_queue = uptr->next;                       /* remove first */
+    /* Phase 4A: Pop event from heap instead of linked list */
+    UNIT_EVENT *evt = sim_event_heap_pop();
+    if (evt == NULL)
+        break;  /* No more events */
+
+    uptr = evt->unit;
+    uint64_t evt_fire_time = evt->fire_time;  /* Save fire_time before freeing evt */
     uptr->next = NULL;                                  /* hygiene */
     uptr->time = 0;
-    if (sim_clock_queue != QUEUE_LIST_END) {
+
+    /* Update sim_interval based on next event in heap */
+    UNIT_EVENT *next_evt = sim_event_heap_peek();
+    if (next_evt != NULL) {
+        /* Calculate time to next event - with absolute times this is simpler */
+        int32_t next_time = (int32_t)(next_evt->fire_time - evt_fire_time);
         if (sim_interval_catchup < 0)
             sim_interval = -sim_interval_catchup;
-        sim_interval += sim_interval_catchup + sim_clock_queue->time;
+        sim_interval += sim_interval_catchup + next_time;
         }
     else
         sim_interval = noqueue_time = NOQUEUE_WAIT;
+
+    /* Free the event structure */
+    free(evt);
+
     AIO_EVENT_BEGIN(uptr);
     if (uptr->usecs_remaining) {
         sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname (uptr), uptr->usecs_remaining);
@@ -10193,9 +10205,14 @@ do {
         }
     AIO_EVENT_COMPLETE(uptr, reason);
     if (sim_interval_catchup < -1) {
-        sim_interval_catchup += sim_clock_queue->time;
-        sim_vm_time += sim_clock_queue->time;
-        sim_rtime += sim_clock_queue->time;
+        /* Phase 4A: With heap peek, we can still do time adjustments */
+        UNIT_EVENT *catchup_next = sim_event_heap_peek();
+        if (catchup_next != NULL) {
+            int32_t next_delta = (int32_t)(catchup_next->fire_time - evt_fire_time);
+            sim_interval_catchup += next_delta;
+            sim_vm_time += next_delta;
+            sim_rtime += next_delta;
+            }
         }
     else
         sim_interval_catchup = 0;
@@ -10216,15 +10233,18 @@ do {
         }
     } while ((reason == SCPE_OK) &&
              ((sim_interval + sim_interval_catchup) <= 0) &&
-             (sim_clock_queue != QUEUE_LIST_END) &&
+             (sim_event_heap_count() > 0) &&
              (!stop_cpu));
 
-if (sim_clock_queue == QUEUE_LIST_END) {                /* queue empty? */
+/* Phase 4A: Check heap count instead of queue pointer */
+if (sim_event_heap_count() == 0) {                      /* queue empty? */
     sim_interval = noqueue_time = NOQUEUE_WAIT;         /* flag queue empty */
     sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Queue Complete New Interval = %d\n", sim_interval);
     }
-else
-    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Queue Complete New Interval = %d(%s)\n", sim_interval, sim_uname(sim_clock_queue));
+else {
+    /* Phase 4A: Can't easily get unit name without popping, simplify debug */
+    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Queue Complete New Interval = %d (more events pending)\n", sim_interval);
+    }
 
 if ((reason == SCPE_OK) && stop_cpu) {
     stop_cpu = false;
