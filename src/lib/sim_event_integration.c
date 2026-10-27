@@ -94,7 +94,7 @@ t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time)
 
     /* Fill in event */
     evt->unit = uptr;
-    evt->fire_time = sim_event_heap_now() + event_time;
+    evt->fire_time = (uint64_t)sim_gtime() + event_time;
     evt->is_timer_event = false;
     evt->heap_index = 0; /* will be set by heap_insert */
 
@@ -207,9 +207,6 @@ t_stat sim_process_event_heap(void)
 
     uptr = evt->unit;
 
-    /* Advance time to event fire time */
-    sim_event_heap_set_now(evt->fire_time);
-
     /* Update sim_interval for next event */
     update_sim_interval_from_heap();
 
@@ -260,7 +257,7 @@ static void update_sim_interval_from_heap(void)
     }
 
     /* Calculate delta to next event */
-    now = sim_event_heap_now();
+    now = (uint64_t)sim_gtime();
     if (next_evt->fire_time <= now)
         delta = 0; /* overdue */
     else {
@@ -274,7 +271,7 @@ static void update_sim_interval_from_heap(void)
 /* Helper: Sync UNIT fields from event (for compatibility) */
 static void sync_unit_fields_from_event(UNIT *uptr, UNIT_EVENT *evt)
 {
-    uint64_t now = sim_event_heap_now();
+    uint64_t now = (uint64_t)sim_gtime();
 
     if (evt->fire_time <= now)
         uptr->time = 0;
