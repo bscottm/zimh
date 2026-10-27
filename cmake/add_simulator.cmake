@@ -43,6 +43,7 @@ set(SIM_VIDEO_SOURCES
 target_sources(sim_support PRIVATE
     ${SIMH_CORE_ROOT}/scp_debtab.c
     ${SIMH_LIB_ROOT}/dynstr.c
+    ${SIMH_LIB_ROOT}/sim_events.c
     ${SIMH_LIB_ROOT}/string_util.c
     ${SIMH_LIB_ROOT}/xalloc.c
 )

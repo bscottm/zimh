@@ -29,8 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "sim_atomic.h"
 #include "sim_defs.h"
+#include "sim_atomic.h"
 
 /* Event heap structure */
 
@@ -381,7 +381,7 @@ void sim_event_heap_set_now(uint64_t time)
         sim_event_heap->now = time;
 }
 
-/* Validate heap invariant (debug builds only)
+/* Validate heap invariant
 
    Walks the heap and verifies that every parent fires at or before its
    children. Returns true if the heap property holds, false otherwise.
@@ -389,8 +389,6 @@ void sim_event_heap_set_now(uint64_t time)
    Use in assertions during development:
        assert(sim_event_heap_validate());
 */
-
-#ifndef NDEBUG
 bool sim_event_heap_validate(void)
 {
     if (sim_event_heap == NULL || sim_event_heap->count == 0)
@@ -412,4 +410,3 @@ bool sim_event_heap_validate(void)
 
     return true;
 }
-#endif
