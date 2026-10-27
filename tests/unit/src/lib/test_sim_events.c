@@ -15,6 +15,11 @@
 #include "test_scp_fixture.h"
 #include "test_support.h"
 
+/* Forward declarations of integration functions */
+extern t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time);
+extern t_stat sim_cancel_heap(UNIT *uptr);
+extern t_stat sim_process_event_heap(void);
+
 /* Test fixture */
 
 struct event_heap_fixture {
@@ -405,6 +410,158 @@ static void test_heap_handles_duplicate_fire_times(void **state)
     }
 }
 
+/* Integration Tests - Test heap-based event scheduling */
+
+/* Test: Integration - activate and cancel */
+
+static void test_integration_activate_and_cancel(void **state)
+{
+    struct event_heap_fixture *fixture = *state;
+    UNIT *uptr = &fixture->units[0];
+
+    /* Initialize unit fields */
+    memset(uptr, 0, sizeof(UNIT));
+    uptr->dptr = &fixture->device;
+
+    /* Set current time */
+    sim_event_heap_set_now(1000);
+
+    /* Activate unit */
+    assert_int_equal(_sim_activate_heap(uptr, 100), SCPE_OK);
+    assert_non_null(uptr->next);  /* backward compat: scheduled */
+    assert_int_equal(uptr->time, 100);
+    assert_int_equal(sim_event_heap_count(), 1);
+
+    /* Cancel unit */
+    assert_int_equal(sim_cancel_heap(uptr), SCPE_OK);
+    assert_null(uptr->next);  /* backward compat: not scheduled */
+    assert_int_equal(uptr->time, 0);
+    assert_int_equal(sim_event_heap_count(), 0);
+}
+
+/* Test: Integration - process event fires in order */
+
+static t_stat test_unit_action(UNIT *uptr)
+{
+    int *counter = (int *)uptr->up7;
+    (*counter)++;
+    return SCPE_OK;
+}
+
+static void test_integration_process_events_in_order(void **state)
+{
+    struct event_heap_fixture *fixture = *state;
+    int counters[3] = {0, 0, 0};
+
+    /* Initialize units with action functions */
+    for (int i = 0; i < 3; i++) {
+        memset(&fixture->units[i], 0, sizeof(UNIT));
+        fixture->units[i].dptr = &fixture->device;
+        fixture->units[i].action = test_unit_action;
+        fixture->units[i].up7 = &counters[i];
+    }
+
+    /* Set current time */
+    sim_event_heap_set_now(0);
+
+    /* Schedule events */
+    assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
+    assert_int_equal(_sim_activate_heap(&fixture->units[1], 100), SCPE_OK);
+    assert_int_equal(_sim_activate_heap(&fixture->units[2], 200), SCPE_OK);
+
+    /* Process events - should fire in order 1, 2, 0 */
+    assert_int_equal(sim_process_event_heap(), SCPE_OK);
+    assert_int_equal(counters[1], 1);  /* unit 1 fired first */
+    assert_int_equal(counters[0], 0);
+    assert_int_equal(counters[2], 0);
+
+    assert_int_equal(sim_process_event_heap(), SCPE_OK);
+    assert_int_equal(counters[2], 1);  /* unit 2 fired second */
+    assert_int_equal(counters[0], 0);
+
+    assert_int_equal(sim_process_event_heap(), SCPE_OK);
+    assert_int_equal(counters[0], 1);  /* unit 0 fired last */
+
+    /* Heap should be empty now */
+    assert_int_equal(sim_event_heap_count(), 0);
+}
+
+/* Test: Integration - cancel scheduled event */
+
+static void test_integration_cancel_middle_event(void **state)
+{
+    struct event_heap_fixture *fixture = *state;
+    int counters[3] = {0, 0, 0};
+
+    /* Initialize units */
+    for (int i = 0; i < 3; i++) {
+        memset(&fixture->units[i], 0, sizeof(UNIT));
+        fixture->units[i].dptr = &fixture->device;
+        fixture->units[i].action = test_unit_action;
+        fixture->units[i].up7 = &counters[i];
+    }
+
+    sim_event_heap_set_now(0);
+
+    /* Schedule three events */
+    assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
+    assert_int_equal(_sim_activate_heap(&fixture->units[1], 100), SCPE_OK);
+    assert_int_equal(_sim_activate_heap(&fixture->units[2], 200), SCPE_OK);
+
+    /* Cancel middle event (unit 2, fire_time=200) */
+    assert_int_equal(sim_cancel_heap(&fixture->units[2]), SCPE_OK);
+    assert_int_equal(sim_event_heap_count(), 2);
+
+    /* Process remaining events - should skip unit 2 */
+    assert_int_equal(sim_process_event_heap(), SCPE_OK);
+    assert_int_equal(counters[1], 1);  /* unit 1 */
+
+    assert_int_equal(sim_process_event_heap(), SCPE_OK);
+    assert_int_equal(counters[0], 1);  /* unit 0 */
+
+    /* unit 2 should NOT have fired */
+    assert_int_equal(counters[2], 0);
+}
+
+/* Test: Integration - double activation is idempotent */
+
+static void test_integration_double_activation(void **state)
+{
+    struct event_heap_fixture *fixture = *state;
+    UNIT *uptr = &fixture->units[0];
+
+    memset(uptr, 0, sizeof(UNIT));
+    uptr->dptr = &fixture->device;
+
+    sim_event_heap_set_now(0);
+
+    /* First activation */
+    assert_int_equal(_sim_activate_heap(uptr, 100), SCPE_OK);
+    assert_int_equal(sim_event_heap_count(), 1);
+
+    /* Second activation - should return OK without adding */
+    assert_int_equal(_sim_activate_heap(uptr, 200), SCPE_OK);
+    assert_int_equal(sim_event_heap_count(), 1);  /* still just one */
+
+    /* Clean up */
+    sim_cancel_heap(uptr);
+}
+
+/* Test: Integration - cancel non-scheduled unit */
+
+static void test_integration_cancel_inactive_unit(void **state)
+{
+    struct event_heap_fixture *fixture = *state;
+    UNIT *uptr = &fixture->units[0];
+
+    memset(uptr, 0, sizeof(UNIT));
+    uptr->dptr = &fixture->device;
+
+    /* Cancel when not scheduled should succeed */
+    assert_int_equal(sim_cancel_heap(uptr), SCPE_OK);
+    assert_int_equal(sim_event_heap_count(), 0);
+}
+
 /* Test suite */
 
 int main(void)
@@ -433,6 +590,17 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_empty_heap_operations_are_safe,
                                        setup_event_heap, teardown_event_heap),
         cmocka_unit_test_setup_teardown(test_heap_handles_duplicate_fire_times,
+                                       setup_event_heap, teardown_event_heap),
+        /* Integration tests */
+        cmocka_unit_test_setup_teardown(test_integration_activate_and_cancel,
+                                       setup_event_heap, teardown_event_heap),
+        cmocka_unit_test_setup_teardown(test_integration_process_events_in_order,
+                                       setup_event_heap, teardown_event_heap),
+        cmocka_unit_test_setup_teardown(test_integration_cancel_middle_event,
+                                       setup_event_heap, teardown_event_heap),
+        cmocka_unit_test_setup_teardown(test_integration_double_activation,
+                                       setup_event_heap, teardown_event_heap),
+        cmocka_unit_test_setup_teardown(test_integration_cancel_inactive_unit,
                                        setup_event_heap, teardown_event_heap),
     };
 
