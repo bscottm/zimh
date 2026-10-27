@@ -45,9 +45,11 @@ static inline void event_heap_spinlock_init(void)
 
 static inline void event_heap_lock_acquire(void)
 {
+    sim_atomic_type_t expected = 0;
     event_heap_spinlock_init();
-    while (sim_atomic_cas(&event_heap_spinlock, 0, 1) != 0) {
-        /* Spin - could add sim_os_ms_sleep(0) here if needed */
+    while (!sim_atomic_cas(&event_heap_spinlock, &expected, 1)) {
+        /* Spin - reset expected for next attempt */
+        expected = 0;
     }
 }
 
