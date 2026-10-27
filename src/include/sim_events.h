@@ -5,15 +5,15 @@
 #ifndef SIM_EVENTS_H_
 #define SIM_EVENTS_H_
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "sim_defs.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* Initialize the event heap
+
+   Call once at simulator startup. Allocates the initial heap structure
+   with INITIAL_HEAP_CAPACITY slots. Returns SCPE_OK on success, SCPE_MEM
+   on allocation failure.
+*/
+t_stat sim_event_heap_init(void);
 
 /* Event heap cleanup */
 
@@ -50,14 +50,8 @@ void sim_event_heap_set_now(uint64_t time);
 
 /* Debug validation */
 
-#ifndef NDEBUG
 /* Validate heap invariant - returns true if heap property holds
    Use in assertions during development: assert(sim_event_heap_validate()); */
 bool sim_event_heap_validate(void);
-#endif
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* SIM_EVENTS_H_ */

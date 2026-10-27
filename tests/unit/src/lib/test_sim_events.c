@@ -12,6 +12,7 @@
 #include "scp.h"
 #include "sim_events.h"
 #include "test_simh_personality.h"
+#include "test_scp_fixture.h"
 #include "test_support.h"
 
 /* Test fixture */
