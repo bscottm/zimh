@@ -35,10 +35,10 @@
 /* Event heap structure */
 
 typedef struct event_heap {
-    UNIT_EVENT **events;     /* array of event pointers */
-    size_t count;            /* number of active events */
-    size_t capacity;         /* allocated capacity */
-    uint64_t now;            /* current instruction time */
+    UNIT_EVENT **events; /* array of event pointers */
+    size_t count;        /* number of active events */
+    size_t capacity;     /* allocated capacity */
+    uint64_t now;        /* current instruction time */
 } EVENT_HEAP;
 
 /* Initial heap capacity - grows as needed */
@@ -82,14 +82,13 @@ static inline size_t heap_right_child(size_t i)
 t_stat sim_event_heap_init(void)
 {
     if (sim_event_heap != NULL)
-        return SCPE_OK;  /* already initialized */
+        return SCPE_OK; /* already initialized */
 
     sim_event_heap = (EVENT_HEAP *)calloc(1, sizeof(EVENT_HEAP));
     if (sim_event_heap == NULL)
         return SCPE_MEM;
 
-    sim_event_heap->events = (UNIT_EVENT **)calloc(INITIAL_HEAP_CAPACITY,
-                                                    sizeof(UNIT_EVENT *));
+    sim_event_heap->events = (UNIT_EVENT **)calloc(INITIAL_HEAP_CAPACITY, sizeof(UNIT_EVENT *));
     if (sim_event_heap->events == NULL) {
         free(sim_event_heap);
         sim_event_heap = NULL;
@@ -143,8 +142,7 @@ static t_stat heap_ensure_capacity(EVENT_HEAP *heap)
     if (new_capacity <= heap->capacity)
         new_capacity = heap->capacity + INITIAL_HEAP_CAPACITY;
 
-    UNIT_EVENT **new_events = (UNIT_EVENT **)realloc(heap->events,
-                                                      new_capacity * sizeof(UNIT_EVENT *));
+    UNIT_EVENT **new_events = (UNIT_EVENT **)realloc(heap->events, new_capacity * sizeof(UNIT_EVENT *));
     if (new_events == NULL)
         return SCPE_MEM;
 
@@ -152,8 +150,7 @@ static t_stat heap_ensure_capacity(EVENT_HEAP *heap)
     heap->capacity = new_capacity;
 
     /* Zero the new slots */
-    memset(&heap->events[heap->count], 0,
-           (new_capacity - heap->count) * sizeof(UNIT_EVENT *));
+    memset(&heap->events[heap->count], 0, (new_capacity - heap->count) * sizeof(UNIT_EVENT *));
 
     return SCPE_OK;
 }
@@ -202,12 +199,10 @@ static void heap_sift_down(EVENT_HEAP *heap, size_t index)
         size_t right = heap_right_child(index);
 
         /* Find earliest-firing among parent and children */
-        if (left < heap->count &&
-            heap->events[left]->fire_time < heap->events[earliest]->fire_time)
+        if (left < heap->count && heap->events[left]->fire_time < heap->events[earliest]->fire_time)
             earliest = left;
 
-        if (right < heap->count &&
-            heap->events[right]->fire_time < heap->events[earliest]->fire_time)
+        if (right < heap->count && heap->events[right]->fire_time < heap->events[earliest]->fire_time)
             earliest = right;
 
         /* Heap property satisfied */
@@ -239,7 +234,7 @@ static void heap_sift_down(EVENT_HEAP *heap, size_t index)
 t_stat sim_event_heap_insert(UNIT_EVENT *event)
 {
     if (sim_event_heap == NULL)
-        return SCPE_IERR;  /* heap not initialized */
+        return SCPE_IERR; /* heap not initialized */
 
     t_stat status = heap_ensure_capacity(sim_event_heap);
     if (status != SCPE_OK)
@@ -356,6 +351,27 @@ size_t sim_event_heap_count(void)
     return sim_event_heap->count;
 }
 
+/* Find event in heap by unit pointer
+
+   Linear search through heap array. Returns the event if found,
+   NULL otherwise. Used by sim_cancel() to locate event for removal.
+
+   Complexity: O(n) - use sparingly
+*/
+
+UNIT_EVENT *sim_event_heap_find_by_unit(const UNIT *uptr)
+{
+    if (sim_event_heap == NULL || uptr == NULL)
+        return NULL;
+
+    for (size_t i = 0; i < sim_event_heap->count; i++) {
+        if (sim_event_heap->events[i]->unit == uptr)
+            return sim_event_heap->events[i];
+    }
+
+    return NULL;
+}
+
 /* Get current instruction time
 
    Returns the global instruction counter maintained by the event system.
@@ -402,8 +418,7 @@ bool sim_event_heap_validate(void)
         /* Check parent fires at or before this child */
         if (i > 0) {
             size_t parent = heap_parent(i);
-            if (sim_event_heap->events[parent]->fire_time >
-                sim_event_heap->events[i]->fire_time)
+            if (sim_event_heap->events[parent]->fire_time > sim_event_heap->events[i]->fire_time)
                 return false;
         }
     }

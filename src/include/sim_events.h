@@ -7,14 +7,6 @@
 
 #include "sim_defs.h"
 
-/* Initialize the event heap
-
-   Call once at simulator startup. Allocates the initial heap structure
-   with INITIAL_HEAP_CAPACITY slots. Returns SCPE_OK on success, SCPE_MEM
-   on allocation failure.
-*/
-t_stat sim_event_heap_init(void);
-
 /* Event heap cleanup */
 
 /* Clean up the event heap - call at simulator shutdown */
@@ -41,6 +33,9 @@ t_stat sim_event_heap_remove_at(size_t index);
 
 /* Return the number of events currently in the heap - O(1) complexity */
 size_t sim_event_heap_count(void);
+
+/* Find event by unit pointer - O(n) complexity, used for cancellation */
+UNIT_EVENT *sim_event_heap_find_by_unit(const UNIT *uptr);
 
 /* Get the current instruction time maintained by the event system */
 uint64_t sim_event_heap_now(void);

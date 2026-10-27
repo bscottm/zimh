@@ -85,8 +85,26 @@ each other and conflict. Similarly, do not try to run multiple cmake
 and ctest commands in parallel, they will race each other and
 conflict.
 
-Use `cmake --build` with Ninja and no -j to make sure we get optimal
-parallelism.
+On Windows platforms, determine which compiler is present in the
+following preference order: Clang, VS 2022, VS 2026. If Clang is
+available, also determine if the ninja build tool is also
+available. Then use the following presets, depending on which compiler
+is installed:
+
+    Clang and ninja:
+    - Configuration: "cmake --preset windows-ninja"
+    - Debug build: "cmake --build --preset windows-ninja-debug"
+    - Release with Debug build: "cmake --build --preset windows-ninja-relwithdebinfo"
+
+    VS 2022:
+    - Configuration: "cmake --preset windows-vs2022"
+    - Debug build: "cmake --build --preset windows-vs2022-debug"
+    - Release with Debug build: "cmake --build --preset windows-vs2022-relwithdebinfo"
+
+    VS 2026:
+    - Configuration: "cmake --preset windows-vs2026"
+    - Debug build: "cmake --build --preset windows-vs2026-debug"
+    - Release with Debug build: "cmake --build --preset windows-vs2026-relwithdebinfo"
 
 Use `ctest --parallel` to make sure tests are run in parallel.
 
@@ -95,6 +113,7 @@ On macOS, prefer the Clang/LLVM toolchain consistently:
 - use `clang` rather than GCC
 - use `llvm-cov` and `llvm-profdata` for code coverage
 - use `lldb` rather than `gdb`
+- use the "macos-" prefixed CMake presets.
 
 Do not switch to GCC or GNU coverage tools on macOS unless the user
 explicitly asks for that.
