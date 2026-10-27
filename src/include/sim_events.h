@@ -7,6 +7,14 @@
 
 #include "sim_defs.h"
 
+/* Initialize the event heap
+
+   Call once at simulator startup. Allocates the initial heap structure
+   with INITIAL_HEAP_CAPACITY slots. Returns SCPE_OK on success, SCPE_MEM
+   on allocation failure.
+*/
+t_stat sim_event_heap_init(void);
+
 /* Event heap cleanup */
 
 /* Clean up the event heap - call at simulator shutdown */

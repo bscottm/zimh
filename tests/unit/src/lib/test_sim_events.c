@@ -43,7 +43,8 @@ static int setup_event_heap(void **state)
     devices[1] = NULL;
     assert_int_equal(simh_test_install_devices("zimh-event-heap", devices), 0);
 
-    /* Event heap uses lazy initialization - no explicit init needed */
+    /* Initialize event heap */
+    assert_int_equal(sim_event_heap_init(), SCPE_OK);
 
     *state = fixture;
     return 0;
