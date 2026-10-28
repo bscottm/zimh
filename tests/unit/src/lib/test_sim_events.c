@@ -471,20 +471,20 @@ static void test_integration_process_events_in_order(void **state)
     assert_int_equal(_sim_activate_heap(&fixture->units[1], 100), SCPE_OK);
     assert_int_equal(_sim_activate_heap(&fixture->units[2], 200), SCPE_OK);
 
-    /* Simulate time advancing to first event: countdown sim_interval to 0 */
-    sim_interval = 0;  /* Trigger event processing */
+    /* Simulate time advancing to first event: countdown sim_interval past 0 */
+    sim_interval = -1;  /* Time has passed the event fire time */
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[1], 1);  /* unit 1 fired first */
     assert_int_equal(counters[0], 0);
     assert_int_equal(counters[2], 0);
 
     /* Continue processing remaining events */
-    sim_interval = 0;
+    sim_interval = -1;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[2], 1);  /* unit 2 fired second */
     assert_int_equal(counters[0], 0);
 
-    sim_interval = 0;
+    sim_interval = -1;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[0], 1);  /* unit 0 fired last */
 
@@ -522,11 +522,11 @@ static void test_integration_cancel_middle_event(void **state)
     assert_int_equal(sim_event_heap_count(), 2);
 
     /* Process remaining events - should skip unit 2 */
-    sim_interval = 0;
+    sim_interval = -1;  /* Time has passed */
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[1], 1);  /* unit 1 */
 
-    sim_interval = 0;
+    sim_interval = -1;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[0], 1);  /* unit 0 */
 

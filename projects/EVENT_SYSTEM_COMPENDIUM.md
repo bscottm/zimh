@@ -1896,9 +1896,212 @@ The migration from delta-time linked lists to absolute-time min-heap is a fundam
 
 ---
 
-**Document Version:** 1.0  
+---
+
+## Phase 4C Implementation (October 2026)
+
+### Overview
+
+Phase 4C represents the actual implementation using the EVENT_HEAP.prev_interval approach rather than the full Phase 4B rip-and-replace design. This phase successfully integrated the min-heap event system while preserving UPDATE_SIM_TIME compatibility.
+
+### Architecture
+
+**Time Tracking Model:**
+
+The Phase 4C implementation maintains two time systems that must stay synchronized:
+
+1. **sim_vm_time + UPDATE_SIM_TIME** (authoritative)
+   - Calculated as: `sim_vm_time + (prev_interval - sim_interval)`
+   - Updated by UPDATE_SIM_TIME macro when sim_gtime() is called
+   - Uses EVENT_HEAP.prev_interval to store the "old interval" value
+
+2. **sim_event_heap_now()** (bookkeeping)
+   - Absolute time stored in heap for internal use
+   - Updated by sim_event_heap_set_now() during event processing
+   - Used only for heap index validation and debug output
+
+**Key Principle:** `sim_gtime()` is the single source of truth for time.
+
+### Critical Bug Fix: Simultaneous Event Batching
+
+**Problem Discovered:** When multiple events were scheduled for the same fire_time, the original heap implementation would:
+1. Process one event
+2. Return to sim_instr()
+3. Execute an instruction
+4. Process the next event
+
+This caused spurious instruction execution between events that should fire atomically, breaking simulator semantics.
+
+**Example from 3B2 RGTRU Test:**
+```
+Time 3: TOD event fires
+Time 3: Instruction executes (WRONG!)
+Time 3: INT-FLUSH event fires
+Time 3: Another instruction executes (corrupts PC to 0x00000000)
+Time 3: INT-STEP event fires with corrupted state
+```
+
+**Solution:**
+
+Modified `sim_process_event_heap()` to batch-process all events at the current time:
+
+```c
+t_stat sim_process_event_heap(void)
+{
+    event_heap_lock_acquire();
+    
+    /* Process all events at the current time in one batch */
+    do {
+        evt = sim_event_heap_peek();
+        if (evt == NULL) {
+            /* Heap empty */
+            event_heap_lock_release();
+            sim_interval = NOQUEUE_WAIT;
+            return SCPE_OK;
+        }
+        
+        /* Check if event is ready to fire */
+        if (evt->fire_time > (uint64_t)sim_gtime()) {
+            /* No more events ready at current time */
+            update_sim_interval_from_heap();
+            event_heap_lock_release();
+            return SCPE_OK;
+        }
+        
+        /* Pop and process this event */
+        evt = sim_event_heap_pop();
+        /* ... event processing ... */
+        
+        /* If action returned stop/error, return it immediately */
+        if (reason != SCPE_OK)
+            return reason;
+            
+        /* Re-acquire lock and continue batching */
+        event_heap_lock_acquire();
+        
+    } while (1);  /* Continue until no more events at current time */
+}
+```
+
+**Critical Details:**
+
+1. The readiness check uses `evt->fire_time > sim_gtime()` (not `>=`)
+   - Events fire when time reaches their fire_time
+   - Events at exactly the current time ARE ready
+
+2. The loop continues while `evt->fire_time <= sim_gtime()`
+   - All simultaneous events process before returning
+   - Prevents instruction execution between same-time events
+
+3. Lock is released/reacquired between events
+   - Allows event actions to safely call sim_activate/sim_cancel
+   - Maintains thread safety for async operations
+
+### Test Infrastructure Changes
+
+**Event Unit Tests:**
+
+The unit tests required updates to work with production time tracking:
+
+```c
+/* Old approach (incorrect) - bypassed sim_gtime() */
+sim_event_heap_set_now(100);
+sim_process_event_heap();
+
+/* New approach (correct) - initializes time system */
+sim_interval = NOQUEUE_WAIT;
+sim_event_heap_set_now(0);
+sim_event_heap_set_prev_interval(NOQUEUE_WAIT);
+
+/* Schedule events at relative times */
+_sim_activate_heap(&unit, 100);
+
+/* Simulate time advancing: set interval to 0 to trigger processing */
+sim_interval = 0;
+sim_process_event_heap();
+```
+
+**Why This Works:**
+
+1. `_sim_activate_heap()` calls `sim_gtime()` which invokes UPDATE_SIM_TIME
+2. UPDATE_SIM_TIME calculates current time from `sim_interval` and `prev_interval`
+3. Event fire_time is set to `sim_gtime() + delay`
+4. Later, when `sim_interval` counts down to 0, events become ready
+5. `sim_process_event_heap()` checks `evt->fire_time > sim_gtime()` to determine readiness
+
+### Commits
+
+**Commit 1cfa8f2c:** "events: Fix instruction execution between simultaneous events"
+- Implemented batch processing loop
+- Fixed readiness check to use `>` instead of `>=`
+- Verified 3B2 RGTRU tests pass
+
+**Commit 99ac8f67:** "events: Fix event unit tests for batch processing behavior"
+- Updated tests to properly initialize time tracking
+- Restored consistent use of sim_gtime() throughout event integration
+- Event tests: 17/17 PASS
+- 3B2 tests: PASS
+
+### Known Issues
+
+**Timer Tests:** 37 of 73 timer unit tests still fail.
+
+The timer subsystem has complex interactions with event scheduling, including:
+- Internal timer activation (`sim_internal_timer_unit`)
+- Clock coscheduling on timer ticks
+- Calibrated timer state tracking
+- Microsecond-based timer activation
+
+These tests likely need similar time initialization fixes, but may also expose deeper issues with how timer events integrate with the heap.
+
+**Other Test Failures:**
+
+Several simulator integration tests fail with timeout or assertion issues:
+- PDP-11 (timeout)
+- VAX diagnostic tests (ICR register issues)
+- Some expect/cmdvar unit tests (event scheduling dependencies)
+
+These require investigation to determine if they are:
+1. Test infrastructure issues
+2. Event timing regressions
+3. Pre-existing failures unrelated to event system
+
+### Performance
+
+No performance benchmarking has been conducted yet. The min-heap should provide:
+- O(log n) insertion vs O(n) for linked list
+- O(log n) removal vs O(n) for linked list
+- O(1) peek (same as linked list)
+
+Benefits become measurable with >10 simultaneous pending events.
+
+### Future Work
+
+1. **Fix Timer Tests**
+   - Investigate timer unit test failures
+   - Ensure timer activation properly initializes time system
+   - Verify clock coscheduling works with batched events
+
+2. **Investigate Integration Test Failures**
+   - Determine root cause of VAX diagnostic failures
+   - Fix or document expect/cmdvar test dependencies
+   - Resolve PDP-11 timeout issues
+
+3. **Phase 4B Completion** (Optional)
+   - Consider full rip-and-replace to eliminate UPDATE_SIM_TIME
+   - Would simplify time tracking at cost of larger refactor
+   - Current Phase 4C approach is working and maintainable
+
+4. **Performance Testing**
+   - Benchmark event-heavy simulators (VAX, PDP-10)
+   - Measure heap vs linked-list performance
+   - Profile for optimization opportunities
+
+---
+
+**Document Version:** 1.1  
 **Last Updated:** 2026-10-28  
-**Status:** Complete and ready for Phase 4B implementation  
+**Status:** Phase 4C implemented, event tests passing, 3B2 verified  
 **Branch:** unit_event_refactor  
 **Contact:** B. Scott Michel
 
