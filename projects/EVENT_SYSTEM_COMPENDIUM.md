@@ -2042,6 +2042,49 @@ sim_process_event_heap();
 - Event tests: 17/17 PASS
 - 3B2 tests: PASS
 
+### show_queue Implementation for Heap
+
+**Problem:** The `show queue` command was still iterating the old `sim_clock_queue` linked list, which is no longer used with the heap-based event system. Tests like `zimh-altairz80-wd179x-index-pulse` were failing with "WD179X index pulse was not queued" because the command reported an empty queue even though events were scheduled in the heap.
+
+**Solution:** Added heap iteration API and rewrote show_queue to display heap events.
+
+**Implementation:**
+
+1. **Added sim_event_heap_get_array() API** (sim_events.h/c):
+   ```c
+   /* Get heap contents for iteration - O(1) complexity
+      Returns pointer to internal heap array and fills count with number of events.
+      Array is valid only until next heap modification.
+      Used by show_queue to display pending events. */
+   UNIT_EVENT **sim_event_heap_get_array(size_t *count);
+   ```
+
+2. **Rewrote show_queue()** (scp.c:5558):
+   - Call `sim_event_heap_get_array()` to get heap events
+   - Iterate through heap array instead of `sim_clock_queue` 
+   - Calculate `time_remaining` from `evt->fire_time` and `sim_gtime()`
+   - Display events in heap order (min-heap, so earliest events first)
+
+3. **Removed "- 1" Adjustment:**
+   
+   The old implementation had:
+   ```c
+   fprintf(st, " at %d\n", time_remaining > 0 ? time_remaining - 1 : 0);
+   ```
+   
+   This subtracted 1 from the displayed time, causing off-by-one errors (test expected 58199, got 58198). The subtraction was an artifact of how the old delta-based queue system worked. With the heap-based system using `sim_gtime()` as the authoritative time source, we display the exact difference between `fire_time` and current time without adjustment.
+
+**Test Results:**
+- ✅ zimh-altairz80-wd179x-index-pulse: PASS
+  - Previously: "WD179X index pulse was not queued" (queue showed empty)
+  - Now: "WD179X unit 0 at 58199" (correctly displays heap events)
+
+**Commit 790995a3:** "events: Implement show_queue for heap-based event system"
+- Added `sim_event_heap_get_array()` API for O(1) heap iteration
+- Rewrote `show_queue()` to iterate heap instead of linked list
+- Removed misleading "- 1" time adjustment
+- AltairZ80 test now passes
+
 ### Known Issues
 
 **Timer Tests:** 37 of 73 timer unit tests still fail.
