@@ -177,74 +177,102 @@ t_stat sim_process_event_heap(void)
     UNIT_EVENT *evt;
     UNIT *uptr;
     t_stat reason;
+    uint64_t event_time;
 
     event_heap_lock_acquire();
 
-    /* Check if heap is empty */
-    if (sim_event_heap_count() == 0) {
-        event_heap_lock_release();
-        /* noqueue_time is static in scp.c - only update sim_interval */
-        sim_interval = NOQUEUE_WAIT;
-        return SCPE_OK;
-    }
-
-    /* Pop minimum event */
-    evt = sim_event_heap_pop();
-    if (evt == NULL) {
-        event_heap_lock_release();
-        return SCPE_IERR;
-    }
-
-    uptr = evt->unit;
-
-    /* Advance time to event fire time */
-    sim_event_heap_set_now(evt->fire_time);
-
-    /* Update sim_interval for next event */
-    update_sim_interval_from_heap();
-
-    event_heap_lock_release();
-
-    /* Clear compatibility fields */
-    uptr->next = NULL;
-    uptr->time = 0;
-
-    /* Save usecs_remaining before freeing event, then clear it */
-    double saved_usecs = uptr->usecs_remaining;
-    uptr->usecs_remaining = 0.0;
-
-    /* Free event structure */
-    free(evt);
-
-    /* Execute event action */
-    sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Heap processing event for %s\n", sim_uname(uptr));
-
-    if (saved_usecs != 0.0) {
-        /* Clamp negative values to zero (rounding errors from time calculations) */
-        if (saved_usecs < 0.0) {
-            sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Clamping negative usecs_remaining %.0f to 0.0 for %s\n",
-                      saved_usecs, sim_uname(uptr));
-            saved_usecs = 0.0;
+    /* Process all events at the current time in one batch */
+    do {
+        /* Check if heap is empty */
+        if (sim_event_heap_count() == 0) {
+            event_heap_lock_release();
+            /* noqueue_time is static in scp.c - only update sim_interval */
+            sim_interval = NOQUEUE_WAIT;
+            return SCPE_OK;
         }
-        if (saved_usecs > 0.0) {
-            sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname(uptr),
-                      saved_usecs);
-            reason = sim_timer_activate_after(uptr, saved_usecs);
+
+        /* Peek at next event to check its fire time */
+        evt = sim_event_heap_peek();
+        if (evt == NULL) {
+            event_heap_lock_release();
+            return SCPE_IERR;
+        }
+
+        /* Check if event is ready to fire */
+        if (evt->fire_time >= (uint64_t)sim_gtime()) {
+            /* No more events ready, update interval and return */
+            update_sim_interval_from_heap();
+            event_heap_lock_release();
+            return SCPE_OK;
+        }
+
+        /* Pop the event (it's ready to fire) */
+        evt = sim_event_heap_pop();
+        if (evt == NULL) {
+            event_heap_lock_release();
+            return SCPE_IERR;
+        }
+
+        uptr = evt->unit;
+        event_time = evt->fire_time;
+
+        /* Advance time to event fire time */
+        sim_event_heap_set_now(evt->fire_time);
+
+        /* Update sim_interval for next event */
+        update_sim_interval_from_heap();
+
+        event_heap_lock_release();
+
+        /* Clear compatibility fields */
+        uptr->next = NULL;
+        uptr->time = 0;
+
+        /* Save usecs_remaining before freeing event, then clear it */
+        double saved_usecs = uptr->usecs_remaining;
+        uptr->usecs_remaining = 0.0;
+
+        /* Free event structure */
+        free(evt);
+
+        /* Execute event action */
+        sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Heap processing event for %s\n", sim_uname(uptr));
+
+        if (saved_usecs != 0.0) {
+            /* Clamp negative values to zero (rounding errors from time calculations) */
+            if (saved_usecs < 0.0) {
+                sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Clamping negative usecs_remaining %.0f to 0.0 for %s\n",
+                          saved_usecs, sim_uname(uptr));
+                saved_usecs = 0.0;
+            }
+            if (saved_usecs > 0.0) {
+                sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname(uptr),
+                          saved_usecs);
+                reason = sim_timer_activate_after(uptr, saved_usecs);
+            } else {
+                /* saved_usecs was negative, now clamped to 0 - just run the action */
+                if (uptr->action != NULL)
+                    reason = uptr->action(uptr);
+                else
+                    reason = SCPE_OK;
+            }
         } else {
-            /* saved_usecs was negative, now clamped to 0 - just run the action */
             if (uptr->action != NULL)
                 reason = uptr->action(uptr);
             else
                 reason = SCPE_OK;
         }
-    } else {
-        if (uptr->action != NULL)
-            reason = uptr->action(uptr);
-        else
-            reason = SCPE_OK;
-    }
 
-    return reason;
+        /* If action returned an error/stop, return it */
+        if (reason != SCPE_OK) {
+            return reason;
+        }
+
+        /* Re-acquire lock for next iteration */
+        event_heap_lock_acquire();
+
+        /* Continue processing events at the same time */
+    } while (1);
 }
 
 /* Helper: Update sim_interval based on next event in heap */

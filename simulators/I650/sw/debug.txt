@@ -1,4 +1,4 @@
-Debug output to "debug.txt" at 2026-10-28 12:06:05
+Debug output to "debug.txt" at 2026-10-28 13:53:32
 IBM 650 simulator ZIMH 2026.5.29
 
 
