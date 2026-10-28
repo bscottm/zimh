@@ -353,6 +353,25 @@ size_t sim_event_heap_count(void)
     return sim_event_heap->count;
 }
 
+/* Get heap array for iteration
+
+   Returns pointer to internal heap array and fills count with number of events.
+   Array is valid only until next heap modification. Caller must not free.
+   Used by show_queue to display pending events.
+*/
+
+UNIT_EVENT **sim_event_heap_get_array(size_t *count)
+{
+    if (sim_event_heap == NULL || count == NULL) {
+        if (count != NULL)
+            *count = 0;
+        return NULL;
+    }
+
+    *count = sim_event_heap->count;
+    return sim_event_heap->events;
+}
+
 /* Find event in heap by unit pointer
 
    Linear search through heap array. Returns the event if found,

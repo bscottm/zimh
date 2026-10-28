@@ -45,6 +45,12 @@ size_t sim_event_heap_count(void);
 /* Find event by unit pointer - O(n) complexity, used for cancellation */
 UNIT_EVENT *sim_event_heap_find_by_unit(const UNIT *uptr);
 
+/* Get heap contents for iteration - O(1) complexity
+   Returns pointer to internal heap array and fills count with number of events.
+   Array is valid only until next heap modification.
+   Used by show_queue to display pending events. */
+UNIT_EVENT **sim_event_heap_get_array(size_t *count);
+
 /* Get the current instruction time maintained by the event system */
 uint64_t sim_event_heap_now(void);
 

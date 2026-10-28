@@ -5560,11 +5560,17 @@ t_stat show_queue (FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, con
 DEVICE *dptr;
 UNIT *uptr;
 MEMFILE buf;
+size_t heap_count;
+UNIT_EVENT **heap_events;
 
 memset (&buf, 0, sizeof (buf));
 if (cptr && (*cptr != 0))
     return SCPE_2MARG;
-if (sim_clock_queue == QUEUE_LIST_END)
+
+/* Check heap for events */
+heap_events = sim_event_heap_get_array(&heap_count);
+
+if (heap_count == 0)
     fprintf (st, "%s event queue empty, time = %.0f, executing %s %s/sec\n",
              sim_name, sim_vm_time, sim_fmt_numeric (sim_timer_inst_per_sec ()), sim_vm_interval_units);
 else {
@@ -5573,7 +5579,14 @@ else {
 
     fprintf (st, "%s event queue status, time = %.0f, executing %s %s/sec\n",
              sim_name, sim_vm_time, sim_fmt_numeric (inst_per_sec), sim_vm_interval_units);
-    for (uptr = sim_clock_queue; uptr != QUEUE_LIST_END; uptr = uptr->next) {
+
+    /* Display events from heap in fire_time order */
+    for (size_t i = 0; i < heap_count; i++) {
+        UNIT_EVENT *evt = heap_events[i];
+        if (evt == NULL)
+            continue;
+        uptr = evt->unit;
+
         if (uptr == &sim_step_unit)
             fprintf (st, "  Step timer");
         else
@@ -5587,16 +5600,23 @@ else {
                     }
                 else
                     fprintf (st, "  Unknown");
+
+        /* Calculate time remaining */
+        int32_t time_remaining = (int32_t)(evt->fire_time > (uint64_t)sim_gtime() ?
+                                           evt->fire_time - (uint64_t)sim_gtime() : 0);
+
         if (inst_per_sec != 0.0)
-            tim = sim_fmt_secs(((_sim_activate_queue_time (uptr) - 1) / sim_timer_inst_per_sec ()) + (uptr->usecs_remaining / 1000000.0));
+            tim = sim_fmt_secs((time_remaining / sim_timer_inst_per_sec ()) +
+                              (uptr->usecs_remaining / 1000000.0));
         if (uptr->usecs_remaining)
-            fprintf (st, " at %d plus %.0f usecs%s%s%s%s\n", _sim_activate_queue_time (uptr) - 1, uptr->usecs_remaining,
-                                            (*tim) ? " (" : "", tim, (*tim) ? " total)" : "",
-                                            (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
+            fprintf (st, " at %d plus %.0f usecs%s%s%s%s\n", time_remaining,
+                     uptr->usecs_remaining,
+                     (*tim) ? " (" : "", tim, (*tim) ? " total)" : "",
+                     (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
         else
-            fprintf (st, " at %d%s%s%s%s\n", _sim_activate_queue_time (uptr) - 1,
-                                            (*tim) ? " (" : "", tim, (*tim) ? ")" : "",
-                                            (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
+            fprintf (st, " at %d%s%s%s%s\n", time_remaining,
+                     (*tim) ? " (" : "", tim, (*tim) ? ")" : "",
+                     (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
         }
     }
 sim_show_clock_queues (st, dnotused, unotused, flag, cptr);
