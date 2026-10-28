@@ -199,7 +199,7 @@ t_stat sim_process_event_heap(void)
         }
 
         /* Check if event is ready to fire */
-        if (evt->fire_time >= (uint64_t)sim_gtime()) {
+        if (evt->fire_time > (uint64_t)sim_gtime()) {
             /* No more events ready, update interval and return */
             update_sim_interval_from_heap();
             event_heap_lock_release();

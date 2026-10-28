@@ -461,24 +461,30 @@ static void test_integration_process_events_in_order(void **state)
         fixture->units[i].up7 = &counters[i];
     }
 
-    /* Set current time */
+    /* Initialize time tracking - set sim_interval to match heap time */
+    sim_interval = NOQUEUE_WAIT;
     sim_event_heap_set_now(0);
+    sim_event_heap_set_prev_interval(NOQUEUE_WAIT);
 
-    /* Schedule events */
+    /* Schedule events at different times */
     assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
     assert_int_equal(_sim_activate_heap(&fixture->units[1], 100), SCPE_OK);
     assert_int_equal(_sim_activate_heap(&fixture->units[2], 200), SCPE_OK);
 
-    /* Process events - should fire in order 1, 2, 0 */
+    /* Simulate time advancing to first event: countdown sim_interval to 0 */
+    sim_interval = 0;  /* Trigger event processing */
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[1], 1);  /* unit 1 fired first */
     assert_int_equal(counters[0], 0);
     assert_int_equal(counters[2], 0);
 
+    /* Continue processing remaining events */
+    sim_interval = 0;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[2], 1);  /* unit 2 fired second */
     assert_int_equal(counters[0], 0);
 
+    sim_interval = 0;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[0], 1);  /* unit 0 fired last */
 
@@ -501,7 +507,10 @@ static void test_integration_cancel_middle_event(void **state)
         fixture->units[i].up7 = &counters[i];
     }
 
+    /* Initialize time tracking */
+    sim_interval = NOQUEUE_WAIT;
     sim_event_heap_set_now(0);
+    sim_event_heap_set_prev_interval(NOQUEUE_WAIT);
 
     /* Schedule three events */
     assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
@@ -513,9 +522,11 @@ static void test_integration_cancel_middle_event(void **state)
     assert_int_equal(sim_event_heap_count(), 2);
 
     /* Process remaining events - should skip unit 2 */
+    sim_interval = 0;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[1], 1);  /* unit 1 */
 
+    sim_interval = 0;
     assert_int_equal(sim_process_event_heap(), SCPE_OK);
     assert_int_equal(counters[0], 1);  /* unit 0 */
 
