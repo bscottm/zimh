@@ -1,9 +1,8 @@
-Debug output to "debug.txt" at 2026-10-27 14:37:49
+Debug output to "debug.txt" at 2026-10-28 12:06:05
 IBM 650 simulator ZIMH 2026.5.29
-C:/Users/bsm21317/play/zimh/simulators/I650/tests/i650_test.ini-17> runlimit 50M instructions
-Internal error
 
 
 ** IBM 650: Basic Instruction Test: 
-C:/Users/bsm21317/play/zimh/simulators/I650/sw/run_fds.ini-30> go
-%SIM-ERROR: Execution limit exceeded, can't proceed.  Exiting...
+
+Simulation stopped, IC: 08000 ( 7019019999+   RD    1901  9999 )
+FDS failed (bad ar)

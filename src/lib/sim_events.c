@@ -39,6 +39,7 @@ typedef struct event_heap {
     size_t count;        /* number of active events */
     size_t capacity;     /* allocated capacity */
     uint64_t now;        /* current instruction time */
+    int32_t prev_interval; /* previous sim_interval value for UPDATE_SIM_TIME */
 } EVENT_HEAP;
 
 /* Initial heap capacity - grows as needed */
@@ -98,6 +99,7 @@ t_stat sim_event_heap_init(void)
     sim_event_heap->count = 0;
     sim_event_heap->capacity = INITIAL_HEAP_CAPACITY;
     sim_event_heap->now = 0;
+    sim_event_heap->prev_interval = 0;
 
     return SCPE_OK;
 }
@@ -395,6 +397,32 @@ void sim_event_heap_set_now(uint64_t time)
 {
     if (sim_event_heap != NULL)
         sim_event_heap->now = time;
+}
+
+/* Get previous sim_interval value
+
+   Returns the previous sim_interval value stored by UPDATE_SIM_TIME.
+   Used to calculate elapsed time deltas.
+*/
+
+int32_t sim_event_heap_get_prev_interval(void)
+{
+    if (sim_event_heap == NULL)
+        return 0;
+
+    return sim_event_heap->prev_interval;
+}
+
+/* Set previous sim_interval value
+
+   Stores the current sim_interval value for use by the next UPDATE_SIM_TIME.
+   Called at the end of UPDATE_SIM_TIME to preserve the interval value.
+*/
+
+void sim_event_heap_set_prev_interval(int32_t interval)
+{
+    if (sim_event_heap != NULL)
+        sim_event_heap->prev_interval = interval;
 }
 
 /* Validate heap invariant

@@ -218,6 +218,7 @@
 #include "sim_video.h"
 #include "sim_sock.h"
 #include "sim_frontpanel.h"
+#include "sim_events.h"
 #include "zimh_version.h"
 #include <ctype.h>
 #include <inttypes.h>
@@ -267,16 +268,16 @@
     do {                                                        \
         int32_t _x;                                             \
         AIO_LOCK;                                               \
-        if (sim_clock_queue == QUEUE_LIST_END)                  \
+        if (sim_event_heap_count() == 0)                        \
             _x = noqueue_time;                                  \
         else                                                    \
-            _x = sim_clock_queue->time;                         \
+            _x = sim_event_heap_get_prev_interval();            \
         sim_vm_time = sim_vm_time + (_x - sim_interval);        \
         sim_rtime = sim_rtime + ((uint32_t) (_x - sim_interval)); \
-        if (sim_clock_queue == QUEUE_LIST_END)                  \
+        if (sim_event_heap_count() == 0)                        \
             noqueue_time = sim_interval;                        \
         else                                                    \
-            sim_clock_queue->time = sim_interval;               \
+            sim_event_heap_set_prev_interval(sim_interval);     \
         AIO_UNLOCK;                                             \
     } while (0)
 
@@ -2711,6 +2712,7 @@ AIO_INIT;                                               /* init Asynch I/O */
 sim_finit ();                                           /* init fio package */
 sim_disk_init ();                                       /* init disk package */
 sim_tape_init ();                                       /* init tape package */
+sim_event_heap_init ();                                 /* init event heap */
 for (i = 0; cmd_table[i].name; i++) {
     size_t alias_len = strlen (cmd_table[i].name);
     char *cmd_name = strdup (cmd_table[i].name);
@@ -10127,110 +10129,15 @@ return buf;
 
 t_stat sim_process_event (void)
 {
-UNIT *uptr;
-t_stat reason, bare_reason;
-int32_t sim_interval_catchup;
-
 if (stop_cpu) {                                         /* stop CPU? */
     stop_cpu = false;
     return SCPE_STOP;
     }
 AIO_UPDATE_QUEUE;
 UPDATE_SIM_TIME;                                        /* update sim time */
-if (sim_interval > 0) {
-    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Interval not yet expired: %d\n", sim_interval);
-    return SCPE_OK;
-    }
-if (sim_clock_queue == QUEUE_LIST_END) {                /* queue empty? */
-    sim_interval = noqueue_time = NOQUEUE_WAIT;         /* flag queue empty */
-    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Queue Empty New Interval = %d\n", sim_interval);
-    return SCPE_OK;
-    }
-sim_processing_event = true;
-/* If sim_interval is negative, we've missed the opportunity to  */
-/* dispatch one or more events when they were scheduled to fire. */
-/* To accomodate this, we backup time to when the first event    */
-/* was supposed to fire and advance it from there until things   */
-/* have caught up.                                               */
-if (sim_interval < 0) {
-    sim_interval_catchup = sim_interval;
-    sim_interval = 0;
-    UPDATE_SIM_TIME;                          /* update sim time */
-    sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "Processing event for %s with sim_interval = %d, event time = %.0f\n",
-        sim_uname (sim_clock_queue), sim_interval_catchup, sim_gtime ());
-    if (sim_clock_queue->next != QUEUE_LIST_END)
-        sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "- Next event for %s after = %d\n",
-            sim_uname (sim_clock_queue->next), sim_clock_queue->next->time);
-    sim_vm_time -= sim_clock_queue->time;
-    sim_rtime -= sim_clock_queue->time;
-    }
-else
-    sim_interval_catchup = 0;
-do {
-    uptr = sim_clock_queue;                             /* get first */
-    sim_clock_queue = uptr->next;                       /* remove first */
-    uptr->next = NULL;                                  /* hygiene */
-    uptr->time = 0;
-    if (sim_clock_queue != QUEUE_LIST_END) {
-        if (sim_interval_catchup < 0)
-            sim_interval = -sim_interval_catchup;
-        sim_interval += sim_interval_catchup + sim_clock_queue->time;
-        }
-    else
-        sim_interval = noqueue_time = NOQUEUE_WAIT;
-    AIO_EVENT_BEGIN(uptr);
-    if (uptr->usecs_remaining) {
-        sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname (uptr), uptr->usecs_remaining);
-        reason = sim_timer_activate_after (uptr, uptr->usecs_remaining);
-        }
-    else {
-        sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Event for %s\n", sim_uname (uptr));
-        if (uptr->action != NULL)
-            reason = uptr->action (uptr);
-        else
-            reason = SCPE_OK;
-        }
-    AIO_EVENT_COMPLETE(uptr, reason);
-    if (sim_interval_catchup < -1) {
-        sim_interval_catchup += sim_clock_queue->time;
-        sim_vm_time += sim_clock_queue->time;
-        sim_rtime += sim_clock_queue->time;
-        }
-    else
-        sim_interval_catchup = 0;
-    bare_reason = SCPE_BARE_STATUS (reason);
-    if ((bare_reason != SCPE_OK)      && /* Provide context for unexpected errors */
-        (bare_reason >= SCPE_BASE)    &&
-        (bare_reason != SCPE_EXPECT)  &&
-        (bare_reason != SCPE_REMOTE)  &&
-        (bare_reason != SCPE_MTRLNT)  &&
-        (bare_reason != SCPE_STOP)    &&
-        (bare_reason != SCPE_STEP)    &&
-        (bare_reason != SCPE_RUNTIME) &&
-        (bare_reason != SCPE_EXIT)) {
-        if (bare_reason == SCPE_UNATT)
-            sim_messagef (reason, "\nUnexpected I/O error while processing event for %s - %s\n", sim_uname (uptr), sim_error_text (reason));
-        else
-            sim_messagef (reason, "\nUnexpected internal error while processing event for %s which returned %d - %s\n", sim_uname (uptr), reason, sim_error_text (reason));
-        }
-    } while ((reason == SCPE_OK) &&
-             ((sim_interval + sim_interval_catchup) <= 0) &&
-             (sim_clock_queue != QUEUE_LIST_END) &&
-             (!stop_cpu));
 
-if (sim_clock_queue == QUEUE_LIST_END) {                /* queue empty? */
-    sim_interval = noqueue_time = NOQUEUE_WAIT;         /* flag queue empty */
-    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Queue Complete New Interval = %d\n", sim_interval);
-    }
-else
-    sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Processing Queue Complete New Interval = %d(%s)\n", sim_interval, sim_uname(sim_clock_queue));
-
-if ((reason == SCPE_OK) && stop_cpu) {
-    stop_cpu = false;
-    reason = SCPE_STOP;
-    }
-sim_processing_event = false;
-return reason;
+/* Use heap-based event processing */
+return sim_process_event_heap();
 }
 
 /* sim_activate - activate (queue) event
@@ -10251,9 +10158,6 @@ return _sim_activate (uptr, event_time);
 
 t_stat _sim_activate (UNIT *uptr, int32_t event_time)
 {
-UNIT *cptr, *prvptr;
-int32_t accum;
-
 AIO_ACTIVATE (_sim_activate, uptr, event_time);
 if (sim_is_active (uptr))                               /* already active? */
     return SCPE_OK;
@@ -10261,27 +10165,8 @@ UPDATE_SIM_TIME;                                        /* update sim time */
 
 sim_debug (SIM_DBG_ACTIVATE, &sim_scp_dev, "Activating %s delay=%d\n", sim_uname (uptr), event_time);
 
-prvptr = NULL;
-accum = 0;
-for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
-    if (event_time < (accum + cptr->time))
-        break;
-    accum = accum + cptr->time;
-    prvptr = cptr;
-    }
-if (prvptr == NULL) {                                   /* insert at head */
-    cptr = uptr->next = sim_clock_queue;
-    sim_clock_queue = uptr;
-    }
-else {
-    cptr = uptr->next = prvptr->next;                   /* insert at prvptr */
-    prvptr->next = uptr;
-    }
-uptr->time = event_time - accum;
-if (cptr != QUEUE_LIST_END)
-    cptr->time = cptr->time - uptr->time;
-sim_interval = sim_clock_queue->time;
-return SCPE_OK;
+/* Use heap-based activation */
+return _sim_activate_heap(uptr, event_time);
 }
 
 /* sim_activate_abs - activate (queue) event even if event already scheduled
@@ -10346,8 +10231,18 @@ return _sim_activate_after_abs (uptr, usec_delay);
 t_stat _sim_activate_after_abs (UNIT *uptr, double usec_delay)
 {
 AIO_VALIDATE(uptr);             /* Can't call asynchronously */
-if (usec_delay < 0.0)
-    return sim_timer_activate_after (uptr, usec_delay);
+if (usec_delay < 0.0) {
+    /* Clamp small negative values (floating-point rounding errors) to zero */
+    if (usec_delay > -1.0) {
+        sim_debug(SIM_DBG_EVENT, &sim_scp_dev,
+                  "Clamping negative usec_delay %.10f to 0.0 for %s in _sim_activate_after_abs\n",
+                  usec_delay, sim_uname(uptr));
+        usec_delay = 0.0;
+    } else {
+        /* Truly negative - pass through to get error */
+        return sim_timer_activate_after (uptr, usec_delay);
+    }
+}
 sim_cancel (uptr);
 return _sim_activate_after (uptr, usec_delay);
 }
@@ -10381,7 +10276,6 @@ return sim_timer_activate_after (uptr, usec_delay);
 
 t_stat sim_cancel (UNIT *uptr)
 {
-UNIT *cptr, *nptr;
 t_stat cancel_status;
 
 AIO_VALIDATE(uptr);
@@ -10394,43 +10288,15 @@ if (uptr->dynflags & UNIT_TMR_UNIT) {
     }
 AIO_CANCEL(uptr);
 AIO_UPDATE_QUEUE;
-if (sim_clock_queue == QUEUE_LIST_END)
+if (sim_event_heap_count() == 0)
     return SCPE_OK;
 if (!sim_is_active (uptr))
     return SCPE_OK;
 UPDATE_SIM_TIME;                                        /* update sim time */
 sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Canceling Event for %s\n", sim_uname(uptr));
-nptr = QUEUE_LIST_END;
 
-if (sim_clock_queue == uptr) {
-    nptr = sim_clock_queue = uptr->next;
-    uptr->next = NULL;                                  /* hygiene */
-    }
-else {
-    for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
-        if (cptr->next == uptr) {
-            nptr = cptr->next = uptr->next;
-            uptr->next = NULL;                          /* hygiene */
-            break;                                      /* end queue scan */
-            }
-        }
-    }
-if (nptr != QUEUE_LIST_END)
-    nptr->time += (uptr->next) ? 0 : uptr->time;
-if (!uptr->next)
-    uptr->time = 0;
-uptr->usecs_remaining = 0;
-if (sim_clock_queue != QUEUE_LIST_END)
-    sim_interval = sim_clock_queue->time;
-else
-    sim_interval = noqueue_time = NOQUEUE_WAIT;
-if (uptr->next) {
-    sim_printf ("Cancel failed for %s\n", sim_uname(uptr));
-    if (sim_deb)
-        fclose(sim_deb);
-    abort ();
-    }
-return SCPE_OK;
+/* Use heap-based cancellation */
+return sim_cancel_heap(uptr);
 }
 
 /* sim_is_active - test for entry in queue

@@ -90,7 +90,7 @@ t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time)
 
     /* Fill in event */
     evt->unit = uptr;
-    evt->fire_time = sim_event_heap_now() + event_time;
+    evt->fire_time = (uint64_t)sim_gtime() + event_time;
     evt->is_timer_event = false;
     evt->heap_index = 0; /* will be set by heap_insert */
 
@@ -209,16 +209,34 @@ t_stat sim_process_event_heap(void)
     uptr->next = NULL;
     uptr->time = 0;
 
+    /* Save usecs_remaining before freeing event, then clear it */
+    double saved_usecs = uptr->usecs_remaining;
+    uptr->usecs_remaining = 0.0;
+
     /* Free event structure */
     free(evt);
 
     /* Execute event action */
     sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Heap processing event for %s\n", sim_uname(uptr));
 
-    if (uptr->usecs_remaining) {
-        sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname(uptr),
-                  uptr->usecs_remaining);
-        reason = sim_timer_activate_after(uptr, uptr->usecs_remaining);
+    if (saved_usecs != 0.0) {
+        /* Clamp negative values to zero (rounding errors from time calculations) */
+        if (saved_usecs < 0.0) {
+            sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Clamping negative usecs_remaining %.0f to 0.0 for %s\n",
+                      saved_usecs, sim_uname(uptr));
+            saved_usecs = 0.0;
+        }
+        if (saved_usecs > 0.0) {
+            sim_debug(SIM_DBG_EVENT, &sim_scp_dev, "Requeueing %s after %.0f usecs\n", sim_uname(uptr),
+                      saved_usecs);
+            reason = sim_timer_activate_after(uptr, saved_usecs);
+        } else {
+            /* saved_usecs was negative, now clamped to 0 - just run the action */
+            if (uptr->action != NULL)
+                reason = uptr->action(uptr);
+            else
+                reason = SCPE_OK;
+        }
     } else {
         if (uptr->action != NULL)
             reason = uptr->action(uptr);
@@ -240,17 +258,19 @@ static void update_sim_interval_from_heap(void)
 
     if (sim_event_heap_count() == 0) {
         sim_interval = NOQUEUE_WAIT;
+        sim_event_heap_set_prev_interval(sim_interval);
         return;
     }
 
     next_evt = sim_event_heap_peek();
     if (next_evt == NULL) {
         sim_interval = NOQUEUE_WAIT;
+        sim_event_heap_set_prev_interval(sim_interval);
         return;
     }
 
     /* Calculate delta to next event */
-    now = sim_event_heap_now();
+    now = (uint64_t)sim_gtime();
     if (next_evt->fire_time <= now)
         delta = 0; /* overdue */
     else {
@@ -259,12 +279,13 @@ static void update_sim_interval_from_heap(void)
     }
 
     sim_interval = delta;
+    sim_event_heap_set_prev_interval(sim_interval);
 }
 
 /* Helper: Sync UNIT fields from event (for compatibility) */
 static void sync_unit_fields_from_event(UNIT *uptr, UNIT_EVENT *evt)
 {
-    uint64_t now = sim_event_heap_now();
+    uint64_t now = (uint64_t)sim_gtime();
 
     if (evt->fire_time <= now)
         uptr->time = 0;

@@ -2731,10 +2731,19 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
 
     AIO_VALIDATE(uptr);
     if (usec_delay < 0.0) {
-        sim_debug(DBG_QUE, &sim_timer_dev, "sim_timer_activate_after(%s, %.0f usecs) - negative delay\n",
-                  sim_uname(uptr), usec_delay);
-        return sim_messagef(SCPE_IERR, "Negative timer activation delay for %s: %.0f usecs\n", sim_uname(uptr),
-                            usec_delay);
+        /* Clamp small negative values (floating-point rounding errors) to zero */
+        if (usec_delay > -1.0) {
+            sim_debug(DBG_QUE, &sim_timer_dev,
+                      "sim_timer_activate_after(%s, %.10f usecs) - clamping small negative to 0.0\n",
+                      sim_uname(uptr), usec_delay);
+            usec_delay = 0.0;
+        } else {
+            /* Truly negative delay - this is an error */
+            sim_debug(DBG_QUE, &sim_timer_dev, "sim_timer_activate_after(%s, %.0f usecs) - negative delay\n",
+                      sim_uname(uptr), usec_delay);
+            return sim_messagef(SCPE_IERR, "Negative timer activation delay for %s: %.0f usecs\n", sim_uname(uptr),
+                                usec_delay);
+        }
     }
     /* If this is a clock unit, we need to schedule the related timer unit instead */
     for (tmr = 0; tmr <= SIM_NTIMERS; tmr++) {

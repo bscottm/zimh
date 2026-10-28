@@ -51,6 +51,12 @@ uint64_t sim_event_heap_now(void);
 /* Set the current instruction time (called by sim_process_event) */
 void sim_event_heap_set_now(uint64_t time);
 
+/* Get the previous sim_interval value for UPDATE_SIM_TIME */
+int32_t sim_event_heap_get_prev_interval(void);
+
+/* Set the previous sim_interval value for UPDATE_SIM_TIME */
+void sim_event_heap_set_prev_interval(int32_t interval);
+
 /* Debug validation */
 
 /* Validate heap invariant - returns true if heap property holds
