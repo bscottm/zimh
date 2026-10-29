@@ -464,7 +464,6 @@ static void test_integration_process_events_in_order(void **state)
     /* Initialize time tracking - set sim_interval to match heap time */
     sim_interval = NOQUEUE_WAIT;
     sim_event_heap_set_now(0);
-    sim_event_heap_set_prev_interval(NOQUEUE_WAIT);
 
     /* Schedule events at different times */
     assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
@@ -510,7 +509,6 @@ static void test_integration_cancel_middle_event(void **state)
     /* Initialize time tracking */
     sim_interval = NOQUEUE_WAIT;
     sim_event_heap_set_now(0);
-    sim_event_heap_set_prev_interval(NOQUEUE_WAIT);
 
     /* Schedule three events */
     assert_int_equal(_sim_activate_heap(&fixture->units[0], 300), SCPE_OK);
