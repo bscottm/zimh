@@ -2085,6 +2085,63 @@ sim_process_event_heap();
 - Removed misleading "- 1" time adjustment
 - AltairZ80 test now passes
 
+### Negative sim_vm_time During Initialization Fix
+
+**Problem:** The i650 test was failing with "FDS failed (bad ar)" because the program never executed - it stopped immediately. Investigation revealed `sim_vm_time` was `-1000000` at startup.
+
+**Root Cause:**
+
+The issue occurred during initialization before `sim_instr()` begins executing instructions:
+
+1. **During `sim_cancel()` before sim_instr starts:**
+   - i650's `sim_instr()` begins by calling `sim_cancel(&cpu_unit)` then `sim_activate(&cpu_unit, 1)`
+   - If the heap is empty after cancel, `update_sim_interval_from_heap()` sets `sim_interval = NOQUEUE_WAIT = 1000000`
+   - Then `sim_activate` calls `sim_gtime()` to calculate fire_time
+   - `sim_gtime()` calls UPDATE_SIM_TIME: `sim_vm_time = 0 + (0 - 1000000) = -1000000`
+
+2. **During startup event scheduling:**
+   - Functions like `sim_throt_sched()` and `sim_start_timer_services()` call `sim_gtime()` during initialization
+   - If `sim_interval` has been set by event scheduling, UPDATE_SIM_TIME can produce negative time
+
+**Solution:**
+
+Two-part fix to prevent negative time:
+
+1. **Guard against setting NOQUEUE_WAIT during initialization** (sim_event_integration.c):
+   ```c
+   if (sim_event_heap_count() == 0) {
+       /* Only set sim_interval to NOQUEUE_WAIT if it's not already 0.
+          If sim_interval is 0, we're in initialization. */
+       if (sim_interval != 0) {
+           sim_interval = NOQUEUE_WAIT;
+           sim_event_heap_set_prev_interval(sim_interval);
+       }
+       return;
+   }
+   ```
+
+2. **Clamp sim_vm_time to prevent negative values** (scp.c UPDATE_SIM_TIME macro):
+   ```c
+   sim_vm_time = sim_vm_time + (_x - sim_interval);
+   /* Clamp to 0 to prevent negative time during initialization */
+   if (sim_vm_time < 0)
+       sim_vm_time = 0;
+   ```
+
+**Rationale:**
+- `sim_interval` starts at 0 and should stay 0 until the instruction loop begins
+- Setting `sim_interval = NOQUEUE_WAIT` before instructions execute breaks UPDATE_SIM_TIME's calculation
+- Clamping provides defense-in-depth against timing initialization issues
+
+**Test Results:**
+- ✅ zimh-i650: PASS (was FAIL)
+- ✅ zimh-3b2-400: PASS
+- ✅ zimh-3b2-700: PASS  
+- ✅ zimh-altairz80-wd179x-index-pulse: PASS
+- ✅ zimh-unit-events: 17/17 PASS
+
+**Commit 3abf4526:** "events: Fix negative sim_vm_time during initialization"
+
 ### Known Issues
 
 **Timer Tests:** 37 of 73 timer unit tests still fail.
