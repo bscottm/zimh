@@ -273,6 +273,9 @@
         else                                                    \
             _x = sim_event_heap_get_prev_interval();            \
         sim_vm_time = sim_vm_time + (_x - sim_interval);        \
+        /* Clamp to 0 to prevent negative time during initialization */ \
+        if (sim_vm_time < 0)                                    \
+            sim_vm_time = 0;                                    \
         sim_rtime = sim_rtime + ((uint32_t) (_x - sim_interval)); \
         if (sim_event_heap_count() == 0)                        \
             noqueue_time = sim_interval;                        \

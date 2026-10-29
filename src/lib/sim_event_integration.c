@@ -186,8 +186,11 @@ t_stat sim_process_event_heap(void)
         /* Check if heap is empty */
         if (sim_event_heap_count() == 0) {
             event_heap_lock_release();
-            /* noqueue_time is static in scp.c - only update sim_interval */
-            sim_interval = NOQUEUE_WAIT;
+            /* Only set sim_interval to NOQUEUE_WAIT if it's not already 0.
+               If sim_interval is 0, we're in initialization. */
+            if (sim_interval != 0) {
+                sim_interval = NOQUEUE_WAIT;
+            }
             return SCPE_OK;
         }
 
@@ -285,15 +288,23 @@ static void update_sim_interval_from_heap(void)
     /* Must be called with lock held */
 
     if (sim_event_heap_count() == 0) {
-        sim_interval = NOQUEUE_WAIT;
-        sim_event_heap_set_prev_interval(sim_interval);
+        /* Only set sim_interval to NOQUEUE_WAIT if it's not already 0.
+           If sim_interval is 0, we're probably in initialization and should
+           leave it at 0 to avoid negative sim_vm_time from UPDATE_SIM_TIME. */
+        if (sim_interval != 0) {
+            sim_interval = NOQUEUE_WAIT;
+            sim_event_heap_set_prev_interval(sim_interval);
+        }
         return;
     }
 
     next_evt = sim_event_heap_peek();
     if (next_evt == NULL) {
-        sim_interval = NOQUEUE_WAIT;
-        sim_event_heap_set_prev_interval(sim_interval);
+        /* Heap count was non-zero but peek returned NULL - should never happen */
+        if (sim_interval != 0) {
+            sim_interval = NOQUEUE_WAIT;
+            sim_event_heap_set_prev_interval(sim_interval);
+        }
         return;
     }
 
