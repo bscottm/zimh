@@ -512,11 +512,13 @@ During code review, the assertion that "storing prev_interval cannot work" was c
 
 ---
 
-### Phase 4C: EVENT_HEAP.prev_interval Approach (IN PROGRESS ⏳)
+### Phase 4C: EVENT_HEAP.prev_interval Approach (PARTIAL SUCCESS ✅❌)
 
 **Goal:** Store previous sim_interval in EVENT_HEAP to enable UPDATE_SIM_TIME with heap.
 
 **Hypothesis:** The Phase 4A failures were not due to "prev_interval cannot work" but due to "prev_interval was never implemented". If we properly store the old interval value in the heap structure, UPDATE_SIM_TIME should work unchanged.
+
+**Final Status:** Phase 4C successfully fixed the i650 timing issues and proved the prev_interval approach works for basic event scheduling. However, the PDP-11 deadlock during clock calibration persists due to UPDATE_SIM_TIME's locking creating contention. This led to implementing Phase 4B (full rip-and-replace) to eliminate UPDATE_SIM_TIME entirely.
 
 **Implementation:**
 

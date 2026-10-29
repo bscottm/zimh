@@ -939,7 +939,7 @@ static void test_slirp_handles_dns_query(void **state)
 int main(void)
 {
     sim_init_sock ();                                       /* init socket capabilities */
-    AIO_INIT;                                               /* init Asynch I/O */
+    aio_init();                                             /* init Asynch I/O */
     sim_finit ();                                           /* init fio package */
     sim_disk_init ();                                       /* init disk package */
     sim_tape_init ();                                       /* init tape package */

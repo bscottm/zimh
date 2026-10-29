@@ -1005,8 +1005,12 @@ struct MEMFILE {
             abort();                                                                                                   \
         }
 
-/* Asynch/Threaded I/O support */
+/* Asynchronous I/O initialization. */
+t_stat aio_init();
+/* Asynchronous I/O teardown */
+t_stat aio_cleanup();
 
+/* Asynch/Threaded I/O support */
 #    if defined(SIM_ASYNCH_IO)
 #        include "sim_threads.h"
 
@@ -1014,18 +1018,31 @@ struct MEMFILE {
 
 extern sim_mutex_t sim_asynch_lock;
 extern sim_cond_t sim_asynch_wake;
+
 extern sim_mutex_t sim_timer_lock;
 extern sim_cond_t sim_timer_wake;
+
 extern bool sim_timer_event_canceled;
+
 extern int32_t sim_tmxr_poll_count;
 extern sim_cond_t sim_tmxr_poll_cond;
 extern sim_mutex_t sim_tmxr_poll_lock;
+
 extern sim_thread_t sim_asynch_main_threadid;
+
 extern UNIT *volatile sim_asynch_queue;
+
 extern volatile bool sim_idle_wait;
+
 extern int32_t sim_asynch_check;
 extern int32_t sim_asynch_latency;
 extern int32_t sim_asynch_inst_latency;
+
+/* Phase 4B: Absolute time tracking with instruction-driven interpolation */
+extern uint64_t sim_vm_time_base;          /* Absolute time at last event */
+extern int32_t sim_instructions_since_base;  /* Saved sim_interval for interpolation */
+extern double sim_vm_time;                 /* Legacy compatibility, updated at events */
+extern uint32_t sim_rtime;                 /* Legacy compatibility, lower 32 bits */
 
 /* Thread-local storage for asynchronous I/O diagnostics.
 
@@ -1106,23 +1123,6 @@ extern int32_t sim_asynch_inst_latency;
 /* sim_asynch_queue.  This implementation is a completely lock free design  */
 /* which avoids the potential ABA issues.                                   */
 #            define AIO_QUEUE_MODE "Lock free asynchronous event queue"
-#            define AIO_INIT                                                                                           \
-                do {                                                                                                   \
-                    sim_asynch_main_threadid = sim_thread_self();                                                      \
-                    /* Empty list/list end uses the point value (void *)1.                                             \
-                       This allows NULL in an entry's a_next pointer to                                                \
-                       indicate that the entry is not currently in any list */                                         \
-                    sim_asynch_queue = QUEUE_LIST_END;                                                                 \
-                } while (0)
-#            define AIO_CLEANUP                                                                                        \
-                do {                                                                                                   \
-                    sim_mutex_destroy(&sim_asynch_lock);                                                               \
-                    sim_cond_destroy(&sim_asynch_wake);                                                                \
-                    sim_mutex_destroy(&sim_timer_lock);                                                                \
-                    sim_cond_destroy(&sim_timer_wake);                                                                 \
-                    sim_mutex_destroy(&sim_tmxr_poll_lock);                                                            \
-                    sim_cond_destroy(&sim_tmxr_poll_cond);                                                             \
-                } while (0)
 #            ifdef _WIN32
 #            elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4) || defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
 #                define InterlockedCompareExchangePointer(Destination, Exchange, Comparand)                            \
@@ -1150,24 +1150,6 @@ extern int32_t sim_asynch_inst_latency;
 /* head sim_asynch_queue.  It will always work, but may be slower than the  */
 /* lock free approach when using USE_AIO_INTRINSICS                         */
 #            define AIO_QUEUE_MODE "Lock based asynchronous event queue"
-#            define AIO_INIT                                                                                           \
-                do {                                                                                                   \
-                    sim_mutex_recursive(&sim_asynch_lock, &attr);                                                      \
-                    sim_asynch_main_threadid = sim_thread_self();                                                      \
-                    /* Empty list/list end uses the point value (void *)1.                                             \
-                       This allows NULL in an entry's a_next pointer to                                                \
-                       indicate that the entry is not currently in any list */                                         \
-                    sim_asynch_queue = QUEUE_LIST_END;                                                                 \
-                } while (0)
-#            define AIO_CLEANUP                                                                                        \
-                do {                                                                                                   \
-                    sim_mutex_destroy(&sim_asynch_lock);                                                               \
-                    sim_cond_destroy(&sim_asynch_wake);                                                                \
-                    sim_mutex_destroy(&sim_timer_lock);                                                                \
-                    sim_cond_destroy(&sim_timer_wake);                                                                 \
-                    sim_mutex_destroy(&sim_tmxr_poll_lock);                                                            \
-                    sim_cond_destroy(&sim_tmxr_poll_cond);                                                             \
-                } while (0)
 #            define AIO_ILOCK AIO_LOCK
 #            define AIO_IUNLOCK AIO_UNLOCK
 #            define AIO_QUEUE_VAL sim_asynch_queue
@@ -1227,11 +1209,9 @@ extern int32_t sim_asynch_inst_latency;
 #        define AIO_ACTIVATE(caller, uptr, event_time)
 #        define AIO_VALIDATE(uptr)
 #        define AIO_CHECK_EVENT
-#        define AIO_INIT
 #        define AIO_MAIN_THREAD true
 #        define AIO_LOCK
 #        define AIO_UNLOCK
-#        define AIO_CLEANUP
 #        define AIO_EVENT_BEGIN(uptr)
 #        define AIO_EVENT_COMPLETE(uptr, reason)
 #        define AIO_IS_ACTIVE(uptr) false

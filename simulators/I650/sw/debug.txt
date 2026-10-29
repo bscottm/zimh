@@ -1,8 +1,0 @@
-Debug output to "debug.txt" at 2026-10-28 13:53:32
-IBM 650 simulator ZIMH 2026.5.29
-
-
-** IBM 650: Basic Instruction Test: 
-
-Simulation stopped, IC: 08000 ( 7019019999+   RD    1901  9999 )
-FDS failed (bad ar)

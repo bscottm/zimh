@@ -264,26 +264,6 @@
 #define SCH_LE          7
 
 #define SRBSIZ          1024                            /* save/restore buffer */
-#define UPDATE_SIM_TIME                                         \
-    do {                                                        \
-        int32_t _x;                                             \
-        AIO_LOCK;                                               \
-        if (sim_event_heap_count() == 0)                        \
-            _x = noqueue_time;                                  \
-        else                                                    \
-            _x = sim_event_heap_get_prev_interval();            \
-        sim_vm_time = sim_vm_time + (_x - sim_interval);        \
-        /* Clamp to 0 to prevent negative time during initialization */ \
-        if (sim_vm_time < 0)                                    \
-            sim_vm_time = 0;                                    \
-        sim_rtime = sim_rtime + ((uint32_t) (_x - sim_interval)); \
-        if (sim_event_heap_count() == 0)                        \
-            noqueue_time = sim_interval;                        \
-        else                                                    \
-            sim_event_heap_set_prev_interval(sim_interval);     \
-        AIO_UNLOCK;                                             \
-    } while (0)
-
 #if defined (USE_INT64)
 #define SZ_LOAD(sz,v,mb,j) \
     if (sz == sizeof (uint8_t)) v = *(((uint8_t *) mb) + ((uint32_t) j)); \
@@ -342,20 +322,6 @@ DEVICE sim_scp_dev = {
 
 /* Asynch I/O support */
 #if defined (SIM_ASYNCH_IO)
-sim_mutex_t sim_asynch_lock    = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_asynch_wake     = PTHREAD_COND_INITIALIZER;
-
-sim_mutex_t sim_timer_lock     = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_timer_wake      = PTHREAD_COND_INITIALIZER;
-sim_mutex_t sim_tmxr_poll_lock = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_tmxr_poll_cond  = PTHREAD_COND_INITIALIZER;
-int32_t sim_tmxr_poll_count;
-sim_thread_t sim_asynch_main_threadid;
-UNIT * volatile sim_asynch_queue;
-bool sim_asynch_enabled = true;
-int32_t sim_asynch_check;
-int32_t sim_asynch_latency = 4000;    /* 4 usec interrupt latency */
-int32_t sim_asynch_inst_latency = 20; /* assume 5 mip simulator */
 
 int sim_aio_update_queue (void)
 {
@@ -417,8 +383,6 @@ if (sim_idle_wait) {
     }
 AIO_IUNLOCK;
 }
-#else
-bool sim_asynch_enabled = false;
 #endif
 
 /* The per-simulator init routine is a weak global that defaults to NULL
@@ -573,9 +537,12 @@ int32_t sim_runlimit_value = 0;
 const char *sim_runlimit_units = NULL;
 bool sim_file_compare_diff_valid = false;
 size_t sim_file_compare_diff_offset = 0;
-static double sim_vm_time;
-static uint32_t sim_rtime;
+double sim_vm_time;  /* Phase 4B: Legacy compatibility, updated at events */
+uint32_t sim_rtime;  /* Phase 4B: Legacy compatibility, lower 32 bits */
 static int32_t noqueue_time;
+/* Phase 4B: Absolute time tracking with instruction-driven interpolation */
+uint64_t sim_vm_time_base = 0;         /* Absolute time at last event */
+int32_t sim_instructions_since_base = 0;  /* Saved sim_interval for interpolation */
 volatile bool stop_cpu = false;
 volatile bool sigterm_received = false;
 static uint_t sim_stop_sleep_ms = 250;
@@ -2711,7 +2678,7 @@ sim_set_main_thread_affinity();
 #endif
 
 sim_init_sock ();                                       /* init socket capabilities */
-AIO_INIT;                                               /* init Asynch I/O */
+aio_init();                                             /* init Asynch I/O */
 sim_finit ();                                           /* init fio package */
 sim_disk_init ();                                       /* init disk package */
 sim_tape_init ();                                       /* init tape package */
@@ -2735,6 +2702,8 @@ for (i = 0; cmd_table[i].name; i++) {
 stop_cpu = false;
 sim_interval = 0;
 sim_vm_time = sim_rtime = 0;
+sim_vm_time_base = 0;  /* Phase 4B */
+sim_instructions_since_base = 0;  /* Phase 4B */
 noqueue_time = 0;
 sim_clock_queue = QUEUE_LIST_END;
 sim_is_running = false;
@@ -2871,7 +2840,7 @@ sim_set_logoff (0, NULL);                               /* close log */
 sim_set_notelnet (0, NULL);                             /* close Telnet */
 vid_close_all ();                                       /* close video */
 sim_ttclose ();                                         /* close console */
-AIO_CLEANUP;                                            /* Asynch I/O */
+aio_cleanup();                                          /* Asynch I/O */
 sim_cleanup_sock ();                                    /* cleanup sockets */
 fclose (stdnul);                                        /* close bit bucket file handle */
 free (targv);                                           /* release any argv copy that was made */
@@ -7956,7 +7925,6 @@ sim_cancel (&sim_flush_unit);                           /* cancel flush timer */
 sim_cancel_step ();                                     /* cancel step timer */
 sim_throt_cancel ();                                    /* cancel throttle */
 AIO_UPDATE_QUEUE;
-UPDATE_SIM_TIME;                                        /* update sim time */
 return r | ((sim_switches & SWMASK ('Q')) ? SCPE_NOMESSAGE : 0);
 }
 
@@ -7989,6 +7957,8 @@ t_stat r;
 while (sim_clock_queue != QUEUE_LIST_END)
     sim_cancel (sim_clock_queue);
 sim_vm_time = sim_rtime = 0;
+sim_vm_time_base = 0;  /* Phase 4B */
+sim_instructions_since_base = 0;  /* Phase 4B */
 noqueue_time = sim_interval = 0;
 r = reset_all (0);
 if ((r == SCPE_OK) && (flag == RU_RUN)) {
@@ -10157,7 +10127,6 @@ if (stop_cpu) {                                         /* stop CPU? */
     return SCPE_STOP;
     }
 AIO_UPDATE_QUEUE;
-UPDATE_SIM_TIME;                                        /* update sim time */
 
 /* Use heap-based event processing */
 return sim_process_event_heap();
@@ -10184,7 +10153,6 @@ t_stat _sim_activate (UNIT *uptr, int32_t event_time)
 AIO_ACTIVATE (_sim_activate, uptr, event_time);
 if (sim_is_active (uptr))                               /* already active? */
     return SCPE_OK;
-UPDATE_SIM_TIME;                                        /* update sim time */
 
 sim_debug (SIM_DBG_ACTIVATE, &sim_scp_dev, "Activating %s delay=%d\n", sim_uname (uptr), event_time);
 
@@ -10315,7 +10283,6 @@ if (sim_event_heap_count() == 0)
     return SCPE_OK;
 if (!sim_is_active (uptr))
     return SCPE_OK;
-UPDATE_SIM_TIME;                                        /* update sim time */
 sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Canceling Event for %s\n", sim_uname(uptr));
 
 /* Use heap-based cancellation */
@@ -10419,15 +10386,35 @@ return 0.0;
 double sim_gtime (void)
 {
 if (AIO_MAIN_THREAD) {
-    UPDATE_SIM_TIME;
-    }
-return sim_vm_time;
+    /* Main thread: interpolate between events based on instructions executed
+
+       sim_interval counts DOWN from the instruction budget to 0.
+       When an event fires:
+         - sim_instructions_since_base = sim_interval (the starting budget)
+         - sim_vm_time_base = event's absolute fire time
+
+       As instructions execute, sim_interval counts down.
+       Elapsed instructions = sim_instructions_since_base - sim_interval
+       Current time = sim_vm_time_base + elapsed
+    */
+    int32_t elapsed = sim_instructions_since_base - sim_interval;
+    return (double)(sim_vm_time_base + elapsed);
+} else {
+    /* Background threads: return time of last event (no interpolation) */
+    return (double)sim_vm_time_base;
+}
 }
 
 uint32_t sim_grtime (void)
 {
-UPDATE_SIM_TIME;
-return sim_rtime;
+if (AIO_MAIN_THREAD) {
+    /* Main thread: interpolate like sim_gtime() but return lower 32 bits */
+    int32_t elapsed = sim_instructions_since_base - sim_interval;
+    return (uint32_t)(sim_vm_time_base + elapsed);
+} else {
+    /* Background threads: return time of last event */
+    return (uint32_t)sim_vm_time_base;
+}
 }
 
 /* sim_qcount - return queue entry count
@@ -11753,6 +11740,8 @@ sim_scp_dev.dctrl = 0xFFFFFFFF;
 while (sim_clock_queue != QUEUE_LIST_END)
     sim_cancel (sim_clock_queue);
 sim_vm_time = sim_rtime = 0;
+sim_vm_time_base = 0;  /* Phase 4B */
+sim_instructions_since_base = 0;  /* Phase 4B */
 noqueue_time = sim_interval = 0;
 
 /* queue test unit events */

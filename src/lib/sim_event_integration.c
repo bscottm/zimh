@@ -1,6 +1,6 @@
 /* sim_event_integration.c: Phase 2 integration of heap with existing APIs */
-// SPDX-FileCopyrightText: 2024 B. Scott Michel
-// SPDX-License-Identifier: X11
+// SPDX-FileCopyrightText: 2026 The ZIMH Project
+// SPDX-License-Identifier: MIT
 
 /*
    Phase 2: Integrate min-heap with existing sim_activate/sim_cancel APIs
@@ -56,15 +56,6 @@ static inline void event_heap_lock_acquire(void)
 static inline void event_heap_lock_release(void)
 {
     sim_atomic_put(&event_heap_spinlock, 0);
-}
-
-/* Helper: Ensure heap is initialized (lazy init) */
-static inline void ensure_heap_initialized(void)
-{
-    if (sim_event_heap_count() == 0 && sim_event_heap_peek() == NULL) {
-        /* Heap exists but may need initialization */
-        /* sim_event_heap_init() removed - heap self-initializes */
-    }
 }
 
 /* Phase 2 replacement for _sim_activate
@@ -190,6 +181,7 @@ t_stat sim_process_event_heap(void)
                If sim_interval is 0, we're in initialization. */
             if (sim_interval != 0) {
                 sim_interval = NOQUEUE_WAIT;
+                sim_instructions_since_base = NOQUEUE_WAIT;  /* Phase 4B */
             }
             return SCPE_OK;
         }
@@ -202,7 +194,7 @@ t_stat sim_process_event_heap(void)
         }
 
         /* Check if event is ready to fire */
-        if (evt->fire_time >= (uint64_t)sim_gtime()) {
+        if (evt->fire_time > (uint64_t)sim_gtime()) {  /* Note: > not >= */
             /* No more events ready, update interval and return */
             update_sim_interval_from_heap();
             event_heap_lock_release();
@@ -217,13 +209,17 @@ t_stat sim_process_event_heap(void)
         }
 
         uptr = evt->unit;
-        event_time = evt->fire_time;
 
-        /* Advance time to event fire time */
-        sim_event_heap_set_now(evt->fire_time);
+        /* Phase 4B: SYNC TIME to event's absolute fire time */
+        sim_vm_time_base = evt->fire_time;
+        sim_vm_time = (double)evt->fire_time;  /* Legacy compatibility */
+        sim_rtime = (uint32_t)evt->fire_time;  /* Legacy compatibility - lower 32 bits */
 
-        /* Update sim_interval for next event */
+        /* Calculate interval to NEXT event */
         update_sim_interval_from_heap();
+
+        /* Phase 4B: Save current sim_interval for interpolation */
+        sim_instructions_since_base = sim_interval;
 
         event_heap_lock_release();
 
@@ -289,11 +285,9 @@ static void update_sim_interval_from_heap(void)
 
     if (sim_event_heap_count() == 0) {
         /* Only set sim_interval to NOQUEUE_WAIT if it's not already 0.
-           If sim_interval is 0, we're probably in initialization and should
-           leave it at 0 to avoid negative sim_vm_time from UPDATE_SIM_TIME. */
+           If sim_interval is 0, we're probably in initialization. */
         if (sim_interval != 0) {
             sim_interval = NOQUEUE_WAIT;
-            sim_event_heap_set_prev_interval(sim_interval);
         }
         return;
     }
@@ -303,7 +297,6 @@ static void update_sim_interval_from_heap(void)
         /* Heap count was non-zero but peek returned NULL - should never happen */
         if (sim_interval != 0) {
             sim_interval = NOQUEUE_WAIT;
-            sim_event_heap_set_prev_interval(sim_interval);
         }
         return;
     }
@@ -318,7 +311,6 @@ static void update_sim_interval_from_heap(void)
     }
 
     sim_interval = delta;
-    sim_event_heap_set_prev_interval(sim_interval);
 }
 
 /* Helper: Sync UNIT fields from event (for compatibility) */
