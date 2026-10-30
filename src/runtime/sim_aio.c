@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 #include "sim_defs.h"
-#include "sim_threads.h"
 
 #if defined(SIM_ASYNCH_IO)
+#include "sim_threads.h"
+
 sim_mutex_t sim_asynch_lock;
 sim_cond_t sim_asynch_wake;
 

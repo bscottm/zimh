@@ -20,11 +20,6 @@
 
 #include "sim_defs.h"
 #include "sim_events.h"
-
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
-
 #include "sim_atomic.h"
 
 /* Forward declarations */
@@ -215,11 +210,8 @@ t_stat sim_process_event_heap(void)
         sim_vm_time = (double)evt->fire_time;  /* Legacy compatibility */
         sim_rtime = (uint32_t)evt->fire_time;  /* Legacy compatibility - lower 32 bits */
 
-        /* Calculate interval to NEXT event */
+        /* Calculate interval to NEXT event (also sets sim_instructions_since_base) */
         update_sim_interval_from_heap();
-
-        /* Phase 4B: Save current sim_interval for interpolation */
-        sim_instructions_since_base = sim_interval;
 
         event_heap_lock_release();
 
@@ -288,6 +280,7 @@ static void update_sim_interval_from_heap(void)
            If sim_interval is 0, we're probably in initialization. */
         if (sim_interval != 0) {
             sim_interval = NOQUEUE_WAIT;
+            sim_instructions_since_base = NOQUEUE_WAIT;  /* Phase 4B: maintain interpolation invariant */
         }
         return;
     }
@@ -297,6 +290,7 @@ static void update_sim_interval_from_heap(void)
         /* Heap count was non-zero but peek returned NULL - should never happen */
         if (sim_interval != 0) {
             sim_interval = NOQUEUE_WAIT;
+            sim_instructions_since_base = NOQUEUE_WAIT;  /* Phase 4B: maintain interpolation invariant */
         }
         return;
     }
@@ -311,6 +305,7 @@ static void update_sim_interval_from_heap(void)
     }
 
     sim_interval = delta;
+    sim_instructions_since_base = delta;  /* Phase 4B: maintain interpolation invariant */
 }
 
 /* Helper: Sync UNIT fields from event (for compatibility) */

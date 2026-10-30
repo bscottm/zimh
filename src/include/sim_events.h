@@ -70,4 +70,11 @@ t_stat _sim_activate_heap(UNIT *uptr, int32_t event_time);
 t_stat sim_cancel_heap(UNIT *uptr);
 t_stat sim_process_event_heap(void);
 
+/* Externs related to event heap */
+/* Phase 4B: Absolute time tracking with instruction-driven interpolation */
+extern uint64_t sim_vm_time_base;            /* Absolute time at last event */
+extern int32_t sim_instructions_since_base;  /* Saved sim_interval for interpolation */
+extern double sim_vm_time;                   /* Legacy compatibility, updated at events */
+extern uint32_t sim_rtime;                   /* Legacy compatibility, lower 32 bits */
+
 #endif /* SIM_EVENTS_H_ */

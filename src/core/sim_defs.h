@@ -1038,12 +1038,6 @@ extern int32_t sim_asynch_check;
 extern int32_t sim_asynch_latency;
 extern int32_t sim_asynch_inst_latency;
 
-/* Phase 4B: Absolute time tracking with instruction-driven interpolation */
-extern uint64_t sim_vm_time_base;          /* Absolute time at last event */
-extern int32_t sim_instructions_since_base;  /* Saved sim_interval for interpolation */
-extern double sim_vm_time;                 /* Legacy compatibility, updated at events */
-extern uint32_t sim_rtime;                 /* Legacy compatibility, lower 32 bits */
-
 /* Thread-local storage for asynchronous I/O diagnostics.
 
    The project baseline assumes a compiler with at least C11 support, so
