@@ -116,7 +116,6 @@ uint32_t sim_rom_read_with_delay (uint32_t val);
 double sim_host_speed_factor (void);
 
 extern bool sim_idle_enab;                          /* idle enabled flag */
-extern volatile bool sim_idle_wait;                 /* idle waiting flag */
 extern bool sim_asynch_timer;
 extern DEVICE sim_timer_dev;
 extern UNIT * volatile sim_clock_cosched_queue[SIM_NTIMERS+1];

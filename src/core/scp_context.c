@@ -34,12 +34,11 @@ const char *sim_uname(UNIT *uptr)
     DEVICE *d;
     char uname[CBUFSIZE];
 
-    if (!uptr)
+    if (uptr == NULL)
         return "";
-    if (uptr->uname)
+    if (uptr->uname != NULL)
         return uptr->uname;
-    d = find_dev_from_unit(uptr);
-    if (!d)
+    if ((d = find_dev_from_unit(uptr)) == NULL)
         return "";
     if (d->numunits == 1)
         snprintf(uname, sizeof(uname), "%s", sim_dname(d));

@@ -4546,7 +4546,7 @@ if ((reason = build_dev_tab ()) != SCPE_OK)            /* build, chk dib_tab */
    watch_stop = 0;
 
    while ( reason == 0) {                                /* loop until ABORT */
-      AIO_CHECK_EVENT;                                   /* queue async events */
+      aio_check_event();                                 /* queue async events */
       if (sim_interval <= 0) {                           /* check clock queue */
          if ((reason = sim_process_event()) != SCPE_OK) {/* error?  stop sim */
 #if ITS
@@ -4844,7 +4844,7 @@ in_loop:
 #endif
          }
          /* Handle events during a indirect loop */
-         AIO_CHECK_EVENT;                                   /* queue async events */
+         aio_check_event();                                 /* queue async events */
          if (--sim_interval <= 0) {
               if ((reason = sim_process_event()) != SCPE_OK) {
                   return reason;
@@ -8435,7 +8435,7 @@ mul_done:
               set_reg(AC, AOB(AD));
 #endif
               do {
-                  AIO_CHECK_EVENT;                    /* queue async events */
+                  aio_check_event();                  /* queue async events */
                   if (sim_interval <= 0) {
                       if ((reason = sim_process_event()) != SCPE_OK) {
                           f_pc_inh = 1;
@@ -11630,7 +11630,7 @@ its_wr:
                            AD = ((AR + (AD << 18)) & LMASK) | ((AR + AD) & RMASK);
                            set_reg(AC, AOB(AD));
                            do {
-                               AIO_CHECK_EVENT;                /* queue async events */
+                               aio_check_event();              /* queue async events */
                                if (sim_interval <= 0) {
                                    if ((reason = sim_process_event()) != SCPE_OK) {
                                        f_pc_inh = 1;

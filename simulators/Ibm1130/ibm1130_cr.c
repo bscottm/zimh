@@ -2518,7 +2518,7 @@ static DWORD CALLBACK pcr_thread (LPVOID arg)
 
             case PCR_STATE_WAIT_DATA:                   /* waiting for data from P command */
                 if (cr_unit.flags & UNIT_DEBUG)
-                    printf((nrcvd <= 0) ? "PCR: NO RESP!\n" : "PCR: GOT %d BYTES\n", nrcvd);
+                    printf((nrcvd <= 0) ? "PCR: NO RESP!\n" : "PCR: GOT %ld BYTES\n", nrcvd);
 
                 if (nrcvd > 0) {
                     pcr_nleft -= nrcvd;

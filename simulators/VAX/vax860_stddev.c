@@ -884,7 +884,7 @@ if (tmr_iccs & TMR_CSR_IE) {                        /* ie? set int req */
     }
 else
     tmr_int = 0;
-AIO_SET_INTERRUPT_LATENCY(tmr_poll*clk_tps);        /* set interrrupt latency */
+aio_set_interrupt_latency(tmr_poll*clk_tps);        /* set interrrupt latency */
 return SCPE_OK;
 }
 

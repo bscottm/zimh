@@ -72,7 +72,7 @@ t_stat sim_instr (void)
     return reason;
 
   for (;;) {
-    AIO_CHECK_EVENT;
+    aio_check_event();
     if (sim_interval <= 0) {
       if ((reason = sim_process_event()) != SCPE_OK)
         return reason;

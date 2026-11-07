@@ -2303,7 +2303,7 @@ if (dev->backend.eth_api == ETH_API_TEST)
   sim_mutex_init (&dev->startup_lock);
   sim_cond_init (&dev->writer_cond);
   sim_cond_init (&dev->startup_cond);
-  dev->write_requests = eth_tailq_init(dev->write_requests);
+  dev->write_requests = eth_tailq_init();
   if (dev->write_requests == NULL) {
     _eth_close_port (&dev->backend, dev->fd_handle);
     free(dev->name);

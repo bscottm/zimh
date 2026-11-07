@@ -79,14 +79,6 @@
 #include "sim_tape.h"
 #include "sim_tape_internal.h"
 #include "sim_types.h"
-#include <ctype.h>
-#include <inttypes.h>
-#include <stdbool.h>
-#include <stdint.h>
-
-#if defined SIM_ASYNCH_IO
-#include <pthread.h>
-#endif
 
 static struct sim_tape_fmt {
     const char          *name;                          /* name */
@@ -3422,8 +3414,8 @@ if (ctx == NULL)                                        /* if not properly attac
 sim_debug_unit (ctx->dbit, uptr, "sim_tape_reset(unit=%d)\n", (int)(uptr-ctx->dptr->units));
 
 _sim_tape_io_flush(uptr);
-AIO_VALIDATE(uptr);
-AIO_UPDATE_QUEUE;
+aio_in_main_thread(uptr);
+sim_aio_update_queue();
 return SCPE_OK;
 }
 

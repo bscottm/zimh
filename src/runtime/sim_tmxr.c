@@ -313,6 +313,7 @@
 
 #include "sim_defs.h"
 #include "dynstr.h"
+#include "sim_aio.h"
 #include "sim_serial.h"
 #include "sim_sock.h"
 #include "sim_ether.h"
@@ -4957,7 +4958,7 @@ return _sim_activate (uptr, interval);
 
 t_stat tmxr_activate_abs (UNIT *uptr, int32_t interval)
 {
-AIO_VALIDATE(uptr);             /* Can't call asynchronously */
+aio_in_main_thread(uptr);         /* Can't call asynchronously */
 sim_cancel (uptr);
 return tmxr_activate (uptr, interval);
 }

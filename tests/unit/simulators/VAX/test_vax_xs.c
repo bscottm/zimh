@@ -756,7 +756,7 @@ int main(void)
 
     // Important: Ensure that SCP's initialization happens before the test executes!
     sim_init_sock ();                                       /* init socket capabilities */
-    AIO_INIT;                                               /* init Asynch I/O */
+    aio_init();                                             /* init Asynch I/O */
     sim_finit ();                                           /* init fio package */
     sim_disk_init ();                                       /* init disk package */
     sim_tape_init ();                                       /* init tape package */

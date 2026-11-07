@@ -263,22 +263,6 @@
 #define SCH_LE          7
 
 #define SRBSIZ          1024                            /* save/restore buffer */
-#define UPDATE_SIM_TIME                                         \
-    do {                                                        \
-        int32_t _x;                                             \
-        AIO_LOCK;                                               \
-        if (sim_clock_queue == QUEUE_LIST_END)                  \
-            _x = noqueue_time;                                  \
-        else                                                    \
-            _x = sim_clock_queue->time;                         \
-        sim_vm_time = sim_vm_time + (_x - sim_interval);        \
-        sim_rtime = sim_rtime + ((uint32_t) (_x - sim_interval)); \
-        if (sim_clock_queue == QUEUE_LIST_END)                  \
-            noqueue_time = sim_interval;                        \
-        else                                                    \
-            sim_clock_queue->time = sim_interval;               \
-        AIO_UNLOCK;                                             \
-    } while (0)
 
 #if defined (USE_INT64)
 #define SZ_LOAD(sz,v,mb,j) \
@@ -335,87 +319,6 @@ DEVICE sim_scp_dev = {
     NULL, DEV_NOSAVE|DEV_DEBUG, 0,
     scp_debug, NULL, NULL, NULL, NULL, NULL,
     sim_scp_description};
-
-/* Asynch I/O support */
-#if defined (SIM_ASYNCH_IO)
-sim_mutex_t sim_asynch_lock    = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_asynch_wake     = PTHREAD_COND_INITIALIZER;
-
-sim_mutex_t sim_timer_lock     = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_timer_wake      = PTHREAD_COND_INITIALIZER;
-sim_mutex_t sim_tmxr_poll_lock = PTHREAD_MUTEX_INITIALIZER;
-sim_cond_t sim_tmxr_poll_cond  = PTHREAD_COND_INITIALIZER;
-int32_t sim_tmxr_poll_count;
-sim_thread_t sim_asynch_main_threadid;
-UNIT * volatile sim_asynch_queue;
-bool sim_asynch_enabled = true;
-int32_t sim_asynch_check;
-int32_t sim_asynch_latency = 4000;    /* 4 usec interrupt latency */
-int32_t sim_asynch_inst_latency = 20; /* assume 5 mip simulator */
-
-int sim_aio_update_queue (void)
-{
-int migrated = 0;
-
-AIO_ILOCK;
-if (AIO_QUEUE_VAL != QUEUE_LIST_END) {  /* List !Empty */
-    UNIT *q, *uptr;
-    int32_t a_event_time;
-    do {                                /* Grab current queue */
-        q = AIO_QUEUE_VAL;
-        } while (q != AIO_QUEUE_SET(QUEUE_LIST_END, q));
-    while (q != QUEUE_LIST_END) {       /* List !Empty */
-        sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Migrating Asynch event for %s after %d %s\n", sim_uname(q), q->a_event_time, sim_vm_interval_units);
-        ++migrated;
-        uptr = q;
-        q = q->a_next;
-        uptr->a_next = NULL;        /* hygiene */
-        if (uptr->a_activate_call != &sim_activate_notbefore) {
-            a_event_time = uptr->a_event_time-((sim_asynch_inst_latency+1)/2);
-            if (a_event_time < 0)
-                a_event_time = 0;
-            }
-        else
-            a_event_time = uptr->a_event_time;
-        AIO_IUNLOCK;
-        uptr->a_activate_call (uptr, a_event_time);
-        if (uptr->a_check_completion) {
-            sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Calling Completion Check for asynch event on %s\n", sim_uname(uptr));
-            uptr->a_check_completion (uptr);
-            }
-        AIO_ILOCK;
-        }
-    }
-AIO_IUNLOCK;
-return migrated;
-}
-
-void sim_aio_activate (ACTIVATE_API caller, UNIT *uptr, int32_t event_time)
-{
-AIO_ILOCK;
-sim_debug (SIM_DBG_AIO_QUEUE, &sim_scp_dev, "Queueing Asynch event for %s after %d %s\n", sim_uname(uptr), event_time, sim_vm_interval_units);
-if (uptr->a_next) {
-    uptr->a_activate_call = sim_activate_abs;
-    }
-else {
-    UNIT *q;
-    uptr->a_event_time = event_time;
-    uptr->a_activate_call = caller;
-    do {
-        q = AIO_QUEUE_VAL;
-        uptr->a_next = q;                               /* Mark as on list */
-        } while (q != AIO_QUEUE_SET(uptr, q));
-    }
-sim_asynch_check = 0;                             /* try to force check */
-if (sim_idle_wait) {
-    sim_debug (TIMER_DBG_IDLE, &sim_timer_dev, "waking due to event on %s after %d %s\n", sim_uname(uptr), event_time, sim_vm_interval_units);
-    sim_cond_signal (&sim_asynch_wake);
-    }
-AIO_IUNLOCK;
-}
-#else
-bool sim_asynch_enabled = false;
-#endif
 
 /* The per-simulator init routine is a weak global that defaults to NULL
    The other per-simulator pointers can be overridden by the init routine
@@ -528,6 +431,7 @@ t_stat sim_set_asynch (int32_t flag, const char *cptr);
 static t_stat sim_sanity_check_register_declarations (DEVICE **devices);
 static void fix_writelock_mtab (DEVICE *dptr);
 static t_stat _sim_debug_flush (void);
+static void update_sim_time (void);
 
 /* Global data */
 
@@ -2707,7 +2611,7 @@ sim_set_main_thread_affinity();
 #endif
 
 sim_init_sock ();                                       /* init socket capabilities */
-AIO_INIT;                                               /* init Asynch I/O */
+aio_init();                                             /* init Asynch I/O */
 sim_finit ();                                           /* init fio package */
 sim_disk_init ();                                       /* init disk package */
 sim_tape_init ();                                       /* init tape package */
@@ -2866,7 +2770,7 @@ sim_set_logoff (0, NULL);                               /* close log */
 sim_set_notelnet (0, NULL);                             /* close Telnet */
 vid_close_all ();                                       /* close video */
 sim_ttclose ();                                         /* close console */
-AIO_CLEANUP;                                            /* Asynch I/O */
+aio_cleanup();                                          /* Asynch I/O */
 sim_cleanup_sock ();                                    /* cleanup sockets */
 fclose (stdnul);                                        /* close bit bucket file handle */
 free (targv);                                           /* release any argv copy that was made */
@@ -5553,76 +5457,78 @@ else if (!flag)
 return SCPE_OK;
 }
 
-t_stat show_queue (FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, const char *cptr)
+t_stat show_queue(FILE *st, DEVICE *dnotused, UNIT *unotused, int32_t flag, const char *cptr)
 {
-DEVICE *dptr;
-UNIT *uptr;
-MEMFILE buf;
+    DEVICE *dptr;
+    UNIT *uptr;
+    MEMFILE buf;
 
-memset (&buf, 0, sizeof (buf));
-if (cptr && (*cptr != 0))
-    return SCPE_2MARG;
-if (sim_clock_queue == QUEUE_LIST_END)
-    fprintf (st, "%s event queue empty, time = %.0f, executing %s %s/sec\n",
-             sim_name, sim_vm_time, sim_fmt_numeric (sim_timer_inst_per_sec ()), sim_vm_interval_units);
-else {
-    const char *tim = "";
-    double inst_per_sec = sim_timer_inst_per_sec ();
+    memset(&buf, 0, sizeof(buf));
+    if (cptr && (*cptr != 0))
+        return SCPE_2MARG;
+    if (sim_clock_queue == QUEUE_LIST_END)
+        fprintf(st, "%s event queue empty, time = %.0f, executing %s %s/sec\n", sim_name, sim_vm_time,
+                sim_fmt_numeric(sim_timer_inst_per_sec()), sim_vm_interval_units);
+    else {
+        const char *tim = "";
+        double inst_per_sec = sim_timer_inst_per_sec();
 
-    fprintf (st, "%s event queue status, time = %.0f, executing %s %s/sec\n",
-             sim_name, sim_vm_time, sim_fmt_numeric (inst_per_sec), sim_vm_interval_units);
-    for (uptr = sim_clock_queue; uptr != QUEUE_LIST_END; uptr = uptr->next) {
-        if (uptr == &sim_step_unit)
-            fprintf (st, "  Step timer");
-        else
-            if (sim_expect_is_unit (uptr))
-                fprintf (st, "  Expect fired");
+        fprintf(st, "%s event queue status, time = %.0f, executing %s %s/sec\n", sim_name, sim_vm_time,
+                sim_fmt_numeric(inst_per_sec), sim_vm_interval_units);
+        for (uptr = sim_clock_queue; uptr != QUEUE_LIST_END; uptr = uptr->next) {
+            if (uptr == &sim_step_unit)
+                fprintf(st, "  Step timer");
+            else if (sim_expect_is_unit(uptr))
+                fprintf(st, "  Expect fired");
+            else if ((dptr = find_dev_from_unit(uptr)) != NULL) {
+                fprintf(st, "  %s", sim_dname(dptr));
+                if (dptr->numunits > 1)
+                    fprintf(st, " unit %d", (int32_t)(uptr - dptr->units));
+            } else
+                fprintf(st, "  Unknown");
+            if (inst_per_sec != 0.0)
+                tim = sim_fmt_secs(((_sim_activate_queue_time(uptr) - 1) / sim_timer_inst_per_sec()) +
+                                   (uptr->usecs_remaining / 1000000.0));
+            if (uptr->usecs_remaining)
+                fprintf(st, " at %d plus %.0f usecs%s%s%s%s\n", _sim_activate_queue_time(uptr) - 1,
+                        uptr->usecs_remaining, (*tim) ? " (" : "", tim, (*tim) ? " total)" : "",
+                        (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
             else
-                if ((dptr = find_dev_from_unit (uptr)) != NULL) {
-                    fprintf (st, "  %s", sim_dname (dptr));
-                    if (dptr->numunits > 1)
-                        fprintf (st, " unit %d", (int32_t) (uptr - dptr->units));
-                    }
-                else
-                    fprintf (st, "  Unknown");
-        if (inst_per_sec != 0.0)
-            tim = sim_fmt_secs(((_sim_activate_queue_time (uptr) - 1) / sim_timer_inst_per_sec ()) + (uptr->usecs_remaining / 1000000.0));
-        if (uptr->usecs_remaining)
-            fprintf (st, " at %d plus %.0f usecs%s%s%s%s\n", _sim_activate_queue_time (uptr) - 1, uptr->usecs_remaining,
-                                            (*tim) ? " (" : "", tim, (*tim) ? " total)" : "",
-                                            (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
-        else
-            fprintf (st, " at %d%s%s%s%s\n", _sim_activate_queue_time (uptr) - 1,
-                                            (*tim) ? " (" : "", tim, (*tim) ? ")" : "",
-                                            (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
+                fprintf(st, " at %d%s%s%s%s\n", _sim_activate_queue_time(uptr) - 1, (*tim) ? " (" : "", tim,
+                        (*tim) ? ")" : "", (uptr->flags & UNIT_IDLE) ? " (Idle capable)" : "");
         }
     }
-sim_show_clock_queues (st, dnotused, unotused, flag, cptr);
-#if defined (SIM_ASYNCH_IO)
-sim_mutex_lock (&sim_asynch_lock);
-sim_mfile = &buf;
-fprintf (st, "asynchronous pending event queue\n");
-if (sim_asynch_queue == QUEUE_LIST_END)
-    fprintf (st, "  Empty\n");
-else {
-    for (uptr = sim_asynch_queue; uptr != QUEUE_LIST_END; uptr = uptr->a_next) {
-        if ((dptr = find_dev_from_unit (uptr)) != NULL) {
-            fprintf (st, "  %s", sim_dname (dptr));
-            if (dptr->numunits > 1) fprintf (st, " unit %d",
-                (int32_t) (uptr - dptr->units));
-            }
-        else fprintf (st, "  Unknown");
-        fprintf (st, " event delay %d\n", uptr->a_event_time);
+
+    sim_show_clock_queues(st, dnotused, unotused, flag, cptr);
+
+#if defined(SIM_ASYNCH_IO)
+    sim_mfile = &buf;
+    fprintf(st, "asynchronous pending event queue\n");
+
+    UNIT *volatile q;
+
+    if ((q = sim_atomic_ptr_get(&sim_asynch_queue)) != QUEUE_LIST_END) {
+        for (uptr = q; uptr != QUEUE_LIST_END; uptr = uptr->a_next) {
+            if ((dptr = find_dev_from_unit(uptr)) != NULL) {
+                fprintf(st, "  %s", sim_dname(dptr));
+                if (dptr->numunits > 1)
+                    fprintf(st, " unit %d", (int32_t)(uptr - dptr->units));
+            } else
+                fprintf(st, "  Unknown");
+            fprintf(st, " event delay %d\n", uptr->a_event_time);
         }
+    } else {
+        fprintf(st, "  Empty\n");
     }
-fprintf (st, "asynch latency: %d nanoseconds\n", sim_asynch_latency);
-fprintf (st, "asynch instruction latency: %d %s\n", sim_asynch_inst_latency, sim_vm_interval_units);
-sim_mutex_unlock (&sim_asynch_lock);
-sim_mfile = NULL;
-fprintf (st, "%*.*s", (int)buf.pos, (int)buf.pos, buf.buf);
-free (buf.buf);
+
+    fprintf(st, "asynch latency: %d nanoseconds\n", sim_asynch_latency);
+    fprintf(st, "asynch instruction latency: %d %s\n", sim_asynch_inst_latency, sim_vm_interval_units);
+    sim_mfile = NULL;
+    fprintf(st, "%*.*s", (int)buf.pos, (int)buf.pos, buf.buf);
+    free(buf.buf);
 #endif /* SIM_ASYNCH_IO */
-return SCPE_OK;
+
+    return SCPE_OK;
 }
 
 t_stat show_time (FILE *st, DEVICE *dptr, UNIT *uptr, int32_t flag, const char *cptr)
@@ -6656,7 +6562,7 @@ return SCPE_OK;
 t_stat reset_all (uint32_t start)
 {
 DEVICE *dptr;
-uint32_t i;
+uint32_t i, j;
 t_stat reason;
 int32_t saved_sim_switches = sim_switches;
 
@@ -6670,6 +6576,9 @@ for (i = start; (dptr = sim_devices[i]) != NULL; i++) {
         tmxr_add_debug (dptr);          /* Add TMXR debug to MUX devices */
         sim_tape_add_debug (dptr);      /* Add TAPE debug to TAPE devices */
         fix_writelock_mtab (dptr);
+        /* Initialize AIO fields in all units during power-up reset */
+        for (j = 0; j < dptr->numunits; j++)
+            aio_init_unit(&dptr->units[j]);
         }
     if (dptr->reset != NULL) {
         reason = dptr->reset (dptr);
@@ -6681,6 +6590,11 @@ for (i = start; (dptr = sim_devices[i]) != NULL; i++) {
     }
 for (i = 0; sim_internal_device_count && (dptr = sim_internal_devices[i]); ++i) {
     sim_switches = saved_sim_switches;  /* restore initial switches */
+    if (sim_switches & SWMASK ('P')) {
+        /* Initialize AIO fields in all units during power-up reset */
+        for (j = 0; j < dptr->numunits; j++)
+            aio_init_unit(&dptr->units[j]);
+        }
     if (dptr->reset != NULL) {
         reason = dptr->reset (dptr);
         if (reason != SCPE_OK)
@@ -7930,8 +7844,8 @@ sim_flush_buffered_files();
 sim_cancel (&sim_flush_unit);                           /* cancel flush timer */
 sim_cancel_step ();                                     /* cancel step timer */
 sim_throt_cancel ();                                    /* cancel throttle */
-AIO_UPDATE_QUEUE;
-UPDATE_SIM_TIME;                                        /* update sim time */
+sim_aio_update_queue();
+update_sim_time();                                      /* update sim time */
 return r | ((sim_switches & SWMASK ('Q')) ? SCPE_NOMESSAGE : 0);
 }
 
@@ -10135,8 +10049,8 @@ if (stop_cpu) {                                         /* stop CPU? */
     stop_cpu = false;
     return SCPE_STOP;
     }
-AIO_UPDATE_QUEUE;
-UPDATE_SIM_TIME;                                        /* update sim time */
+sim_aio_update_queue();
+update_sim_time();                                      /* update sim time */
 if (sim_interval > 0) {
     sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Interval not yet expired: %d\n", sim_interval);
     return SCPE_OK;
@@ -10155,7 +10069,7 @@ sim_processing_event = true;
 if (sim_interval < 0) {
     sim_interval_catchup = sim_interval;
     sim_interval = 0;
-    UPDATE_SIM_TIME;                          /* update sim time */
+    update_sim_time();                          /* update sim time */
     sim_debug (SIM_DBG_EVENT_NEG, &sim_scp_dev, "Processing event for %s with sim_interval = %d, event time = %.0f\n",
         sim_uname (sim_clock_queue), sim_interval_catchup, sim_gtime ());
     if (sim_clock_queue->next != QUEUE_LIST_END)
@@ -10254,33 +10168,37 @@ t_stat _sim_activate (UNIT *uptr, int32_t event_time)
 UNIT *cptr, *prvptr;
 int32_t accum;
 
-AIO_ACTIVATE (_sim_activate, uptr, event_time);
-if (sim_is_active (uptr))                               /* already active? */
-    return SCPE_OK;
-UPDATE_SIM_TIME;                                        /* update sim time */
+if (aio_main_thread()) {
+    if (sim_is_active (uptr))                               /* already active? */
+        return SCPE_OK;
+    update_sim_time();                                      /* update sim time */
 
-sim_debug (SIM_DBG_ACTIVATE, &sim_scp_dev, "Activating %s delay=%d\n", sim_uname (uptr), event_time);
+    sim_debug (SIM_DBG_ACTIVATE, &sim_scp_dev, "Activating %s delay=%d\n", sim_uname (uptr), event_time);
 
-prvptr = NULL;
-accum = 0;
-for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
-    if (event_time < (accum + cptr->time))
-        break;
-    accum = accum + cptr->time;
-    prvptr = cptr;
+    prvptr = NULL;
+    accum = 0;
+    for (cptr = sim_clock_queue; cptr != QUEUE_LIST_END; cptr = cptr->next) {
+        if (event_time < (accum + cptr->time))
+            break;
+        accum = accum + cptr->time;
+        prvptr = cptr;
+        }
+    if (prvptr == NULL) {                                   /* insert at head */
+        cptr = uptr->next = sim_clock_queue;
+        sim_clock_queue = uptr;
+        }
+    else {
+        cptr = uptr->next = prvptr->next;                   /* insert at prvptr */
+        prvptr->next = uptr;
+        }
+    uptr->time = event_time - accum;
+    if (cptr != QUEUE_LIST_END)
+        cptr->time = cptr->time - uptr->time;
+    sim_interval = sim_clock_queue->time;
     }
-if (prvptr == NULL) {                                   /* insert at head */
-    cptr = uptr->next = sim_clock_queue;
-    sim_clock_queue = uptr;
-    }
-else {
-    cptr = uptr->next = prvptr->next;                   /* insert at prvptr */
-    prvptr->next = uptr;
-    }
-uptr->time = event_time - accum;
-if (cptr != QUEUE_LIST_END)
-    cptr->time = cptr->time - uptr->time;
-sim_interval = sim_clock_queue->time;
+else
+    sim_aio_activate(_sim_activate, uptr, event_time);
+
 return SCPE_OK;
 }
 
@@ -10295,9 +10213,16 @@ return SCPE_OK;
 
 t_stat sim_activate_abs (UNIT *uptr, int32_t event_time)
 {
-AIO_ACTIVATE (sim_activate_abs, uptr, event_time);
-sim_cancel (uptr);
-return _sim_activate (uptr, event_time);
+t_stat retval = SCPE_OK;
+
+if (aio_main_thread()) {
+    sim_cancel (uptr);
+    retval = _sim_activate (uptr, event_time);
+    }
+else
+    sim_aio_activate(sim_activate_abs, uptr, event_time);
+
+return retval;
 }
 
 /* sim_activate_notbefore - activate (queue) event even if event already scheduled
@@ -10313,15 +10238,21 @@ return _sim_activate (uptr, event_time);
 t_stat sim_activate_notbefore (UNIT *uptr, int32_t rtime)
 {
 uint32_t rtimenow, urtime = (uint32_t)rtime;
+t_stat retval = SCPE_OK;
 
-AIO_ACTIVATE (sim_activate_notbefore, uptr, rtime);
-sim_cancel (uptr);
-rtimenow = sim_grtime();
-sim_cancel (uptr);
-if (0x80000000 <= urtime-rtimenow)
-    return _sim_activate (uptr, 0);
+if (aio_main_thread()) {
+    sim_cancel (uptr);
+    rtimenow = sim_grtime();
+    sim_cancel (uptr);
+    if (0x80000000 <= urtime-rtimenow)
+        retval = _sim_activate (uptr, 0);
+    else
+        retval = sim_activate (uptr, urtime-rtimenow);
+    }
 else
-    return sim_activate (uptr, urtime-rtimenow);
+    sim_aio_activate(sim_activate_notbefore, uptr, rtime);
+
+return retval;
 }
 
 /* sim_activate_after - activate (queue) event
@@ -10345,7 +10276,7 @@ return _sim_activate_after_abs (uptr, usec_delay);
 
 t_stat _sim_activate_after_abs (UNIT *uptr, double usec_delay)
 {
-AIO_VALIDATE(uptr);             /* Can't call asynchronously */
+aio_in_main_thread(uptr);             /* Can't call asynchronously */
 if (usec_delay < 0.0)
     return sim_timer_activate_after (uptr, usec_delay);
 sim_cancel (uptr);
@@ -10364,7 +10295,7 @@ return _sim_activate_after (uptr, usec_delay);
 
 t_stat _sim_activate_after (UNIT *uptr, double usec_delay)
 {
-AIO_VALIDATE(uptr);             /* Can't call asynchronously */
+aio_in_main_thread(uptr);       /* Can't call asynchronously */
 if (sim_is_active (uptr))       /* already active? */
     return SCPE_OK;
 return sim_timer_activate_after (uptr, usec_delay);
@@ -10384,7 +10315,7 @@ t_stat sim_cancel (UNIT *uptr)
 UNIT *cptr, *nptr;
 t_stat cancel_status;
 
-AIO_VALIDATE(uptr);
+aio_in_main_thread(uptr);
 if ((uptr->cancel) && uptr->cancel (uptr))
     return SCPE_OK;
 if (uptr->dynflags & UNIT_TMR_UNIT) {
@@ -10393,12 +10324,12 @@ if (uptr->dynflags & UNIT_TMR_UNIT) {
         return cancel_status;
     }
 AIO_CANCEL(uptr);
-AIO_UPDATE_QUEUE;
+sim_aio_update_queue();
 if (sim_clock_queue == QUEUE_LIST_END)
     return SCPE_OK;
 if (!sim_is_active (uptr))
     return SCPE_OK;
-UPDATE_SIM_TIME;                                        /* update sim time */
+update_sim_time();                                      /* update sim time */
 sim_debug (SIM_DBG_EVENT, &sim_scp_dev, "Canceling Event for %s\n", sim_uname(uptr));
 nptr = QUEUE_LIST_END;
 
@@ -10441,11 +10372,11 @@ return SCPE_OK;
         result =        true if unit is busy, false inactive
 */
 
-bool sim_is_active (UNIT *uptr)
+bool sim_is_active(UNIT *uptr)
 {
-AIO_VALIDATE(uptr);
-AIO_UPDATE_QUEUE;
-return (((uptr->next) || AIO_IS_ACTIVE(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) ? sim_timer_is_active (uptr) : false)) ? true : false);
+    aio_in_main_thread(uptr);
+    sim_aio_update_queue();
+    return (uptr->next != NULL || unit_has_aio_pending(uptr) || ((uptr->dynflags & UNIT_TMR_UNIT) && sim_timer_is_active(uptr)));
 }
 
 /* sim_activate_time - return activation time
@@ -10488,7 +10419,7 @@ int32_t sim_activate_time (UNIT *uptr)
 {
 int32_t accum;
 
-AIO_VALIDATE(uptr);
+aio_in_main_thread(uptr);
 accum = _sim_timer_activate_time (uptr);
 if (accum >= 0)
     return accum;
@@ -10501,7 +10432,7 @@ UNIT *cptr;
 int32_t accum;
 double result;
 
-AIO_VALIDATE(uptr);
+aio_in_main_thread(uptr);
 result = sim_timer_activate_time_usecs (uptr);
 if (result >= 0)
     return result;
@@ -10529,16 +10460,32 @@ return 0.0;
 
 double sim_gtime (void)
 {
-if (AIO_MAIN_THREAD) {
-    UPDATE_SIM_TIME;
+if (aio_main_thread()) {
+    update_sim_time();
     }
 return sim_vm_time;
 }
 
 uint32_t sim_grtime (void)
 {
-UPDATE_SIM_TIME;
+update_sim_time();
 return sim_rtime;
+}
+
+/* Compute the instruction burst until the next event fires on sim_clock_queue or the maximum burst until the
+ * next periodic check (noqueue_time).
+ */
+void update_sim_time(void)
+{
+    int32_t remaining_burst = (sim_clock_queue == QUEUE_LIST_END) ? noqueue_time : sim_clock_queue->time;
+
+    sim_vm_time = sim_vm_time + (remaining_burst - sim_interval);
+    sim_rtime = sim_rtime + ((uint32_t)(remaining_burst - sim_interval));
+
+    if (sim_clock_queue == QUEUE_LIST_END)
+        noqueue_time = sim_interval;
+    else
+        sim_clock_queue->time = sim_interval;
 }
 
 /* sim_qcount - return queue entry count
@@ -10669,7 +10616,7 @@ if (sim_deb_switches & SWMASK ('F')) {              /* filtering disabled? */
         _debug_fwrite (buf, len);                   /* output now. */
     return;                                         /* done */
     }
-AIO_LOCK;
+aio_debug_lock();
 if (debug_line_offset + len + 1 > debug_line_bufsize) {
     /* realloc(NULL, size) == malloc(size). Initialize the malloc()-ed space. Only
        need to test debug_line_buf since SIMH allocates both buffers at the same
@@ -10757,7 +10704,7 @@ while (NULL != (eol = strchr (debug_line_buf, '\n')) || flush) {
         memmove (debug_line_buf, eol + 1, debug_line_offset);
     debug_line_buf[debug_line_offset] = '\0';
     }
-AIO_UNLOCK;
+aio_debug_unlock();
 }
 
 static void _sim_debug_write (const char *buf, size_t len)
@@ -10850,7 +10797,7 @@ if (sim_deb_switches & SWMASK ('P')) {
     snprintf(pc_s, sizeof (pc_s), "-%s:", sim_PC->name);
     sprint_val (&pc_s[strlen(pc_s)], val, sim_PC->radix, sim_PC->width, sim_PC->flags & REG_FMT);
     }
-snprintf(debug_line_prefix, sizeof (debug_line_prefix), "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, AIO_MAIN_THREAD ? "" : "+", dptr->name, debug_type);
+snprintf(debug_line_prefix, sizeof (debug_line_prefix), "DBG(%s%s%.0f%s)%s> %s %s: ", tim_t, tim_a, sim_gtime(), pc_s, aio_main_thread() ? "" : "+", dptr->name, debug_type);
 return debug_line_prefix;
 }
 

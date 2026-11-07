@@ -56,8 +56,8 @@
 #if !defined(SIM_ATOMIC_PTR_H)
 #define SIM_ATOMIC_PTR_H
 
-#include <stdint.h>
-#include "sim_atomic.h"
+#    include <stdint.h>
+#    include "sim_atomic.h"
 
 /*~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
  * Pointer wrapper type:

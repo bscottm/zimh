@@ -70,12 +70,6 @@
 
 #define NOT_MUX_USING_CODE /* sim_tmxr library provider or agnostic */
 
-#include <ctype.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-
 #include "sim_defs.h"
 #include "sim_time.h"
 #include "sim_timer_internal.h"
@@ -161,7 +155,6 @@ uint32_t sim_os_ms_sleep(uint_t msec)
 #endif                               /* defined(MS_MIN_GRANULARITY) && (MS_MIN_GRANULARITY != 1) */
 
 bool sim_idle_enab = false;          /* global flag */
-volatile bool sim_idle_wait = false; /* global flag */
 
 int32_t sim_vm_initial_ips = SIM_INITIAL_IPS;
 
@@ -263,16 +256,16 @@ uint32_t sim_idle_ms_sleep(uint_t msec)
         return sim_os_ms_sleep(msec);
     (void)sim_clock_gettime(CLOCK_REALTIME, &start_time);
     sim_mutex_lock(&sim_asynch_lock);
-    sim_idle_wait = true;
+    sim_atomic_put(&sim_idle_wait, (sim_atomic_type_t) true);
     if (sim_cond_timedwait(&sim_asynch_wake, &sim_asynch_lock, &end_time))
         timedout = true;
     else
         sim_asynch_check = 0; /* force check of asynch queue now */
-    sim_idle_wait = false;
+    sim_atomic_put(&sim_idle_wait, (sim_atomic_type_t) false);
     sim_mutex_unlock(&sim_asynch_lock);
     (void)sim_clock_gettime(CLOCK_REALTIME, &done_time);
     if (!timedout) {
-        AIO_UPDATE_QUEUE;
+        sim_aio_update_queue();
     }
     sim_timespec_diff(&delta_time, &done_time, &start_time);
     delta_ms = (uint32_t)((delta_time.tv_sec * 1000) + ((delta_time.tv_nsec + 500000) / 1000000));
@@ -484,7 +477,7 @@ void sim_timer_reset_test_state(void)
     sim_wallclock_entry = NULL;
 #endif
     sim_idle_enab = false;
-    sim_idle_wait = false;
+    /* Moved: sim_idle_wait initialized in sim_aio.c */
     sim_vm_initial_ips = SIM_INITIAL_IPS;
     sim_precalibrate_ips = SIM_INITIAL_IPS;
     sim_calb_tmr = -1;
@@ -850,7 +843,7 @@ int32_t sim_rtcn_calb(uint32_t ticksper, int32_t tmr)
         if ((itmr != tmr) && (irtc->hz != 0))
             irtc->currd = (rtc->currd * ticksper) / irtc->hz;
     }
-    AIO_SET_INTERRUPT_LATENCY(rtc->currd * ticksper); /* set interrupt latency */
+    aio_set_interrupt_latency(rtc->currd * ticksper); /* set interrupt latency */
     return rtc->currd;
 }
 
@@ -2319,10 +2312,12 @@ static THREAD_FUNC_DEFN(_timer_thread)
                 prvptr = cptr;
             }
             if (prvptr == NULL) { /* insert at head */
-                cptr = uptr->a_next = sim_wallclock_queue;
+                uptr->a_next = sim_wallclock_queue;
+                cptr = uptr->a_next;
                 sim_wallclock_queue = uptr;
             } else {
-                cptr = uptr->a_next = prvptr->a_next; /* insert at prvptr */
+                ANEXT_SET(uptr, prvptr->a_next); /* insert at prvptr */
+                cptr = uptr->a_next;
                 prvptr->a_next = uptr;
             }
         }
@@ -2717,7 +2712,7 @@ double sim_timer_inst_per_sec(void)
 
 t_stat sim_timer_activate(UNIT *uptr, int32_t interval)
 {
-    AIO_VALIDATE(uptr);
+    aio_in_main_thread(uptr);
     return sim_timer_activate_after(uptr, (double)((interval * 1000000.0) / sim_timer_inst_per_sec()));
 }
 
@@ -2729,7 +2724,7 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
     t_stat stat;
     RTC *crtc;
 
-    AIO_VALIDATE(uptr);
+    aio_in_main_thread(uptr);
     if (usec_delay < 0.0) {
         sim_debug(DBG_QUE, &sim_timer_dev, "sim_timer_activate_after(%s, %.0f usecs) - negative delay\n",
                   sim_uname(uptr), usec_delay);
@@ -2873,7 +2868,7 @@ t_stat sim_timer_activate_after(UNIT *uptr, double usec_delay)
             sim_mutex_unlock(&sim_timer_lock);
             return SCPE_OK;
         } else {                                  /* inserting at prvptr */
-            uptr->a_next = prvptr->a_next;
+            ANEXT_SET(uptr, prvptr->a_next);
             prvptr->a_next = uptr;
             sim_mutex_unlock(&sim_timer_lock);
             return SCPE_OK;
@@ -3034,7 +3029,7 @@ t_stat sim_clock_coschedule_tmr_abs(UNIT *uptr, int32_t tmr, int32_t ticks)
 /* Cancel a unit on the coschedule queue */
 static bool _sim_coschedule_cancel(UNIT *uptr)
 {
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     if (uptr->next) { /* On a queue? */
         int tmr;
         UNIT *nptr;
@@ -3107,7 +3102,7 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
     int32_t tmr;
     bool b_return = false;
 
-    AIO_UPDATE_QUEUE;
+    sim_aio_update_queue();
     sim_mutex_lock(&sim_timer_lock);
     /* If this is a clock unit, we need to cancel both this and the related timer unit */
     for (tmr = 0; tmr <= SIM_NTIMERS; tmr++) {
@@ -3134,7 +3129,7 @@ static bool _sim_wallclock_cancel(UNIT *uptr)
             } else {
                 for (cptr = sim_wallclock_queue; (cptr != QUEUE_LIST_END); cptr = cptr->a_next) {
                     if (cptr->a_next == (uptr)) {
-                        cptr->a_next = (uptr)->a_next;
+                        ANEXT_SET(cptr, uptr->a_next);
                         uptr->a_next = NULL;
                         sim_debug(DBG_QUE, &sim_timer_dev, "Canceled Timer Event for %s\n", sim_uname(uptr));
                         break;

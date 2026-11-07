@@ -68,6 +68,10 @@
 #if !defined(SIM_ATOMIC_H)
 #    define SIM_ATOMIC_H
 
+#    if !defined(SIM_PLATFORM_H_)
+#        include "sim_platform.h"
+#    endif
+
 #    if !defined(__STDC_NO_ATOMICS__) && __STDC_VERSION__ >= 201112L
 /* C11 or newer compiler -- use the compiler's support for atomic types. */
 #        include <stdatomic.h>
@@ -92,7 +96,12 @@
 
 /* Largest common type for atomic values. */
 #    if (defined(_WIN32) || defined(_WIN64))
-/* Ensure windows.h is included. */
+
+#        if !defined(_WINDOWS_)
+             /* Ensure windows.h is included. */
+#            include <windows.h>
+#        endif
+
 typedef LONG sim_atomic_type_t;
 #        define PRIsim_atomic "ld"
 #    else

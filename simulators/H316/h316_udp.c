@@ -324,7 +324,7 @@ t_stat udp_send (DEVICE *dptr, int32_t link, uint16_t *pdata, uint16_t count)
   // Send it and we're outta here ...
   iret = tmxr_put_packet_ln (&udp_lines[link], (const uint8_t *)&pkt, (size_t)pktlen);
   if (iret != SCPE_OK) return sim_messagef(iret, "UDP%d - tmxr_put_packet_ln() failed with error %s\n", link, sim_error_text(iret));
-  sim_debug(IMP_DBG_UDP, dptr, "link %d - packet sent (sequence=%d, length=%d)\n", link, ntohl(pkt.sequence), ntohs(pkt.count));
+  sim_debug(IMP_DBG_UDP, dptr, "link %d - packet sent (sequence=%lu, length=%d)\n", link, ntohl(pkt.sequence), ntohs(pkt.count));
   return SCPE_OK;
 }
 
