@@ -100,6 +100,7 @@ void aio_init_unit(UNIT *uptr)
 #if defined(SIM_ASYNCH_IO)
     sim_atomic_init(&uptr->a_is_queued);
     sim_atomic_put(&uptr->a_is_queued, (sim_atomic_type_t)false);
+    uptr->timer_event = NULL;
 #else
     (void)uptr;  /* Suppress unused parameter warning */
 #endif

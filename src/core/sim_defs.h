@@ -374,6 +374,23 @@ struct DEVICE {
 #    define DEV_UFMASK (((1u << DEV_V_RSV) - 1) & ~((1u << DEV_V_UF) - 1))
 #    define DEV_RFLAGS (DEV_UFMASK | DEV_DIS) /* restored flags */
 
+#    ifdef SIM_ASYNCH_IO
+/* Timer event structure - separate from UNIT to avoid queue pointer conflicts.
+ *
+ * The wallclock timer queue uses this structure instead of threading UNITs
+ * directly, which allows UNIT::a_next to be dedicated exclusively to the
+ * async I/O queue without conflict.
+ */
+typedef struct timer_event {
+    struct timer_event *next;   /* wallclock queue linkage */
+    UNIT *unit;                 /* backpointer to the UNIT */
+    double due_time;            /* due time for timer event */
+    double due_gtime;           /* due time (in instructions) */
+    double usec_delay;          /* time delay for timer event */
+    double usecs_remaining;     /* time balance for long delays */
+} TIMER_EVENT;
+#    endif
+
 /* Unit data structure
 
    Parts of the unit structure are device specific, that is, they are
@@ -430,9 +447,7 @@ struct UNIT {
     int32_t a_poll_waiter_count; /* count of polling threads */
                                  /* waiting for this unit */
     /* Asynchronous Timer control */
-    double a_due_time;   /* due time for timer event */
-    double a_due_gtime;  /* due time (in instructions) for timer event */
-    double a_usec_delay; /* time delay for timer event */
+    TIMER_EVENT *timer_event;    /* NULL or pointer to active timer event */
 #    endif
 };
 
