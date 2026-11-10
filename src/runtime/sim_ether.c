@@ -570,10 +570,12 @@ static void eth_zero(ETH_DEV* dev)
 
 static void ethq_item_free(sim_tailq_item_t item)
 {
-  struct eth_item *eth_itm = (struct eth_item *)item;
-  if (eth_itm) {
-    if (eth_itm->packet.oversize)
+  struct eth_item *eth_itm;
+  if ((eth_itm = (struct eth_item *) item) != NULL) {
+    if (eth_itm->packet.oversize != NULL) {
       free(eth_itm->packet.oversize);
+      eth_itm->packet.oversize = NULL;
+    }
     free(eth_itm);
   }
 }

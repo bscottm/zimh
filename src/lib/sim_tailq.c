@@ -50,18 +50,16 @@ sim_tailq_t *sim_tailq_init_capacity(size_t capacity)
 
 void sim_tailq_destroy(sim_tailq_t *tailq, void (*free_item)(sim_tailq_item_t))
 {
-    if (tailq == NULL)
-        return;
-
-    if (free_item != NULL) {
-        for (size_t i = 0; i < tailq->prod_size; i++) {
-            sim_tailq_item_t slot_item = tailq->slots[i];
-            if (slot_item)
-                free_item(slot_item);
+    if (tailq != NULL) {
+        if (free_item != NULL) {
+            for (size_t i = 0; i < tailq->prod_size; i++) {
+                free_item(tailq->slots[i]);
+                tailq->slots[i] = NULL;
+            }
         }
-    }
 
-    free(tailq);
+        free(tailq);
+    }
 }
 
 /* Enqueue a new item.
