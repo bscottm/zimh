@@ -124,8 +124,11 @@ static LK_KEYDATA LK_KEY_LBRACE     = { 1, LK_LBRACE };
 static LK_KEYDATA LK_KEY_RBRACE     = { 1, LK_RBRACE };
 static LK_KEYDATA LK_KEY_VBAR       = { 1, LK_VBAR };
 static LK_KEYDATA LK_KEY_TILDE      = { 1, LK_TILDE };
+#    if 0
+/* Retain these VT100 keypad keys. They're #if-ed to reduce warning noise regarding unused
+ * statics. */
 static LK_KEYDATA LK_KEY_KP_0       = { 2, LK_KP_0 };
-static LK_KEYDATA LK_KEY_KP_1       = { 2, LK_KP_1 };
+static LK_KEYDATA LK_KEY_KP_1 = {2, LK_KP_1};
 static LK_KEYDATA LK_KEY_KP_2       = { 2, LK_KP_2 };
 static LK_KEYDATA LK_KEY_KP_3       = { 2, LK_KP_3 };
 static LK_KEYDATA LK_KEY_KP_4       = { 2, LK_KP_4 };
@@ -134,7 +137,9 @@ static LK_KEYDATA LK_KEY_KP_6       = { 2, LK_KP_6 };
 static LK_KEYDATA LK_KEY_KP_7       = { 2, LK_KP_7 };
 static LK_KEYDATA LK_KEY_KP_8       = { 2, LK_KP_8 };
 static LK_KEYDATA LK_KEY_KP_9       = { 2, LK_KP_9 };
-static LK_KEYDATA LK_KEY_KP_PF1     = { 2, LK_KP_PF1 };
+#endif
+static LK_KEYDATA LK_KEY_KP_PF1 = {2, LK_KP_PF1};
+#    if 0
 static LK_KEYDATA LK_KEY_KP_PF2     = { 2, LK_KP_PF2 };
 static LK_KEYDATA LK_KEY_KP_PF3     = { 2, LK_KP_PF3 };
 static LK_KEYDATA LK_KEY_KP_PF4     = { 2, LK_KP_PF4 };
@@ -142,6 +147,7 @@ static LK_KEYDATA LK_KEY_KP_HYPHEN  = { 2, LK_KP_HYPHEN };
 static LK_KEYDATA LK_KEY_KP_COMMA   = { 2, LK_KP_COMMA };
 static LK_KEYDATA LK_KEY_KP_PERIOD  = { 2, LK_KP_PERIOD };
 static LK_KEYDATA LK_KEY_KP_ENTER   = { 2, LK_KP_ENTER };
+#endif
 static LK_KEYDATA LK_KEY_DELETE     = { 3, LK_DELETE };
 static LK_KEYDATA LK_KEY_TAB        = { 3, LK_TAB };
 static LK_KEYDATA LK_KEY_RETURN     = { 4, LK_RETURN };
