@@ -72,6 +72,12 @@ set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_SOURCE_DIR}/LICENSE.txt)
 set(CPACK_PACKAGE_CONTACT    "open-simh@nowhere.org")
 set(CPACK_PACKAGE_MAINTAINER "open-simh@nowhere.org")
 
+## Where the artifacts get placed:
+file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/build/artifacts")
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/build/artifacts" CPACK_ARTIFACTS EXPAND_TILDE)
+set(CPACK_PACKAGE_DIRECTORY "${CPACK_ARTIFACTS}")
+message(STATUS "CPack artifacts in ${CPACK_PACKAGE_DIRECTORY}")
+
 ## Runtime dependencies:
 ## Do not install runtime dependencies on POSIX platforms. Their
 ## package managers should take care of dependency resolution for us.
