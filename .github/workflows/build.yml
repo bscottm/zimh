@@ -18,21 +18,25 @@ jobs:
             config_preset: ninja-debug
             build_preset: ninja-debug
             test_preset: ninja-debug
+            pack_preset: ""
             name: "Ubuntu (Ninja Debug)"
           - os: ubuntu-latest
             config_preset: ninja-release
             build_preset: ninja-release
             test_preset: ninja-release
+            pack_preset: ""
             name: "Ubuntu (Ninja Release)"
 
           - os: macos-latest
             config_preset: macos-xcode
             build_preset: xcode-debug
             test_preset: xcode-debug
+            pack_preset: ""
             name: "macOS (Xcode Debug)"
           - os: macos-latest
             config_preset: macos-xcode
             build_preset: xcode-release
+            pack_preset: ""
             test_preset: xcode-release
             name: "macOS (Xcode Release)"
 
@@ -40,22 +44,26 @@ jobs:
             config_preset: windows-vs2022
             build_preset: windows-vs2022-debug
             test_preset: windows-vs2022-debug
+            pack_preset: ""
             name: "Windows (VS 2022 Debug)"
           - os: windows-2022
             config_preset: windows-vs2022
             build_preset: windows-vs2022-release
             test_preset: windows-vs2022-release
+            pack_preset: windows-vs2022-zip
             name: "Windows (VS 2022 Release)"
 
           - os: windows-latest
             config_preset: windows-vs2026
             build_preset: windows-vs2026-debug
             test_preset: windows-vs2026-debug
+            pack_preset: ""
             name: "Windows latest (VS2026 Debug)"
           - os: windows-latest
             config_preset: windows-vs2026
             build_preset: windows-vs2026-release
             test_preset: windows-vs2026-release
+            pack_preset: ""
             name: "Windows latest (VS2026 Release)"
 
     steps:
@@ -116,14 +124,18 @@ jobs:
     # -------------------------------------------------------------------------
     # Unified Build Execution (No forks required)
     # -------------------------------------------------------------------------
-    - name: Run CMake Configure
+    - name: CMake Configure
       run: cmake --preset ${{ matrix.config_preset }}
 
-    - name: Run CMake Build
+    - name: CMake Build
       run: cmake --build --preset ${{ matrix.build_preset }}
 
-    - name: Run CMake Test
+    - name: CMake Test
       run: ctest --preset ${{ matrix.test_preset }}
+
+    - name: CPackaging Packaging
+      if: ${{ matrix.pack_preset != '' }}
+      run: cpack --preset ${{ matrix.pack_preset }}
 
   netbsd:
     runs-on: ubuntu-latest

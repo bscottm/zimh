@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 6,
   "configurePresets": [
     {
       "name": "address-sanitizer",
@@ -478,6 +478,21 @@
       "output": { "outputOnFailure": true },
       "execution": { "timeout": 300 }
     }
-
+  ],
+    "packagePresets": [
+        {
+            "name": "windows-ninja-zip",
+            "displayName": "Windows ZIP archive (Ninja Multiconfig builder)",
+            "configurePreset": "windows-ninja",
+            "configurations": ["Release"],
+            "generators": ["ZIP"]
+        },
+        {
+            "name": "windows-vs2022-zip",
+            "displayName": "Windows ZIP archive (VS-2022 builder)",
+            "configurePreset": "windows-vs2022",
+            "configurations": ["Release"],
+            "generators": ["ZIP"]
+        }
   ]
 }
