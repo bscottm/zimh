@@ -137,9 +137,9 @@ jobs:
       if: ${{ matrix.pack_preset != '' }}
       run: cpack --preset ${{ matrix.pack_preset }}
       uses: actions/upload-artifact@v7
-        with:
-          path: build/artifacts/zimh-*
-          archive: false
+      with:
+        path: build/artifacts/zimh-*
+        archive: false
 
   netbsd:
     runs-on: ubuntu-latest
