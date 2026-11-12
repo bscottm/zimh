@@ -52,9 +52,17 @@ void sim_tailq_destroy(sim_tailq_t *tailq, void (*free_item)(sim_tailq_item_t))
 {
     if (tailq != NULL) {
         if (free_item != NULL) {
-            for (size_t i = 0; i < tailq->prod_size; i++) {
-                free_item(tailq->slots[i]);
-                tailq->slots[i] = NULL;
+            /* Only free active slots! */
+            size_t mask = tailq->prod_mask;
+            size_t prod_head = (size_t) sim_atomic_get_explicit(&tailq->prod_head, SIM_ATOMIC_ACQUIRE);
+            size_t cons_tail = (size_t) sim_atomic_get_explicit(&tailq->cons_tail, SIM_ATOMIC_ACQUIRE);
+            
+            if (prod_head < cons_tail)
+              prod_head += tailq->prod_size;
+
+            for (size_t i = cons_tail; i < prod_head; ++i) {
+                free_item(tailq->slots[i & mask]);
+                tailq->slots[i & mask] = NULL;
             }
         }
 
@@ -172,6 +180,8 @@ sim_tailq_item_t sim_tailq_dequeue(sim_tailq_t *tailq)
      * This matches FreeBSD's buf_ring implementation. */
     sim_tailq_item_t item = tailq->slots[cons_idx];
 
+    /* Mark the slot unused. */
+    tailq->slots[cons_idx] = NULL;
     sim_atomic_put_explicit(&tailq->cons_tail, cons_next, SIM_ATOMIC_RELEASE);
 
     return item;

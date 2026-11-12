@@ -211,6 +211,7 @@ static void test_tailq_destroy_with_callback(void **state)
     /* Destroy should call callback for each item */
     freed_count = 0;
     sim_tailq_destroy(queue, count_free);
+    print_message("freed_count = %d\n", freed_count);
 
     /* Should have freed at least the 5 items we enqueued */
     assert_true(freed_count >= 5);
