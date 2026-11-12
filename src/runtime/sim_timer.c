@@ -893,14 +893,16 @@ bool sim_timer_init(void)
 
     sim_stop_time = clock_last = clock_start = sim_os_msec();
     sim_os_clock_resoluton_ms = 1000;
-    do {
-        uint32_t clock_diff;
 
+    uint32_t clock_diff;
+
+    do {
         clock_now = sim_os_msec();
         clock_diff = clock_now - clock_last;
-        if ((clock_diff > 0) && (clock_diff < sim_os_clock_resoluton_ms))
+        if (clock_diff > 0 && clock_diff < sim_os_clock_resoluton_ms) {
             sim_os_clock_resoluton_ms = clock_diff;
-        clock_last = clock_now;
+            clock_last = clock_now;
+        }
     } while (clock_now < clock_start + 100);
     if ((sim_os_clock_resoluton_ms != 0) && (sim_idle_rate_ms >= sim_os_clock_resoluton_ms))
         sim_os_tick_hz = 1000 / (sim_os_clock_resoluton_ms * (sim_idle_rate_ms / sim_os_clock_resoluton_ms));
@@ -909,6 +911,7 @@ bool sim_timer_init(void)
         fprintf(stderr, "Minimum Host Sleep Time:       %u ms\n", sim_os_sleep_min_ms);
         fprintf(stderr, "Minimum Host Sleep Incr Time:  %u ms\n", sim_os_sleep_inc_ms);
         fprintf(stderr, "Host Clock Resolution:         %u ms\n", sim_os_clock_resoluton_ms);
+        fprintf(stderr, "Last clock difference:         %u\n", clock_diff);
     }
     return ((sim_idle_rate_ms == 0) || (sim_os_clock_resoluton_ms == 0));
 }
