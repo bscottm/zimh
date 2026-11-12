@@ -479,20 +479,42 @@
       "execution": { "timeout": 300 }
     }
   ],
-    "packagePresets": [
-        {
-            "name": "windows-ninja-zip",
-            "displayName": "Windows ZIP archive (Ninja Multiconfig builder)",
-            "configurePreset": "windows-ninja",
-            "configurations": ["Release"],
-            "generators": ["ZIP"]
-        },
-        {
-            "name": "windows-vs2022-zip",
-            "displayName": "Windows ZIP archive (VS-2022 builder)",
-            "configurePreset": "windows-vs2022",
-            "configurations": ["Release"],
-            "generators": ["ZIP"]
-        }
+  "packagePresets": [
+    {
+      "name": "zip-defaults",
+      "displayName": "ZIP packaging defaults",
+      "configurations": ["Release"],
+      "generators": ["ZIP"]
+    },
+    {
+      "name": "windows-ninja-zip",
+      "displayName": "Windows ZIP archive (Ninja Multiconfig builder)",
+      "inherits": ["zip-defaults"],
+      "configurePreset": "windows-ninja",
+    },
+    {
+      "name": "windows-vs2022-zip",
+      "displayName": "Windows ZIP archive (VS-2022 builder)",
+      "configurePreset": "windows-vs2022",
+      "inherits": ["zip-defaults"],
+    },
+    {
+      "name": "debian-defaults",
+      "displayName": "Debian packaging defaults",
+      "configurations": ["Release"],
+      "generators": ["DEB"]
+    },
+    {
+      "name": "tgz-defaults",
+      "displayName": "tar.gz packaging defaults",
+      "configurations": ["Release"],
+      "generators": ["TGZ"]
+    },
+    {
+      "name": "ubuntu-deb",
+      "displayName": "Ubuntu .deb and .tgz packaging",
+      "configurePreset": "ninja-release",
+      "inherits": ["debian-defaults", "tgz-defaults"]
+    }
   ]
 }

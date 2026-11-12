@@ -24,7 +24,7 @@ jobs:
             config_preset: ninja-release
             build_preset: ninja-release
             test_preset: ninja-release
-            pack_preset: ""
+            pack_preset: "ubuntu-deb"
             name: "Ubuntu (Ninja Release)"
 
           - os: macos-latest
@@ -133,9 +133,13 @@ jobs:
     - name: CMake Test
       run: ctest --preset ${{ matrix.test_preset }}
 
-    - name: CPackaging Packaging
+    - name: CPack Packaging
       if: ${{ matrix.pack_preset != '' }}
       run: cpack --preset ${{ matrix.pack_preset }}
+      uses: actions/upload-artifact@v7
+        with:
+          path: build/artifacts/zimh-*
+          archive: false
 
   netbsd:
     runs-on: ubuntu-latest
