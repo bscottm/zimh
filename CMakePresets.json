@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 6,
   "configurePresets": [
     {
       "name": "address-sanitizer",
@@ -478,6 +478,33 @@
       "output": { "outputOnFailure": true },
       "execution": { "timeout": 300 }
     }
-
+  ],
+  "packagePresets": [
+    {
+      "name": "zip-defaults",
+      "displayName": "ZIP packaging defaults",
+      "configurations": ["Release"],
+      "generators": ["ZIP"],
+      "hidden": true
+    },
+    {
+      "name": "windows-ninja-zip",
+      "displayName": "Windows ZIP archive (Ninja Multiconfig builder)",
+      "inherits": ["zip-defaults"],
+      "configurePreset": "windows-ninja"
+    },
+    {
+      "name": "windows-vs2022-zip",
+      "displayName": "Windows ZIP archive (VS-2022 builder)",
+      "configurePreset": "windows-vs2022",
+      "inherits": ["zip-defaults"]
+    },
+    {
+      "name": "ubuntu-deb",
+      "displayName": "Ubuntu .deb and .tgz packaging",
+      "configurePreset": "ninja-release",
+      "configurations": ["Release"],
+      "generators": ["DEB", "TGZ"]
+    }
   ]
 }
