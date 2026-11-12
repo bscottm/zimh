@@ -136,6 +136,8 @@ jobs:
     - name: CPack Packaging
       if: ${{ matrix.pack_preset != '' }}
       run: cpack --preset ${{ matrix.pack_preset }}
+
+    - name: Artifact upload
       uses: actions/upload-artifact@v7
       with:
         path: build/artifacts/zimh-*
