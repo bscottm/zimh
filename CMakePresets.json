@@ -484,31 +484,34 @@
       "name": "zip-defaults",
       "displayName": "ZIP packaging defaults",
       "configurations": ["Release"],
-      "generators": ["ZIP"]
+      "generators": ["ZIP"],
+      "hidden": true
     },
     {
       "name": "windows-ninja-zip",
       "displayName": "Windows ZIP archive (Ninja Multiconfig builder)",
       "inherits": ["zip-defaults"],
-      "configurePreset": "windows-ninja",
+      "configurePreset": "windows-ninja"
     },
     {
       "name": "windows-vs2022-zip",
       "displayName": "Windows ZIP archive (VS-2022 builder)",
       "configurePreset": "windows-vs2022",
-      "inherits": ["zip-defaults"],
+      "inherits": ["zip-defaults"]
     },
     {
       "name": "debian-defaults",
       "displayName": "Debian packaging defaults",
       "configurations": ["Release"],
-      "generators": ["DEB"]
+      "generators": ["DEB"],
+      "hidden": true
     },
     {
       "name": "tgz-defaults",
       "displayName": "tar.gz packaging defaults",
       "configurations": ["Release"],
-      "generators": ["TGZ"]
+      "generators": ["TGZ"],
+      "hidden": true
     },
     {
       "name": "ubuntu-deb",
