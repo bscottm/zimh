@@ -138,9 +138,10 @@ jobs:
       run: cpack --preset ${{ matrix.pack_preset }}
 
     - name: Artifact upload
+      run: rm -rf artifacts/_CPack_Package
       uses: actions/upload-artifact@v7
       with:
-        path: build/artifacts/zimh-*
+        path: artifacts/zimh-*
         archive: false
 
   netbsd:

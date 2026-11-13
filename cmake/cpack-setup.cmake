@@ -73,8 +73,8 @@ set(CPACK_PACKAGE_CONTACT    "open-simh@nowhere.org")
 set(CPACK_PACKAGE_MAINTAINER "open-simh@nowhere.org")
 
 ## Where the artifacts get placed:
-file(REAL_PATH ".." cmake_pkg_dir BASE_DIRECTORY "${CMAKE_BINARY_DIR}" EXPAND_TILDE)
-set(CPACK_PACKAGE_DIRECTORY "${cmake_pkg_dir}/artifacts")
+file(REAL_PATH "~" USERHOME TILDE_EXPAND)
+set(CPACK_PACKAGE_DIRECTORY "${USERHOME}/artifacts")
 message(STATUS "CPack artifacts in ${CPACK_PACKAGE_DIRECTORY}")
 
 ## Runtime dependencies:
