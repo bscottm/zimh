@@ -135,9 +135,19 @@ jobs:
 
     - name: CPack Packaging
       if: ${{ matrix.pack_preset != '' }}
+      run: cpack --preset ${{ matrix.pack_preset }}
+
+    - name: Artifacts cleanup (Windows)
+      if: matrix.os == 'windows-2022' || matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
-           cpack --preset ${{ matrix.pack_preset }}
-           rm -rf artifacts/_CPack_Package
+           remove-item -recurse -force ~\artifacts\_CPack_Package
+           get-childitem ~\artifacts
+
+    - name: Artifacts cleanup (*nixen)
+      if: matrix.os != 'windows-2022' && matrix.os != 'windows-latest'
+      run: |
+           rm -rf ~/artifacts/_CPack_Package
            ls -l ~/artifacts/
 
     - name: Artifact upload
