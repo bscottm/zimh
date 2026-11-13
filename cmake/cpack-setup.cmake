@@ -73,7 +73,7 @@ set(CPACK_PACKAGE_CONTACT    "open-simh@nowhere.org")
 set(CPACK_PACKAGE_MAINTAINER "open-simh@nowhere.org")
 
 ## Where the artifacts get placed:
-file(REAL_PATH "~" USERHOME TILDE_EXPAND)
+file(REAL_PATH "~" USERHOME EXPAND_TILDE)
 set(CPACK_PACKAGE_DIRECTORY "${USERHOME}/artifacts")
 message(STATUS "CPack artifacts in ${CPACK_PACKAGE_DIRECTORY}")
 
