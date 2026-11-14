@@ -138,11 +138,13 @@ jobs:
       run: cpack --preset ${{ matrix.pack_preset }}
 
     - name: Install @actions/artifact
+      if: ${{ matrix.pack_preset != '' }}
       run: |
         npm install @actions/artifact
         echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
 
     - name: Export runtime variables
+      if: ${{ matrix.pack_preset != '' }}
       uses: actions/github-script@v7
       env:
         github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -153,6 +155,7 @@ jobs:
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env['ACTIONS_RUNTIME_TOKEN']);
 
     - name: Upload zimh-* artifacts
+      if: ${{ matrix.pack_preset != '' }}
       run: |
         node -e "
           import { DefaultArtifactClient } from '@actions/artifact';
