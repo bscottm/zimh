@@ -137,52 +137,52 @@ jobs:
       if: ${{ matrix.pack_preset != '' }}
       run: cpack --preset ${{ matrix.pack_preset }}
 
-      - name: Upload each file separately
-        run: |
-          node -e "
-            const { ArtifactClient } = require('@actions/artifact');
-            const fs = require('fs');
-            const path = require('path');
+    - name: Upload each file separately
+      run: |
+        node -e "
+          const { ArtifactClient } = require('@actions/artifact');
+          const fs = require('fs');
+          const path = require('path');
 
-            const client = new ArtifactClient(process.env.GITHUB_API_TOKEN);
-            // ~/artifacts/
-            // const dir = path.join(os.homedir(), 'artifacts');
-            const dir = process.env.GITHUB_WORKSPACE + '/build/artifacts'
+          const client = new ArtifactClient(process.env.GITHUB_API_TOKEN);
+          // ~/artifacts/
+          // const dir = path.join(os.homedir(), 'artifacts');
+          const dir = process.env.GITHUB_WORKSPACE + '/build/artifacts'
 
-            // Recursively collect files, skipping any path segment starting with _CPack_Package
-            function collectFiles(root, prefix = '') {
-              const results = [];
-              for (const entry of fs.readdirSync(path.join(root, prefix), { withFileTypes: true })) {
-                const rel = prefix ? prefix + '/' + entry.name : entry.name;
-                // Ignore everything under _CPack_Package
-                if (entry.name.startsWith('_CPack_Package'))
-                  continue;
-                // The "zimh-" prefix might be overly restrictive
-                if (entry.isFile() && entry.name.startWith("zimh-")) {
-                  results.push(rel);
-                }
+          // Recursively collect files, skipping any path segment starting with _CPack_Package
+          function collectFiles(root, prefix = '') {
+            const results = [];
+            for (const entry of fs.readdirSync(path.join(root, prefix), { withFileTypes: true })) {
+              const rel = prefix ? prefix + '/' + entry.name : entry.name;
+              // Ignore everything under _CPack_Package
+              if (entry.name.startsWith('_CPack_Package'))
+                continue;
+              // The "zimh-" prefix might be overly restrictive
+              if (entry.isFile() && entry.name.startWith("zimh-")) {
+                results.push(rel);
               }
-              return results;
             }
+            return results;
+          }
 
-            const files = collectFiles(dir);
+          const files = collectFiles(dir);
 
-            (async () => {
-              for (const file of files) {
-                const artifactName = path.basename(file);
-                const upload = await client.createArtifact({
-                  name: artifactName,
-                  rootDirectory: dir,
-                  files: [file],
-                  continueOnError: false
-                });
-                await client.uploadArtifact(upload, [path.join(dir, file)]);
-                console.log('Uploaded:', artifactName);
-              }
-            })();
-          "
-        env:
-          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          (async () => {
+            for (const file of files) {
+              const artifactName = path.basename(file);
+              const upload = await client.createArtifact({
+                name: artifactName,
+                rootDirectory: dir,
+                files: [file],
+                continueOnError: false
+              });
+              await client.uploadArtifact(upload, [path.join(dir, file)]);
+              console.log('Uploaded:', artifactName);
+            }
+          })();
+        "
+      env:
+        GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   netbsd:
     runs-on: ubuntu-latest
