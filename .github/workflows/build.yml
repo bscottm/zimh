@@ -158,7 +158,7 @@ jobs:
               if (entry.name.startsWith('_CPack_Package'))
                 continue;
               // The "zimh-" prefix might be overly restrictive
-              if (entry.isFile() && entry.name.startWith("zimh-")) {
+              if (entry.isFile() && entry.name.startWith('zimh-')) {
                 results.push(rel);
               }
             }
