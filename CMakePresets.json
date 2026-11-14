@@ -500,24 +500,11 @@
       "inherits": ["zip-defaults"]
     },
     {
-      "name": "debian-defaults",
-      "displayName": "Debian packaging defaults",
-      "configurations": ["Release"],
-      "generators": ["DEB"],
-      "hidden": true
-    },
-    {
-      "name": "tgz-defaults",
-      "displayName": "tar.gz packaging defaults",
-      "configurations": ["Release"],
-      "generators": ["TGZ"],
-      "hidden": true
-    },
-    {
       "name": "ubuntu-deb",
       "displayName": "Ubuntu .deb and .tgz packaging",
       "configurePreset": "ninja-release",
-      "inherits": ["debian-defaults", "tgz-defaults"]
+      "configurations": ["Release"],
+      "generators": ["DEB", "TGZ"]
     }
   ]
 }
