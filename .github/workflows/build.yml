@@ -155,9 +155,9 @@ jobs:
     - name: Upload zimh-* artifacts
       run: |
         node -e "
-          const { DefaultArtifactClient } = require('@actions/artifact');
-          const fs = require('fs');
-          const path = require('path');
+          import { DefaultArtifactClient } from '@actions/artifact';
+          import fs from 'fs';
+          import path from 'path';
 
           const client = new DefaultArtifactClient(process.env.GITHUB_API_TOKEN);
           // $CMAKE_SOURCE_DIR/build/artifacts
