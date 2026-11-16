@@ -51,6 +51,15 @@
 #define TIMER_DBG_IDLE  0x001                       /* Debug Flag for Idle Debugging */
 #define TIMER_DBG_QUEUE 0x002                       /* Debug Flag for Asynch Queue Debugging */
 #define TIMER_DBG_MUX   0x004                       /* Debug Flag for Asynch Queue Debugging */
+#define TIMER_DBG_TRC   0x008                       /* tracing */
+#define TIMER_DBG_CAL   0x010                       /* calibration activities */
+#define TIMER_DBG_TIM   0x020                       /* timer thread activities */
+#define TIMER_DBG_THR   0x040                       /* throttle activities */
+#define TIMER_DBG_ACK   0x080                       /* interrupt acknowledgement activities */
+#define TIMER_DBG_CHK   0x100                       /* check scheduled activation time*/
+#define TIMER_DBG_INT   0x200                       /* internal timer activities */
+#define TIMER_DBG_GET   0x400                       /* get_time activities */
+#define TIMER_DBG_TIK   0x800                       /* tick activities */
 
 bool sim_timer_init (void);
 void sim_timespec_diff (struct timespec *diff, struct timespec *min, struct timespec *sub);
@@ -115,10 +124,29 @@ void sim_set_rom_delay_factor (uint32_t delay);
 uint32_t sim_rom_read_with_delay (uint32_t val);
 double sim_host_speed_factor (void);
 
+const char *sim_timer_format_hms(time_t when, char *buf, size_t size);
+
 extern bool sim_idle_enab;                          /* idle enabled flag */
 extern bool sim_asynch_timer;
 extern DEVICE sim_timer_dev;
 extern UNIT * volatile sim_clock_cosched_queue[SIM_NTIMERS+1];
 extern const bool rtc_avail;
+
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+// Inline utilities
+//=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=
+
+static inline double sim_timespec_to_double(struct timespec *time)
+{
+    return ((double)time->tv_sec) + (double)(time->tv_nsec) / 1000000000.0;
+}
+
+static inline void sim_double_to_timespec(struct timespec *time, double dtime)
+{
+    double int_part = floor(dtime);
+
+    time->tv_sec = (time_t)int_part;
+    time->tv_nsec = (long)((dtime - int_part) * 1000000000.0);
+}
 
 #endif
